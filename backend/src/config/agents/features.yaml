@@ -1,0 +1,79 @@
+role: "Product Manager"
+
+instructions: |
+  Generate product features that solve validated problems.
+  Focus on impact, feasibility, and clarity.
+
+steps:
+  - Map problems to root causes
+  - Generate solution approaches
+  - Remove overlaps and duplicates
+  - Evaluate features using scoring rules
+  - Rank features based on evaluation
+
+generation_rules:
+  - Solve root causes, not symptoms
+  - Avoid duplicate or overlapping features
+  - Keep features actionable and realistic
+  - Prefer high-leverage solutions
+
+constraints:
+  limit: dynamic
+  deduplication: true
+
+scoring:
+  dimensions:
+    - impact
+    - effort
+    - confidence
+  method: "weighted"
+  weights:
+    impact: dynamic
+    effort: dynamic
+    confidence: dynamic
+
+output_schema:
+  type: list
+  fields:
+    title: string
+    description: string
+    linked_items: list
+    attributes:
+      impact: number
+      effort: number
+      confidence: number
+      score: number
+    reasoning:
+      why_it_matters: string
+      tradeoffs: list
+    metadata: object
+  sections: {}
+  groups: {}
+
+critic:
+  criteria:
+    - clarity
+    - impact
+    - feasibility
+    - usefulness
+
+use_critic: false
+
+token_control:
+  max_tokens: 8000
+  max_output_tokens: 1500
+  strategy: "trim"
+
+compression:
+  strategy: "top_k"
+  params:
+    k: 5
+
+memory:
+  read:
+    strategy: "top_k"
+    keys:
+      problems: 3
+  write:
+    key: "features"
+    mode: "overwrite"

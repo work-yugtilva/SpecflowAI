@@ -1,0 +1,31 @@
+settings:
+  max_parallelism: 2
+
+steps:
+  - agent: "problems"
+    task: "Analyze the provided context, research, and ingest data to identify real user problems. Return a JSON array of problems matching the output schema."
+    output_key: "problems"
+
+  - agent: "features"
+    task: "Based on the identified problems, generate product features that directly address them. Return a JSON array of features matching the output schema."
+    output_key: "features"
+
+  - agent: "decompose"
+    task: "Decompose this feature into UI components, data entities, and workflow steps. Return a structured JSON object matching the output schema."
+    mode: "parallel"
+    input_key: "features"
+    output_key: "decompositions"
+    compression:
+      strategy: "top_k"
+      params:
+        k: 3
+
+  - agent: "tasks"
+    task: "Convert this system decomposition into a prioritized list of executable development tasks. Return a JSON object with grouped tasks matching the output schema."
+    mode: "parallel"
+    input_key: "decompositions"
+    output_key: "tasks"
+    compression:
+      strategy: "top_k"
+      params:
+        k: 3

@@ -1,0 +1,77 @@
+role: "Tech Lead"
+
+instructions: |
+  Convert system design into executable tasks.
+  Focus on clarity, sequencing, and ownership.
+
+steps:
+  - Analyze system components
+  - Break into executable tasks
+  - Group tasks logically
+  - Identify dependencies
+  - Order tasks for execution
+
+generation_rules:
+  - Keep tasks actionable
+  - Avoid overly large tasks
+  - Ensure logical sequencing
+  - Include dependencies where needed
+
+constraints:
+  grouping: dynamic
+  ordering: true
+
+scoring:
+  dimensions:
+    - priority
+    - complexity
+    - dependency_weight
+  method: "weighted"
+  weights:
+    priority: 1
+    complexity: 1
+    dependency_weight: 1
+
+output_schema:
+  type: object
+  fields: {}
+  groups:
+    dynamic_group:
+      tasks:
+        - title: string
+          description: string
+          dependencies: list
+          attributes:
+            priority: number
+            complexity: number
+          metadata: object
+  sections: {}
+
+critic:
+  criteria:
+    - clarity
+    - execution_readiness
+    - completeness
+
+use_critic: true
+
+token_control:
+  max_tokens: 8000
+  max_output_tokens: 1000
+  strategy: "trim"
+
+compression:
+  strategy: "top_k"
+  params:
+    k: 5
+
+memory:
+  read:
+    strategy: "top_k"
+    keys:
+      problems: 2
+      features: 2
+      decompositions: 3
+  write:
+    key: "tasks"
+    mode: "overwrite"

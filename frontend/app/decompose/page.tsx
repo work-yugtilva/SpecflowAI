@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
+import { runPipeline } from "@/lib/api/pipeline";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -42,181 +43,118 @@ interface Decomposition {
   workflowSteps: WorkflowStep[];
 }
 
-// ─── Mock Generator ───────────────────────────────────────────────────────────
+// ─── Pipeline Adapter ─────────────────────────────────────────────────────────
 
-function generateMockDecomposition(): Decomposition {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function findArrayIn(obj: any, keywords: string[]): any[] | null {
+  if (!obj || typeof obj !== "object") return null;
+  for (const key of Object.keys(obj)) {
+    if (
+      keywords.some((k) => key.toLowerCase().includes(k)) &&
+      Array.isArray(obj[key])
+    ) {
+      return obj[key];
+    }
+  }
+  return null;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toUIComponent(item: any, idx: number): UIComponent {
+  const validTypes: UIComponent["type"][] = [
+    "Screen",
+    "Modal",
+    "Component",
+    "Form",
+    "Navigation",
+  ];
   return {
-    featureTitle: "Progressive onboarding with contextual defaults",
-    linkedProblem: "Onboarding drop-off after step 2",
-    uiComponents: [
-      {
-        id: "ui1",
-        name: "OnboardingShell",
-        type: "Screen",
-        description:
-          "Full-screen container managing step transitions and overall onboarding state.",
-        elements: [
-          "Progress indicator bar",
-          "Back / Skip navigation",
-          "Step content slot",
-          "CTA footer",
-        ],
-      },
-      {
-        id: "ui2",
-        name: "DefaultsSelector",
-        type: "Component",
-        description:
-          "Pre-populated feature toggle group showing 2–3 recommended defaults. Users confirm or deselect before continuing.",
-        elements: [
-          "Feature pill (toggleable)",
-          "Recommendation label",
-          "'Why this?' tooltip",
-          "Confirm button",
-        ],
-      },
-      {
-        id: "ui3",
-        name: "ProgressStepper",
-        type: "Navigation",
-        description:
-          "Horizontal step indicator showing current position within the onboarding flow. Supports 3–6 steps.",
-        elements: [
-          "Step dot (completed / active / pending)",
-          "Step label (optional)",
-          "Connector line",
-        ],
-      },
-      {
-        id: "ui4",
-        name: "SettingsTourOverlay",
-        type: "Modal",
-        description:
-          "Post-activation overlay that introduces advanced settings. Triggered once after first successful onboarding completion.",
-        elements: [
-          "Spotlight mask",
-          "Tooltip card",
-          "Next / Dismiss controls",
-          "Progress counter",
-        ],
-      },
-      {
-        id: "ui5",
-        name: "ConfirmationCard",
-        type: "Component",
-        description:
-          "Summary card at final onboarding step showing selected features before activation.",
-        elements: [
-          "Selected feature list",
-          "Edit link",
-          "Activate button",
-          "Skip for now link",
-        ],
-      },
-    ],
-    dataEntities: [
-      {
-        id: "d1",
-        name: "OnboardingSession",
-        fields: [
-          { name: "id", type: "uuid", required: true },
-          { name: "userId", type: "uuid", required: true },
-          { name: "currentStep", type: "integer", required: true },
-          { name: "totalSteps", type: "integer", required: true },
-          { name: "selectedFeatures", type: "string[]", required: false },
-          { name: "completedAt", type: "timestamp | null", required: false },
-          { name: "createdAt", type: "timestamp", required: true },
-        ],
-      },
-      {
-        id: "d2",
-        name: "UserPreferences",
-        fields: [
-          { name: "userId", type: "uuid", required: true },
-          { name: "features", type: "Record<string, boolean>", required: true },
-          { name: "tourSeen", type: "boolean", required: true },
-          { name: "onboardingVersion", type: "string", required: true },
-          { name: "updatedAt", type: "timestamp", required: true },
-        ],
-      },
-      {
-        id: "d3",
-        name: "DefaultRecommendation",
-        fields: [
-          { name: "id", type: "uuid", required: true },
-          { name: "featureKey", type: "string", required: true },
-          { name: "label", type: "string", required: true },
-          { name: "rationale", type: "string", required: false },
-          { name: "enabled", type: "boolean", required: true },
-          { name: "order", type: "integer", required: true },
-        ],
-      },
-    ],
-    workflowSteps: [
-      {
-        step: 1,
-        title: "Load onboarding context",
-        description:
-          "On first login, check if an active OnboardingSession exists. If not, create one with currentStep=1.",
-        actor: "System",
-        outputs: ["OnboardingSession created or resumed"],
-      },
-      {
-        step: 2,
-        title: "Fetch default recommendations",
-        description:
-          "Query DefaultRecommendation table ordered by `order` field. Return top 3 enabled recommendations.",
-        actor: "API",
-        outputs: ["DefaultRecommendation[]"],
-      },
-      {
-        step: 3,
-        title: "Present defaults to user",
-        description:
-          "Render DefaultsSelector with pre-checked toggles. User reviews and optionally deselects features.",
-        actor: "User",
-        outputs: ["Selected feature keys array"],
-      },
-      {
-        step: 4,
-        title: "Persist user selections",
-        description:
-          "On confirmation, write selected feature keys to UserPreferences.features. Advance session step.",
-        actor: "System",
-        outputs: [
-          "UserPreferences updated",
-          "OnboardingSession.currentStep incremented",
-        ],
-      },
-      {
-        step: 5,
-        title: "Render ConfirmationCard",
-        description:
-          "Show summary of selected features. User can edit (go back) or activate.",
-        actor: "User",
-        outputs: ["Activation intent confirmed"],
-      },
-      {
-        step: 6,
-        title: "Activate feature set",
-        description:
-          "Apply selected features to the user account. Mark OnboardingSession.completedAt. Fire activation event.",
-        actor: "System",
-        outputs: [
-          "Feature flags activated",
-          "completedAt timestamp set",
-          "onboarding_complete event fired",
-        ],
-      },
-      {
-        step: 7,
-        title: "Trigger settings tour",
-        description:
-          "If UserPreferences.tourSeen is false, schedule SettingsTourOverlay after a 2s delay post-activation.",
-        actor: "Background",
-        outputs: ["Tour overlay displayed", "tourSeen set to true on dismiss"],
-      },
-    ],
+    id: item.id ?? `ui${idx}`,
+    name: item.name ?? item.title ?? item.component ?? `Component ${idx + 1}`,
+    type: validTypes.includes(item.type) ? item.type : "Component",
+    description: item.description ?? item.summary ?? "",
+    elements: Array.isArray(item.elements)
+      ? item.elements
+      : Array.isArray(item.behaviors)
+      ? item.behaviors
+      : [],
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toDataEntity(item: any, idx: number): DataEntity {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rawFields = item.fields ?? item.attributes ?? item.properties ?? [];
+  return {
+    id: item.id ?? `d${idx}`,
+    name: item.name ?? item.entity ?? item.model ?? `Entity ${idx + 1}`,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    fields: Array.isArray(rawFields)
+      ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        rawFields.map((f: any) => ({
+          name: typeof f === "string" ? f : f.name ?? "field",
+          type: typeof f === "string" ? "string" : f.type ?? "string",
+          required: f.required ?? false,
+        }))
+      : [],
+  };
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toWorkflowStep(item: any, idx: number): WorkflowStep {
+  const validActors: WorkflowStep["actor"][] = [
+    "User",
+    "System",
+    "API",
+    "Background",
+  ];
+  return {
+    step: item.step ?? idx + 1,
+    title: item.title ?? item.name ?? item.action ?? `Step ${idx + 1}`,
+    description: item.description ?? item.action ?? "",
+    actor: validActors.includes(item.actor) ? item.actor : "System",
+    outputs: Array.isArray(item.outputs)
+      ? item.outputs
+      : typeof item.output === "string"
+      ? [item.output]
+      : [],
+  };
+}
+
+function adaptPipelineResult(data: Record<string, unknown>): Decomposition {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const features = (data.features as any[]) ?? [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const problems = (data.problems as any[]) ?? [];
+  // Decompose step runs in parallel — result is array of arrays or objects
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const rawDecomps = (data.decompositions as any[]) ?? [];
+  const allDecomps = rawDecomps.flat();
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const firstDecomp: any = allDecomps[0] ?? {};
+
+  const uiArr =
+    findArrayIn(firstDecomp, ["ui", "component", "screen", "interface", "frontend", "view"]) ??
+    findArrayIn(firstDecomp?.structure, ["element", "ui", "component"]) ??
+    [];
+
+  const dataArr =
+    findArrayIn(firstDecomp, ["data", "model", "entity", "schema", "table", "database"]) ??
+    findArrayIn(firstDecomp?.structure, ["data", "model", "entity"]) ??
+    [];
+
+  const flowArr =
+    findArrayIn(firstDecomp, ["workflow", "step", "flow", "process", "action", "behavior"]) ??
+    findArrayIn(firstDecomp?.structure, ["behavior", "step", "flow"]) ??
+    [];
+
+  return {
+    featureTitle:
+      features[0]?.title ?? features[0]?.name ?? firstDecomp?.title ?? "Generated Feature",
+    linkedProblem: problems[0]?.title ?? problems[0]?.summary ?? "",
+    uiComponents: uiArr.slice(0, 8).map(toUIComponent),
+    dataEntities: dataArr.slice(0, 6).map(toDataEntity),
+    workflowSteps: flowArr.slice(0, 8).map(toWorkflowStep),
   };
 }
 
@@ -298,12 +236,24 @@ export default function DecomposePage() {
     null
   );
   const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   async function handleGenerate() {
     setGenerating(true);
-    await new Promise((r) => setTimeout(r, 1400));
-    setDecomposition(generateMockDecomposition());
-    setGenerating(false);
+    setError(null);
+    try {
+      const ctx = JSON.parse(localStorage.getItem("specflow_context") ?? "{}");
+      console.log("[decompose] Starting pipeline run", { context: ctx });
+      const { data } = await runPipeline({ context: ctx, research: [], ingest: [] });
+      console.log("[decompose] Pipeline response", data);
+      setDecomposition(adaptPipelineResult(data));
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Something went wrong";
+      console.error("[decompose] Pipeline error", msg);
+      setError(msg);
+    } finally {
+      setGenerating(false);
+    }
   }
 
   const dm = decomposition;
@@ -372,23 +322,25 @@ export default function DecomposePage() {
             >
               Decompose
             </span>
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                padding: "2px 8px",
-                borderRadius: 6,
-                fontSize: 11,
-                background: "#F3F4F6",
-                color: "#3D3D3D",
-                whiteSpace: "nowrap",
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                maxWidth: 300,
-              }}
-            >
-              ↳ Progressive onboarding with contextual defaults
-            </span>
+            {dm && (
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "2px 8px",
+                  borderRadius: 6,
+                  fontSize: 11,
+                  background: "#F3F4F6",
+                  color: "#3D3D3D",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  maxWidth: 300,
+                }}
+              >
+                ↳ {dm.featureTitle}
+              </span>
+            )}
           </div>
 
           {/* Right: action buttons */}
@@ -463,34 +415,37 @@ export default function DecomposePage() {
                 width: 56,
                 height: 56,
                 borderRadius: 10,
-                background: "rgba(232,86,27,0.08)",
+                background: error ? "rgba(239,68,68,0.08)" : "rgba(232,86,27,0.08)",
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              {/* Layers / architecture icon */}
-              <svg
-                width="28"
-                height="28"
-                viewBox="0 0 28 28"
-                fill="none"
-              >
-                <rect x="4" y="5" width="20" height="5" rx="1.5" stroke="#E8561B" strokeWidth="1.5" />
-                <rect x="4" y="12" width="20" height="5" rx="1.5" stroke="#E8561B" strokeWidth="1.5" />
-                <rect x="4" y="19" width="20" height="5" rx="1.5" stroke="#E8561B" strokeWidth="1.5" />
-              </svg>
+              {error ? (
+                <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                  <circle cx="14" cy="14" r="10" stroke="#EF4444" strokeWidth="1.5" />
+                  <path d="M14 9v6" stroke="#EF4444" strokeWidth="1.5" strokeLinecap="round" />
+                  <circle cx="14" cy="18.5" r="1" fill="#EF4444" />
+                </svg>
+              ) : (
+                /* Layers / architecture icon */
+                <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+                  <rect x="4" y="5" width="20" height="5" rx="1.5" stroke="#E8561B" strokeWidth="1.5" />
+                  <rect x="4" y="12" width="20" height="5" rx="1.5" stroke="#E8561B" strokeWidth="1.5" />
+                  <rect x="4" y="19" width="20" height="5" rx="1.5" stroke="#E8561B" strokeWidth="1.5" />
+                </svg>
+              )}
             </div>
             <div style={{ textAlign: "center" }}>
               <p
                 style={{
                   fontSize: 14,
                   fontWeight: 500,
-                  color: "#0D0D0D",
+                  color: error ? "#EF4444" : "#0D0D0D",
                   margin: 0,
                 }}
               >
-                No decomposition generated yet.
+                {error ? "Pipeline error" : "No decomposition generated yet."}
               </p>
               <p
                 style={{
@@ -498,9 +453,10 @@ export default function DecomposePage() {
                   color: "#9E9E9E",
                   margin: "4px 0 0",
                   lineHeight: 1.5,
+                  maxWidth: 320,
                 }}
               >
-                Break down a feature into UI, data, and workflow layers.
+                {error ?? "Break down a feature into UI, data, and workflow layers."}
               </p>
             </div>
             <button
@@ -508,7 +464,7 @@ export default function DecomposePage() {
               className="btn-dark"
               style={{ fontSize: "0.8125rem", padding: "0.45rem 1rem", marginTop: 4 }}
             >
-              Generate Decomposition
+              {error ? "Retry" : "Generate Decomposition"}
             </button>
           </div>
         ) : generating ? (

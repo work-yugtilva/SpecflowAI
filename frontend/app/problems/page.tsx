@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
+import { runPipeline } from "@/lib/api/pipeline";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -22,118 +23,62 @@ interface Problem {
   };
 }
 
-// ─── Mock Generator ───────────────────────────────────────────────────────────
+// ─── Pipeline Adapter ─────────────────────────────────────────────────────────
 
-function generateMockProblems(): Problem[] {
-  return [
-    {
-      id: "p1",
-      title: "Onboarding drop-off after step 2",
-      summary:
-        "Users consistently abandon the onboarding flow after the second step, suggesting the value proposition isn't clear early enough or the required effort exceeds perceived benefit.",
-      confidence: 87,
-      impact: "High",
-      frequency: 73,
-      tags: ["onboarding", "retention", "UX"],
-      signals: 14,
-      evidence: [
-        "\"I wasn't sure what I was signing up for after the second screen\" — User #34",
-        "73% of users who reach step 2 do not proceed to step 3 (analytics, last 30d)",
-        "5 out of 8 interviewed users mentioned confusion at the feature selection step",
-        "Session recordings show average 45s pause on step 2 before exit",
-      ],
-      rootCause: {
-        primary:
-          "Feature selection step presents too many options without context or defaults.",
-        secondary:
-          "No progress indicator means users can't gauge remaining effort.",
-      },
+// Scores may be 0-1 or 1-10; normalize to 0-1
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function normalizeScore(val: any): number {
+  const n = Number(val);
+  if (isNaN(n)) return 0;
+  if (n > 1) return n / 10;
+  return n;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function toImpact(val: any): Problem["impact"] {
+  if (!val) return "Medium";
+  const v = String(val).toLowerCase();
+  if (v === "high" || Number(val) >= 7) return "High";
+  if (v === "low" || Number(val) <= 3) return "Low";
+  return "Medium";
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function adaptPipelineProblems(data: Record<string, unknown>): Problem[] {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let raw: any = data.problems;
+
+  // Unwrap if AI returned { problems: [...] } or { items: [...] }
+  if (raw && !Array.isArray(raw) && typeof raw === "object") {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const nested = (raw as any).problems ?? (raw as any).items ?? (raw as any).identified_problems;
+    if (Array.isArray(nested)) raw = nested;
+  }
+
+  // If still not an array, try top-level data keys
+  if (!Array.isArray(raw)) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    raw = (data as any).items ?? (data as any).identified_problems ?? [];
+  }
+
+  if (!Array.isArray(raw)) return [];
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (raw as any[]).map((p: any, idx: number) => ({
+    id: p.id ?? `p${idx}`,
+    title: p.title ?? p.name ?? `Problem ${idx + 1}`,
+    summary: p.summary ?? p.description ?? "",
+    confidence: Math.round(normalizeScore(p.attributes?.confidence ?? p.confidence) * 100),
+    impact: toImpact(p.attributes?.impact ?? p.impact),
+    frequency: Math.round(normalizeScore(p.attributes?.frequency ?? p.frequency) * 100),
+    tags: Array.isArray(p.tags) ? p.tags : p.cluster ? [p.cluster] : [],
+    signals: Array.isArray(p.sources) ? p.sources.length : 0,
+    evidence: Array.isArray(p.sources) ? p.sources : Array.isArray(p.evidence) ? p.evidence : [],
+    rootCause: {
+      primary: p.rootCause?.primary ?? p.primary ?? p.summary ?? "",
+      secondary: p.rootCause?.secondary ?? p.secondary,
     },
-    {
-      id: "p2",
-      title: "Search returns irrelevant results for long queries",
-      summary:
-        "Users performing searches with more than 4 words report consistently poor result quality, leading to manual browsing as a workaround and reduced trust in the product.",
-      confidence: 79,
-      impact: "High",
-      frequency: 58,
-      tags: ["search", "relevance", "backend"],
-      signals: 9,
-      evidence: [
-        "\"The search just doesn't work for anything specific\" — User #12",
-        "58% of searches > 4 tokens result in zero-click sessions",
-        "Support tickets mentioning 'search' increased 40% in Q1 2026",
-      ],
-      rootCause: {
-        primary:
-          "Current search uses exact keyword matching with no semantic understanding.",
-        secondary: "No synonym or stemming support in the index.",
-      },
-    },
-    {
-      id: "p3",
-      title: "Export feature not discoverable",
-      summary:
-        "Power users who need to export data to CSV or PDF are unable to find the feature, resorting to copy-paste workarounds that reduce trust and increase churn risk.",
-      confidence: 65,
-      impact: "Medium",
-      frequency: 42,
-      tags: ["export", "discoverability", "power-users"],
-      signals: 6,
-      evidence: [
-        "\"I didn't know there was an export button — I've been copying manually\" — User #7",
-        "Export menu item is nested 3 levels deep in settings",
-        "Feature usage is 8× higher among users who receive a direct link to the export page",
-      ],
-      rootCause: {
-        primary:
-          "Export is buried in Settings rather than surfaced in the primary workflow.",
-      },
-    },
-    {
-      id: "p4",
-      title: "Mobile layout breaks on smaller screen sizes",
-      summary:
-        "On screens narrower than 375px, several core UI components overflow or overlap, making the app unusable on older iPhones and low-end Android devices.",
-      confidence: 91,
-      impact: "Medium",
-      frequency: 31,
-      tags: ["mobile", "responsive", "CSS"],
-      signals: 11,
-      evidence: [
-        "Automated visual regression tests flag 4 broken layouts on 320px viewport",
-        "App Store reviews mention UI issues on iPhone SE (3 reviews in Feb 2026)",
-        "31% of mobile sessions originate from devices < 375px wide",
-      ],
-      rootCause: {
-        primary:
-          "Several components use fixed pixel widths instead of fluid/responsive units.",
-        secondary: "No CI check for viewport sizes below 375px.",
-      },
-    },
-    {
-      id: "p5",
-      title: "Email notifications are too frequent and non-actionable",
-      summary:
-        "Users are unsubscribing from all notifications after receiving repetitive digests that don't help them take action, creating a permanent engagement gap.",
-      confidence: 72,
-      impact: "Low",
-      frequency: 55,
-      tags: ["notifications", "email", "engagement"],
-      signals: 7,
-      evidence: [
-        "\"I just turned all emails off — there were too many and none were useful\" — User #21",
-        "Email unsubscribe rate is 2.4× industry average",
-        "Only 11% of notification emails result in an app session",
-      ],
-      rootCause: {
-        primary:
-          "Notification system sends all events regardless of user activity or relevance.",
-        secondary:
-          "No smart batching or user-configurable frequency controls.",
-      },
-    },
-  ];
+  }));
 }
 
 // ─── Impact badge ─────────────────────────────────────────────────────────────
@@ -196,17 +141,31 @@ export default function ProblemsPage() {
   const [problems, setProblems] = useState<Problem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const selectedProblem = problems.find((p) => p.id === selectedId) ?? null;
 
   async function handleGenerate() {
     setGenerating(true);
     setSelectedId(null);
-    await new Promise((r) => setTimeout(r, 1200));
-    const mocks = generateMockProblems();
-    setProblems(mocks);
-    setSelectedId(mocks[0].id);
-    setGenerating(false);
+    setError(null);
+    try {
+      const ctx = JSON.parse(localStorage.getItem("specflow_context") ?? "{}");
+      console.log("[problems] Starting pipeline run", { context: ctx });
+      const { data } = await runPipeline({ context: ctx, research: [], ingest: [] });
+      console.log("[problems] Pipeline response", data);
+      const adapted = adaptPipelineProblems(data);
+      setProblems(adapted);
+      if (adapted.length > 0) {
+        setSelectedId(adapted[0].id);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Something went wrong";
+      console.error("[problems] Pipeline error", msg);
+      setError(msg);
+    } finally {
+      setGenerating(false);
+    }
   }
 
   return (
@@ -293,42 +252,49 @@ export default function ProblemsPage() {
                     width: 48,
                     height: 48,
                     borderRadius: 12,
-                    background: "rgba(232,86,27,0.08)",
-                    border: "1px solid rgba(232,86,27,0.15)",
+                    background: error ? "rgba(239,68,68,0.08)" : "rgba(232,86,27,0.08)",
+                    border: error ? "1px solid rgba(239,68,68,0.15)" : "1px solid rgba(232,86,27,0.15)",
                     display: "flex",
                     alignItems: "center",
                     justifyContent: "center",
                   }}
                 >
-                  <svg
-                    width="22"
-                    height="22"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="#E8561B"
-                    strokeWidth="1.8"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <circle cx="12" cy="12" r="10" />
-                    <line x1="12" y1="8" x2="12" y2="12" />
-                    <line x1="12" y1="16" x2="12.01" y2="16" />
-                  </svg>
+                  {error ? (
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="1.8" strokeLinecap="round">
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="12" y1="8" x2="12" y2="12" />
+                      <line x1="12" y1="16" x2="12.01" y2="16" />
+                    </svg>
+                  ) : (
+                    <svg
+                      width="22"
+                      height="22"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="#E8561B"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <circle cx="12" cy="12" r="10" />
+                      <line x1="12" y1="8" x2="12" y2="12" />
+                      <line x1="12" y1="16" x2="12.01" y2="16" />
+                    </svg>
+                  )}
                 </div>
                 <div>
                   <p
                     style={{
                       fontSize: "1rem",
                       fontWeight: 500,
-                      color: "#0D0D0D",
+                      color: error ? "#EF4444" : "#0D0D0D",
                       marginBottom: 6,
                     }}
                   >
-                    No problems generated yet.
+                    {error ? "Pipeline error" : "No problems generated yet."}
                   </p>
                   <p style={{ fontSize: 13.5, color: "#6B6B6B", lineHeight: 1.6 }}>
-                    Analyse your ingest data to surface structured problem
-                    statements with supporting evidence.
+                    {error ?? "Analyse your ingest data to surface structured problem statements with supporting evidence."}
                   </p>
                 </div>
                 <button
@@ -336,7 +302,7 @@ export default function ProblemsPage() {
                   className="btn-dark"
                   style={{ fontSize: 14, padding: "0.65rem 1.5rem" }}
                 >
-                  Generate Problems
+                  {error ? "Retry" : "Generate Problems"}
                 </button>
               </div>
             )}

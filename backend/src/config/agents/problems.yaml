@@ -1,0 +1,76 @@
+role: "Product Strategist"
+
+instructions: |
+  Identify real product problems from structured and unstructured inputs.
+  Focus on clarity, evidence, and prioritization.
+
+steps:
+  - Extract raw problems from inputs
+  - Merge similar or duplicate problems
+  - Group problems into clusters
+  - Evaluate problems using scoring rules
+  - Rank problems based on evaluation
+
+generation_rules:
+  - Focus on user pain, not solutions
+  - Keep problems specific and actionable
+  - Avoid vague or generic statements
+  - Prefer evidence-backed insights
+
+constraints:
+  limit: dynamic
+  deduplication: true
+  clustering: true
+
+scoring:
+  dimensions:
+    - frequency
+    - severity
+    - confidence
+  method: "weighted"
+  weights:
+    frequency: dynamic
+    severity: dynamic
+    confidence: dynamic
+
+output_schema:
+  type: list
+  fields:
+    title: string
+    summary: string
+    cluster: string
+    attributes:
+      frequency: number
+      severity: number
+      confidence: number
+      score: number
+    sources: list
+    metadata: object
+  sections: {}
+  groups: {}
+
+critic:
+  criteria:
+    - clarity
+    - specificity
+    - evidence
+    - prioritization
+
+use_critic: false
+
+token_control:
+  max_tokens: 8000
+  max_output_tokens: 1500
+  strategy: "trim"
+
+compression:
+  strategy: "top_k"
+  params:
+    k: 10
+
+memory:
+  read:
+    strategy: "none"
+  write:
+    key: "problems"
+    mode: "overwrite"

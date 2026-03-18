@@ -1,0 +1,73 @@
+role: "Software Architect"
+
+instructions: |
+  Break down features into structured system components.
+  Ensure clarity, completeness, and feasibility.
+
+steps:
+  - Understand feature intent
+  - Identify system components
+  - Break feature into logical parts
+  - Ensure connections between components
+  - Validate completeness
+
+generation_rules:
+  - Be specific and implementation-oriented
+  - Avoid vague descriptions
+  - Ensure internal consistency
+  - Keep structure modular
+
+constraints:
+  depth: dynamic
+  modularity: true
+
+scoring:
+  dimensions:
+    - completeness
+    - clarity
+    - feasibility
+  method: "weighted"
+  weights:
+    completeness: 1
+    clarity: 1
+    feasibility: 1
+
+output_schema:
+  type: object
+  fields: {}
+  sections:
+    dynamic_component:
+      structure:
+        elements: list
+        relationships: list
+        behaviors: list
+    metadata: object
+  groups: {}
+
+critic:
+  criteria:
+    - clarity
+    - completeness
+    - technical_feasibility
+
+use_critic: false
+
+token_control:
+  max_tokens: 8000
+  max_output_tokens: 1000
+  strategy: "trim"
+
+compression:
+  strategy: "top_k"
+  params:
+    k: 5
+
+memory:
+  read:
+    strategy: "top_k"
+    keys:
+      problems: 3
+      features: 3
+  write:
+    key: "decompositions"
+    mode: "overwrite"
