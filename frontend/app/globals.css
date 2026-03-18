@@ -1,0 +1,228 @@
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --orange: #E8561B;
+  --orange-hover: #D44A12;
+  --bg: #F8F4EF;
+  --bg-dark: #F0EAE1;
+  --text: #0D0D0D;
+  --muted: #6B6B6B;
+  --border: #E4DDD4;
+  --surface: #FFFFFF;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: var(--font-dm-sans), 'DM Sans', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* ─── Typography ────────────────────────────────── */
+.font-display {
+  font-family: var(--font-instrument), 'Instrument Serif', Georgia, serif;
+}
+
+/* ─── Orange accent text ───────────────────────── */
+.text-orange {
+  color: var(--orange);
+}
+
+/* ─── Pill button ──────────────────────────────── */
+.btn-dark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.6rem 1.4rem;
+  background: var(--text);
+  color: #fff;
+  border-radius: 9999px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  transition: transform 0.18s ease, background 0.18s ease;
+  cursor: pointer;
+  border: none;
+  text-decoration: none;
+}
+.btn-dark:hover {
+  background: #2a2a2a;
+  transform: translateY(-1px);
+}
+.btn-dark:active {
+  transform: translateY(0);
+}
+
+.btn-white {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.7rem 1.6rem;
+  background: #fff;
+  color: var(--text);
+  border-radius: 9999px;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  cursor: pointer;
+}
+.btn-white:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 24px rgba(0,0,0,0.18);
+}
+
+/* ─── Hero glow ─────────────────────────────────── */
+.hero-glow {
+  position: absolute;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(232,86,27,0.22) 0%, transparent 70%);
+  border-radius: 50%;
+  pointer-events: none;
+  animation: glowPulse 3s ease-in-out infinite;
+}
+
+/* ─── Floating label cards ───────────────────────── */
+.float-label {
+  background: rgba(255,255,255,0.92);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text);
+  white-space: nowrap;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+}
+
+/* ─── Feature card ───────────────────────────────── */
+.feature-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 1.5rem;
+  transition: box-shadow 0.22s ease, transform 0.22s ease;
+}
+.feature-card:hover {
+  box-shadow: 0 8px 32px rgba(232,86,27,0.10), 0 2px 8px rgba(0,0,0,0.06);
+  transform: translateY(-3px);
+}
+
+/* ─── Section heading styles ─────────────────────── */
+.section-title {
+  font-family: var(--font-instrument), 'Instrument Serif', Georgia, serif;
+  font-size: clamp(2rem, 4vw, 3rem);
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  color: var(--text);
+}
+
+.section-title .accent {
+  color: var(--orange);
+  font-style: italic;
+}
+
+/* ─── Noise texture overlay ──────────────────────── */
+.noise-overlay::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+/* ─── SVG circuit chip ───────────────────────────── */
+.chip-container {
+  animation: floatY 3s ease-in-out infinite;
+  filter: drop-shadow(0 0 40px rgba(232,86,27,0.4));
+}
+
+/* ─── Nav link hover ─────────────────────────────── */
+.nav-link {
+  font-size: 0.875rem;
+  font-weight: 450;
+  color: #3a3530;
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.25rem 0;
+  transition: color 0.15s ease;
+  text-decoration: none;
+}
+.nav-link:hover {
+  color: var(--text);
+}
+
+/* ─── Orbit diagram ──────────────────────────────── */
+.orbit-node {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+  font-size: 1.1rem;
+}
+
+/* ─── Stagger animation delays ───────────────────── */
+.delay-100 { animation-delay: 0.1s; }
+.delay-200 { animation-delay: 0.2s; }
+.delay-300 { animation-delay: 0.3s; }
+.delay-500 { animation-delay: 0.5s; }
+.delay-700 { animation-delay: 0.7s; }
+.delay-1000 { animation-delay: 1s; }
+
+/* ─── Fade-up entrance classes ───────────────────── */
+.fade-up {
+  animation: fadeUp 0.7s ease forwards;
+}
+.fade-up-1 { animation: fadeUp 0.7s ease 0.1s both; }
+.fade-up-2 { animation: fadeUp 0.7s ease 0.2s both; }
+.fade-up-3 { animation: fadeUp 0.7s ease 0.35s both; }
+
+/* ─── Gradient text ──────────────────────────────── */
+.gradient-text-orange {
+  background: linear-gradient(135deg, #E8561B 0%, #FF7B3B 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* ─── Auth form input ──────────────────────────────── */
+.form-input {
+  width: 100%;
+  padding: 0.7rem 1rem 0.7rem 2.75rem;
+  background: var(--surface);
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  font-size: 0.9375rem;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  font-family: var(--font-dm-sans), 'DM Sans', sans-serif;
+}
+.form-input::placeholder { color: var(--muted); }
+.form-input:focus {
+  border-color: var(--orange);
+  box-shadow: 0 0 0 3px rgba(232,86,27,0.12);
+}
