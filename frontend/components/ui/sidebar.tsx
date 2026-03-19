@@ -132,11 +132,11 @@ const NAV_SECTIONS: NavSection[] = [
     title: "Signals",
     icon: <SignalIcon />,
     items: [
-      { id: "ingest", label: "Ingest" },
       { id: "problems", label: "Problems" },
       { id: "features", label: "Features" },
       { id: "decompose", label: "Decompose" },
       { id: "tasks", label: "Tasks" },
+      { id: "sessions", label: "Sessions" },
     ],
   },
   {
@@ -343,7 +343,7 @@ const RailButton = memo(function RailButton({
 // ─── Main Sidebar ─────────────────────────────────────────────────────────────
 
 // Items that have dedicated pages
-const ROUTED_ITEMS = new Set(["ingest", "problems", "features", "decompose", "tasks", "context", "research"]);
+const ROUTED_ITEMS = new Set(["problems", "features", "decompose", "tasks", "sessions", "context", "research"]);
 
 export function Sidebar() {
   const router = useRouter();

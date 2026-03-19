@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { runPipeline } from "@/lib/api/pipeline";
+import type { PipelineInput } from "@/lib/api/pipeline";
 import { Sidebar } from "@/components/ui/sidebar";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -265,6 +267,66 @@ function generateMockTasks(): Task[] {
   ];
 }
 
+// ─── Pipeline Adapter ─────────────────────────────────────────────────────────
+
+const TYPE_MAP: Record<string, TaskType> = {
+  frontend: "Frontend", ui: "Frontend", component: "Frontend",
+  backend: "Backend", service: "Backend", logic: "Backend",
+  api: "API", endpoint: "API", route: "API",
+  infrastructure: "Infrastructure", infra: "Infrastructure", devops: "Infrastructure",
+};
+
+function toTaskType(val: unknown): TaskType {
+  if (!val) return "Backend";
+  const v = String(val).toLowerCase();
+  for (const [key, type] of Object.entries(TYPE_MAP)) {
+    if (v.includes(key)) return type;
+  }
+  return "Backend";
+}
+
+function toPriority(val: unknown): Task["priority"] {
+  if (!val) return "Medium";
+  const v = String(val).toLowerCase();
+  if (v === "high" || v === "critical") return "High";
+  if (v === "low") return "Low";
+  return "Medium";
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function adaptTasks(data: Record<string, unknown>): Task[] {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let raw: any[] = [];
+  const t = data.tasks;
+  if (Array.isArray(t)) raw = t;
+  else if (t && typeof t === "object" && !Array.isArray(t)) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const nested = (t as any).tasks ?? (t as any).items ?? [];
+    if (Array.isArray(nested)) raw = nested;
+  }
+  if (raw.length === 0) return [];
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return raw.map((item: any, idx: number) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const subtasks: TaskStep[] = (Array.isArray(item.subtasks) ? item.subtasks : Array.isArray(item.steps) ? item.steps : []).map((s: any, si: number) => ({
+      id: s.id ?? `${idx}-s${si}`,
+      title: s.title ?? s.name ?? s.description ?? `Step ${si + 1}`,
+      done: s.done ?? s.completed ?? false,
+    }));
+    return {
+      id: item.id ?? `t${idx}`,
+      title: item.title ?? item.name ?? `Task ${idx + 1}`,
+      description: item.description ?? item.summary ?? "",
+      type: toTaskType(item.type ?? item.layer ?? item.category),
+      status: (["todo", "in-progress", "done"].includes(item.status) ? item.status : "todo") as TaskStatus,
+      priority: toPriority(item.priority),
+      steps: subtasks,
+      dependencies: Array.isArray(item.dependencies) ? item.dependencies.map(String) : [],
+    };
+  });
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const GROUPS: TaskType[] = ["Frontend", "Backend", "API", "Infrastructure"];
@@ -338,6 +400,8 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [fromSession, setFromSession] = useState(false);
+
   const [expandedGroups, setExpandedGroups] = useState<Set<TaskType>>(
     new Set<TaskType>(["Frontend", "Backend", "API", "Infrastructure"])
   );
@@ -385,12 +449,31 @@ export default function TasksPage() {
     setSelectedId(null);
     setStatusMap({});
     setStepsMap({});
-    await new Promise((r) => setTimeout(r, 1400));
-    const mocks = generateMockTasks();
-    setTasks(mocks);
-    setSelectedId(mocks[0].id);
-    setGenerating(false);
+    setFromSession(false);
+    const isAutorun = localStorage.getItem("specflow_autorun") === "1";
+    try {
+      const pending = localStorage.getItem("specflow_pending_input");
+      const inputData: PipelineInput = pending
+        ? JSON.parse(pending)
+        : { context: JSON.parse(localStorage.getItem("specflow_context") ?? "{}"), research: [], ingest: [] };
+      const { data } = await runPipeline(inputData);
+      const adapted = adaptTasks(data);
+      setTasks(adapted);
+      if (adapted.length > 0) setSelectedId(adapted[0].id);
+    } catch { /* ignore */ }
+    finally {
+      if (isAutorun) localStorage.removeItem("specflow_autorun");
+      setGenerating(false);
+    }
   }
+
+  // Auto-run on mount when redirected from sessions "Run All Steps"
+  useEffect(() => {
+    if (localStorage.getItem("specflow_autorun") === "1") {
+      handleGenerate();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div
@@ -402,10 +485,6 @@ export default function TasksPage() {
         fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
       }}
     >
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
-      `}</style>
-
       <Sidebar />
 
       {/* Main */}
@@ -455,6 +534,11 @@ export default function TasksPage() {
                 }}
               >
                 {tasks.length} tasks
+              </span>
+            )}
+            {fromSession && (
+              <span style={{ fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(232,86,27,0.10)", color: "#E8561B", letterSpacing: "0.03em" }}>
+                From Session
               </span>
             )}
           </div>

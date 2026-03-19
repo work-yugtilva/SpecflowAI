@@ -32,6 +32,25 @@ class CompressionConfig(BaseModel):
     params: Optional[Dict[str, Any]] = {}
 
 
+class SessionPipelineConfig(BaseModel):
+    """Session behaviour flags for the pipeline."""
+    persistence: bool = True        # save state + memory after each step
+    event_tracking: bool = True     # append structured events to session_events
+
+
+class ExecutionConfig(BaseModel):
+    """Execution control flags for the pipeline."""
+    resumable: bool = True          # skip already-completed steps on re-run
+
+
+class PipelineConfig(BaseModel):
+    """Typed model for pipeline.yaml. Used by Pipeline.__init__."""
+    settings: Optional[Dict[str, Any]] = {}
+    steps: List[Dict[str, Any]] = []
+    session: Optional[SessionPipelineConfig] = Field(default_factory=SessionPipelineConfig)
+    execution: Optional[ExecutionConfig] = Field(default_factory=ExecutionConfig)
+
+
 class AgentConfig(BaseModel):
     role: str
     instructions: str

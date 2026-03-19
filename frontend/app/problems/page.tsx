@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
 import { runPipeline } from "@/lib/api/pipeline";
+import type { PipelineInput } from "@/lib/api/pipeline";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -142,6 +143,7 @@ export default function ProblemsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fromSession, setFromSession] = useState(false);
 
   const selectedProblem = problems.find((p) => p.id === selectedId) ?? null;
 
@@ -149,24 +151,30 @@ export default function ProblemsPage() {
     setGenerating(true);
     setSelectedId(null);
     setError(null);
+    setFromSession(false);
     try {
-      const ctx = JSON.parse(localStorage.getItem("specflow_context") ?? "{}");
-      console.log("[problems] Starting pipeline run", { context: ctx });
-      const { data } = await runPipeline({ context: ctx, research: [], ingest: [] });
-      console.log("[problems] Pipeline response", data);
+      const pending = localStorage.getItem("specflow_pending_input");
+      const inputData: PipelineInput = pending
+        ? JSON.parse(pending)
+        : { context: JSON.parse(localStorage.getItem("specflow_context") ?? "{}"), research: [], ingest: [] };
+      const { data } = await runPipeline(inputData);
       const adapted = adaptPipelineProblems(data);
       setProblems(adapted);
-      if (adapted.length > 0) {
-        setSelectedId(adapted[0].id);
-      }
+      if (adapted.length > 0) setSelectedId(adapted[0].id);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Something went wrong";
-      console.error("[problems] Pipeline error", msg);
-      setError(msg);
+      setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
       setGenerating(false);
     }
   }
+
+  // Auto-run on mount when redirected from sessions "Run All Steps"
+  useEffect(() => {
+    if (localStorage.getItem("specflow_autorun") === "1") {
+      handleGenerate();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div
@@ -192,15 +200,22 @@ export default function ProblemsPage() {
             borderBottom: "1px solid #E4DDD4",
           }}
         >
-          <div
-            className="flex items-center gap-1.5 text-[13px]"
-            style={{ color: "#6B6B6B" }}
-          >
-            <span>Signals</span>
-            <span style={{ color: "#C0B8B0" }}>/</span>
-            <span className="font-medium" style={{ color: "#0D0D0D" }}>
-              Problems
-            </span>
+          <div className="flex items-center gap-2">
+            <div
+              className="flex items-center gap-1.5 text-[13px]"
+              style={{ color: "#6B6B6B" }}
+            >
+              <span>Signals</span>
+              <span style={{ color: "#C0B8B0" }}>/</span>
+              <span className="font-medium" style={{ color: "#0D0D0D" }}>
+                Problems
+              </span>
+            </div>
+            {fromSession && (
+              <span style={{ fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(232,86,27,0.10)", color: "#E8561B", letterSpacing: "0.03em" }}>
+                From Session
+              </span>
+            )}
           </div>
           <button
             onClick={handleGenerate}

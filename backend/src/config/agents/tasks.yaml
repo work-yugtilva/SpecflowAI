@@ -36,7 +36,7 @@ output_schema:
   type: object
   fields: {}
   groups:
-    dynamic_group:
+    "<Group Name>":
       tasks:
         - title: string
           description: string

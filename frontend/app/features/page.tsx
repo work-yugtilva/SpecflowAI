@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
+import { runPipeline } from "@/lib/api/pipeline";
+import type { PipelineInput } from "@/lib/api/pipeline";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -20,106 +22,68 @@ interface Feature {
   successMetrics: string[];
 }
 
-// ─── Mock Generator ───────────────────────────────────────────────────────────
+// ─── Pipeline Adapter ─────────────────────────────────────────────────────────
 
-function generateMockFeatures(): Feature[] {
-  return [
-    {
-      id: "f1",
-      title: "Progressive onboarding with contextual defaults",
-      description:
-        "Replace the all-at-once feature selection step with a staged reveal: show 2–3 defaults pre-selected, let users confirm and move on. Deeper customisation is deferred to an in-app settings tour after activation.",
-      linkedProblemId: "p1",
-      linkedProblemTitle: "Onboarding drop-off after step 2",
-      impact: "High",
-      effort: "Medium",
-      confidence: 84,
-      score: 88,
+function numericToImpact(n: number): Feature["impact"] {
+  if (n >= 70) return "High";
+  if (n >= 40) return "Medium";
+  return "Low";
+}
+
+function numericToEffort(n: number): Feature["effort"] {
+  if (n >= 70) return "High";
+  if (n >= 40) return "Medium";
+  return "Low";
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function adaptFeatures(data: Record<string, unknown>): Feature[] {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let raw: any[] = Array.isArray(data.features) ? data.features : [];
+  // Unwrap if AI returned { features: [...] } or { items: [...] }
+  if (raw.length === 0 && data.features && typeof data.features === "object") {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const nested = (data.features as any).features ?? (data.features as any).items ?? [];
+    if (Array.isArray(nested)) raw = nested;
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const problems: any[] = Array.isArray(data.problems) ? data.problems : [];
+
+  return raw.map((item: any, idx: number) => {
+    const attrs = item.attributes ?? item;
+    const reasoning = item.reasoning ?? {};
+    const linkedItems: string[] = Array.isArray(item.linked_items) ? item.linked_items : [];
+    const linkedProblem = problems[idx] ?? problems[0] ?? {};
+
+    // impact/effort can be numeric (0-100) or already a string label
+    const impactRaw = attrs.impact ?? item.impact ?? 50;
+    const effortRaw = attrs.effort ?? item.effort ?? 50;
+    const impact: Feature["impact"] =
+      typeof impactRaw === "string" ? (impactRaw as Feature["impact"]) : numericToImpact(Number(impactRaw));
+    const effort: Feature["effort"] =
+      typeof effortRaw === "string" ? (effortRaw as Feature["effort"]) : numericToEffort(Number(effortRaw));
+
+    return {
+      id: item.id ?? `f${idx}`,
+      title: item.title ?? item.name ?? `Feature ${idx + 1}`,
+      description: item.description ?? item.summary ?? "",
+      linkedProblemId: linkedProblem.id ?? linkedItems[0] ?? `p${idx}`,
+      linkedProblemTitle: linkedProblem.title ?? linkedProblem.summary ?? linkedItems[0] ?? "",
+      impact,
+      effort,
+      confidence: Number(attrs.confidence ?? item.confidence ?? 70),
+      score: Number(attrs.score ?? item.score ?? 70),
       reasoning:
-        "The primary root cause (too many choices, no defaults) is directly addressed by progressive disclosure. Medium effort because it requires redesigning the onboarding flow but no backend changes.",
-      successMetrics: [
-        "Onboarding completion rate increases from ~27% to >60%",
-        "Step 2 → Step 3 drop-off reduces by 40%+",
-        "Time-to-first-value (TTFV) decreases by ≥ 30%",
-      ],
-    },
-    {
-      id: "f2",
-      title: "Semantic search with intent understanding",
-      description:
-        "Replace exact keyword matching with a vector-based semantic search that understands synonyms, context, and user intent. Integrate an embedding model to score results by relevance rather than keyword frequency.",
-      linkedProblemId: "p2",
-      linkedProblemTitle: "Search returns irrelevant results for long queries",
-      impact: "High",
-      effort: "High",
-      confidence: 76,
-      score: 72,
-      reasoning:
-        "High effort due to backend indexing changes and model integration, but high impact because search is a core workflow. Addresses the exact root cause: lack of semantic understanding.",
-      successMetrics: [
-        "Zero-click search rate drops from 58% to < 20%",
-        "Search session satisfaction (thumbs up) > 70%",
-        "Support tickets mentioning 'search' reduce by 50%",
-      ],
-    },
-    {
-      id: "f3",
-      title: "Export shortcut in primary action bar",
-      description:
-        "Surface a persistent 'Export' button in the top action bar of every data view. The button opens a format picker (CSV, PDF, JSON) inline. No navigation to Settings required.",
-      linkedProblemId: "p3",
-      linkedProblemTitle: "Export feature not discoverable",
-      impact: "Medium",
-      effort: "Low",
-      confidence: 91,
-      score: 93,
-      reasoning:
-        "Very low effort (UI-only change, existing export logic stays in place) and high discoverability lift. The 8× usage increase among users with a direct export link strongly validates this approach.",
-      successMetrics: [
-        "Export feature usage increases by 5×",
-        "User reports of 'can't find export' drop to 0",
-        "Settings page drop-off (currently used to find export) decreases",
-      ],
-    },
-    {
-      id: "f4",
-      title: "Fluid responsive layout system",
-      description:
-        "Audit and replace all fixed-width component definitions with fluid, relative units (%, clamp(), min-width). Add automated viewport testing at 320px, 375px, and 414px to CI pipeline.",
-      linkedProblemId: "p4",
-      linkedProblemTitle: "Mobile layout breaks on smaller screen sizes",
-      impact: "Medium",
-      effort: "Medium",
-      confidence: 89,
-      score: 81,
-      reasoning:
-        "Fixes a known regression with clear scope. Medium effort because it touches multiple components but is well-understood work. CI addition prevents regression.",
-      successMetrics: [
-        "Zero visual regression flags at 320px–414px viewports in CI",
-        "App Store review mentions of UI bugs drop to 0",
-        "Mobile session completion rate increases by 15%",
-      ],
-    },
-    {
-      id: "f5",
-      title: "Smart notification digest with user controls",
-      description:
-        "Replace per-event emails with a smart daily/weekly digest. The digest groups events by type, highlights only those requiring action, and links directly to the relevant in-app context. Add frequency and category controls to notification settings.",
-      linkedProblemId: "p5",
-      linkedProblemTitle: "Email notifications are too frequent and non-actionable",
-      impact: "Low",
-      effort: "Medium",
-      confidence: 68,
-      score: 57,
-      reasoning:
-        "Medium effort to build batching and digest templating, but the impact is lower because email engagement is already a secondary channel. User controls add longevity to the solution.",
-      successMetrics: [
-        "Email unsubscribe rate drops below industry average (< 0.5%)",
-        "Notification-to-session conversion increases from 11% to > 30%",
-        "User-reported email satisfaction improves in next NPS cycle",
-      ],
-    },
-  ];
+        typeof reasoning === "string"
+          ? reasoning
+          : reasoning.why_it_matters ?? reasoning.summary ?? item.reasoning ?? "",
+      successMetrics: Array.isArray(reasoning.tradeoffs)
+        ? reasoning.tradeoffs
+        : Array.isArray(item.success_metrics)
+        ? item.success_metrics
+        : [],
+    };
+  });
 }
 
 // ─── Badge configs ────────────────────────────────────────────────────────────
@@ -199,18 +163,44 @@ export default function FeaturesPage() {
   const [features, setFeatures] = useState<Feature[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [fromSession, setFromSession] = useState(false);
 
   const selectedFeature = features.find((f) => f.id === selectedId) ?? null;
 
   async function handleGenerate() {
     setGenerating(true);
     setSelectedId(null);
-    await new Promise((r) => setTimeout(r, 1200));
-    const mocks = generateMockFeatures();
-    setFeatures(mocks);
-    setSelectedId(mocks[0].id);
-    setGenerating(false);
+    setError(null);
+    setFromSession(false);
+    try {
+      const pending = localStorage.getItem("specflow_pending_input");
+      const inputData: PipelineInput = pending
+        ? JSON.parse(pending)
+        : { context: JSON.parse(localStorage.getItem("specflow_context") ?? "{}"), research: [], ingest: [] };
+      const { data } = await runPipeline(inputData);
+      const adapted = adaptFeatures(data);
+      if (adapted.length > 0) {
+        setFeatures(adapted);
+        setSelectedId(adapted[0].id);
+      } else {
+        setError("Pipeline returned no features. Check your context input.");
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Something went wrong";
+      setError(msg);
+    } finally {
+      setGenerating(false);
+    }
   }
+
+  // Auto-run on mount when redirected from sessions "Run All Steps"
+  useEffect(() => {
+    if (localStorage.getItem("specflow_autorun") === "1") {
+      handleGenerate();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <div
@@ -236,15 +226,22 @@ export default function FeaturesPage() {
             borderBottom: "1px solid #E4DDD4",
           }}
         >
-          <div
-            className="flex items-center gap-1.5 text-[13px]"
-            style={{ color: "#6B6B6B" }}
-          >
-            <span>Signals</span>
-            <span style={{ color: "#C0B8B0" }}>/</span>
-            <span className="font-medium" style={{ color: "#0D0D0D" }}>
-              Features
-            </span>
+          <div className="flex items-center gap-2">
+            <div
+              className="flex items-center gap-1.5 text-[13px]"
+              style={{ color: "#6B6B6B" }}
+            >
+              <span>Signals</span>
+              <span style={{ color: "#C0B8B0" }}>/</span>
+              <span className="font-medium" style={{ color: "#0D0D0D" }}>
+                Features
+              </span>
+            </div>
+            {fromSession && (
+              <span style={{ fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(232,86,27,0.10)", color: "#E8561B", letterSpacing: "0.03em" }}>
+                From Session
+              </span>
+            )}
           </div>
           <button
             onClick={handleGenerate}
@@ -319,14 +316,14 @@ export default function FeaturesPage() {
                     style={{
                       fontSize: "1rem",
                       fontWeight: 500,
-                      color: "#0D0D0D",
+                      color: error ? "#EF4444" : "#0D0D0D",
                       marginBottom: 6,
                     }}
                   >
-                    No features generated yet.
+                    {error ? "Pipeline error" : "No features generated yet."}
                   </p>
                   <p style={{ fontSize: 13.5, color: "#6B6B6B", lineHeight: 1.6 }}>
-                    Generate feature solutions from your identified problems.
+                    {error ?? "Generate feature solutions from your identified problems."}
                   </p>
                 </div>
                 <button
@@ -334,7 +331,7 @@ export default function FeaturesPage() {
                   className="btn-dark"
                   style={{ fontSize: 14, padding: "0.65rem 1.5rem" }}
                 >
-                  Generate Features
+                  {error ? "Retry" : "Generate Features"}
                 </button>
               </div>
             )}

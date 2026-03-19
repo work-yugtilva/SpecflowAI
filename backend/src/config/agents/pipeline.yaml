@@ -1,6 +1,13 @@
 settings:
   max_parallelism: 2
 
+session:
+  persistence: true
+  event_tracking: true
+
+execution:
+  resumable: true
+
 steps:
   - agent: "problems"
     task: "Analyze the provided context, research, and ingest data to identify real user problems. Return a JSON array of problems matching the output schema."

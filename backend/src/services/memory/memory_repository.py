@@ -127,6 +127,64 @@ class MemoryRepository:
 
         await self._run_sync(_delete)
 
+    async def save_for_session(self, entry: MemoryEntry) -> MemoryEntry:
+        """
+        Upsert a memory entry scoped by session_id.
+        Conflict target: (session_id, memory_key) using the partial unique index
+        created in the session migration.
+        entry.session_id must be set.
+        """
+        data = entry.model_dump(
+            exclude_none=True,
+            exclude={"created_at", "updated_at"},
+        )
+
+        def _upsert():
+            return self.client.table(TABLE).upsert(
+                data, on_conflict="session_id,memory_key"
+            ).execute()
+
+        result = await self._run_sync(_upsert)
+
+        if result.data:
+            return MemoryEntry(**result.data[0])
+        return entry
+
+    async def get_by_session(self, session_id: str) -> List[MemoryEntry]:
+        """Get all memory entries for a session."""
+
+        def _select():
+            return (
+                self.client.table(TABLE)
+                .select("*")
+                .eq("session_id", session_id)
+                .order("created_at", desc=False)
+                .execute()
+            )
+
+        result = await self._run_sync(_select)
+        return [MemoryEntry(**row) for row in (result.data or [])]
+
+    async def get_by_session_and_key(
+        self, session_id: str, key: str
+    ) -> Optional[MemoryEntry]:
+        """Get a single memory entry by session and key."""
+
+        def _select():
+            return (
+                self.client.table(TABLE)
+                .select("*")
+                .eq("session_id", session_id)
+                .eq("memory_key", key)
+                .maybe_single()
+                .execute()
+            )
+
+        result = await self._run_sync(_select)
+        if result.data:
+            return MemoryEntry(**result.data)
+        return None
+
     async def delete_by_key(self, project_id: str, key: str) -> None:
         """Delete a specific memory entry."""
 

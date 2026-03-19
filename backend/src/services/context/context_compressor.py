@@ -19,32 +19,34 @@ def compress(data: Any, strategy: str, params: Dict[str, Any] = None) -> Any:
     params = params or {}
 
     if strategy == "top_k":
-        # Check if params has keys specifically mapped to k values (for memory)
         keys_config = params.get("keys", {})
-        k = params.get("k", 3) # default global k
+        k = params.get("k")
         
         if isinstance(data, dict):
             compressed_dict = {}
             for key, value in data.items():
                 if isinstance(value, list):
-                    # Use specific k if provided for this key, else fallback to global k
                     specific_k = keys_config.get(key, k) if isinstance(keys_config, dict) else k
                     
-                    # Ensure specific_k is an integer
-                    if not isinstance(specific_k, int):
+                    if specific_k is not None:
                         try:
                             specific_k = int(specific_k)
+                            compressed_dict[key] = value[:specific_k]
                         except (ValueError, TypeError):
-                            specific_k = 3 # Safe default
-                            
-                    compressed_dict[key] = value[:specific_k]
+                            compressed_dict[key] = value
+                    else:
+                        compressed_dict[key] = value
                 else:
                     compressed_dict[key] = value
             return compressed_dict
             
         elif isinstance(data, list):
-            # If it's a list, fallback to k
-            return data[:k]
+            if k is not None:
+                try:
+                    return data[:int(k)]
+                except (ValueError, TypeError):
+                    return data
+            return data
             
         return data
 
@@ -65,8 +67,14 @@ def compress(data: Any, strategy: str, params: Dict[str, Any] = None) -> Any:
         
     elif strategy == "summarize":
         # Placeholder for LLM-based summarization fallback
-        if isinstance(data, str):
-            return data[:500] + "... [SUMMARIZED]"
+        summary_length = params.get("length")
+        if isinstance(data, str) and summary_length is not None:
+            try:
+                length = int(summary_length)
+                if len(data) > length:
+                    return data[:length] + "... [SUMMARIZED]"
+            except (ValueError, TypeError):
+                pass
         return data
 
     return data

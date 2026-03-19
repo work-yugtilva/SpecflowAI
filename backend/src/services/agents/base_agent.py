@@ -2,8 +2,12 @@
 
 from services.ai.client import run_ai
 import json
+import logging
 import time
 import asyncio
+from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class BaseAgent:
@@ -29,11 +33,28 @@ Previous Analysis (from prior pipeline steps):
         schema = self.config.get("output_schema", {})
         schema_hint = self._build_schema_hint(schema)
 
+        steps = self._format_list(self.config.get("steps", []))
+        rules = self._format_list(self.config.get("generation_rules", []))
+        constraints = self._format_dict(self.config.get("constraints", {}))
+        scoring = self._format_dict(self.config.get("scoring", {}))
+
         return f"""
 You are a {self.role}.
 
 Instructions:
 {self.instructions}
+
+Steps:
+{steps}
+
+Rules:
+{rules}
+
+Constraints:
+{constraints}
+
+Scoring:
+{scoring}
 
 Context:
 {json.dumps(context or {}, indent=2)}
@@ -47,39 +68,63 @@ Output Format (return a JSON value that exactly matches this structure):
 Return ONLY valid JSON matching the format above. No markdown, no explanation.
 """
 
+    def _format_list(self, items):
+        if not items:
+            return "None"
+        return "\n".join([f"- {i}" for i in items])
+
+    def _format_dict(self, d):
+        if not d:
+            return "None"
+        if isinstance(d, dict):
+            return "\n".join([f"- {k}: {v}" for k, v in d.items()])
+        return str(d)
+
     def _build_schema_hint(self, schema: dict) -> str:
         """Generate a concrete JSON example from the output_schema config."""
         if not schema:
             return '{"result": "..."}'
         schema_type = schema.get("type", "object")
-        fields = schema.get("fields", {})
+        
+        # Merge all structure-defining keys
+        combined = {}
+        if "fields" in schema and schema["fields"]:
+            combined.update(schema["fields"])
+        if "sections" in schema and schema["sections"]:
+            combined.update(schema["sections"])
+        if "groups" in schema and schema["groups"]:
+            combined.update(schema["groups"])
 
         if schema_type == "list":
-            example = self._fields_to_example(fields)
+            example = self._fields_to_example(combined)
             return f"[\n  {json.dumps(example, indent=2)}\n]"
         else:
-            example = self._fields_to_example(fields)
+            if not combined:
+                return '{"result": "..."}'
+            example = self._fields_to_example(combined)
             return json.dumps(example, indent=2)
 
-    def _fields_to_example(self, fields) -> dict:
+    def _fields_to_example(self, fields) -> Any:
         """Recursively build an example object from field definitions."""
-        if not fields or not isinstance(fields, dict):
-            return {}
+        if isinstance(fields, list):
+            if not fields:
+                return ["..."]
+            return [self._fields_to_example(fields[0])]
+            
+        if not isinstance(fields, dict):
+            if fields == "string":
+                return "..."
+            if fields == "number":
+                return 0
+            if fields == "list":
+                return ["..."]
+            if fields == "object":
+                return {}
+            return "..."
+
         result = {}
         for key, val in fields.items():
-            if isinstance(val, dict):
-                # Check if this dict has nested fields (nested object)
-                result[key] = self._fields_to_example(val)
-            elif val == "string":
-                result[key] = "..."
-            elif val == "number":
-                result[key] = 0
-            elif val == "list":
-                result[key] = ["..."]
-            elif val == "object":
-                result[key] = {}
-            else:
-                result[key] = "..."
+            result[key] = self._fields_to_example(val)
         return result
 
     # -------------------------
@@ -170,7 +215,17 @@ Return JSON:
     # -------------------------
     # EXECUTE
     # -------------------------
-    def execute(self, task: str, context: dict = None, memory: dict = None):
+    def execute(self, task: str, context: dict = None, memory: dict = None, session: dict = None):
+        # Log session context for observability (not injected into AI prompt)
+        if session:
+            logger.debug(
+                json.dumps({
+                    "event": "agent_execute",
+                    "agent": self.name,
+                    "session_id": session.get("id", ""),
+                })
+            )
+
         # 1. Compress context
         compression_config = self.config.get("compression", {})
         if compression_config:
@@ -221,10 +276,10 @@ Return JSON:
     # -------------------------
     # ASYNC
     # -------------------------
-    async def execute_async(self, task: str, context: dict = None, memory: dict = None):
+    async def execute_async(self, task: str, context: dict = None, memory: dict = None, session: dict = None):
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(
-            None, lambda: self.execute(task, context, memory=memory)
+            None, lambda: self.execute(task, context, memory=memory, session=session)
         )
 
     # -------------------------

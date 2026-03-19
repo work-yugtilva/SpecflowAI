@@ -15,16 +15,21 @@ def get_client() -> Anthropic:
     return _client
 
 
-def run_ai(prompt: str, max_tokens: int = 2048, retries: int = 3) -> str:
+def run_ai(prompt: str, max_tokens: int = None, retries: int = None, model: str = None) -> str:
     """
     Run AI inference with built-in retry logic for rate limits (429).
     """
     client = get_client()
     
+    # Dynamic defaults from env or fallbacks
+    model = model or os.environ.get("AI_MODEL", "claude-haiku-4-5-20251001")
+    max_tokens = max_tokens or int(os.environ.get("AI_MAX_TOKENS", 2048))
+    retries = retries if retries is not None else int(os.environ.get("AI_RETRIES", 3))
+    
     for attempt in range(retries + 1):
         try:
             message = client.messages.create(
-                model="claude-haiku-4-5-20251001",
+                model=model,
                 max_tokens=max_tokens,
                 messages=[{"role": "user", "content": prompt}],
             )

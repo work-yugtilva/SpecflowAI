@@ -29,6 +29,7 @@ class MemoryEntry(BaseModel):
     """Represents a row in the memory_entries table."""
     id: Optional[str] = Field(default_factory=lambda: str(uuid.uuid4()))
     project_id: str
+    session_id: Optional[str] = None    # session scope key; None for project-scoped entries
     agent_name: str
     memory_key: str
     content: Dict[str, Any] = {}
