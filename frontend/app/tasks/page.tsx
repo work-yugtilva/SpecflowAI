@@ -5,10 +5,16 @@ import { Sidebar } from "@/components/ui/sidebar";
 import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
 import { getSession } from "@/lib/api/session";
 import type { SessionDetail } from "@/lib/api/session";
-import { buildPipelineInputFromStorage, getActiveSessionId } from "@/lib/pipeline-input";
+import {
+  buildPipelineInputFromStorage,
+  clearAutorunFlag,
+  isAutorunPending,
+} from "@/lib/pipeline-input";
+import { useActiveSession } from "@/lib/active-session-context";
 import { computeStepStatuses } from "@/lib/pipeline-session";
 import { runPipelineStepOrFull } from "@/lib/run-pipeline-client";
 import type { PipelineInput } from "@/lib/api/pipeline";
+import { TextShimmer } from "@/components/ui/text-shimmer";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -32,247 +38,7 @@ interface Task {
   dependencies: string[];
 }
 
-// ─── Mock Generator ───────────────────────────────────────────────────────────
-
-function generateMockTasks(): Task[] {
-  return [
-    // FRONTEND (5)
-    {
-      id: "t1",
-      title: "Build OnboardingShell screen",
-      type: "Frontend",
-      status: "todo",
-      priority: "High",
-      description:
-        "Implement the full-screen container that manages step transitions and holds all onboarding sub-components. Supports forward/back navigation and a sticky CTA footer.",
-      steps: [
-        { id: "s1", title: "Create OnboardingShell layout component", done: false },
-        { id: "s2", title: "Wire up step-transition animation (opacity + translateY)", done: false },
-        { id: "s3", title: "Implement CTA footer with primary/skip actions", done: false },
-        { id: "s4", title: "Add keyboard navigation (Enter to advance, Escape to skip)", done: false },
-      ],
-      dependencies: [],
-    },
-    {
-      id: "t2",
-      title: "Build DefaultsSelector component",
-      type: "Frontend",
-      status: "todo",
-      priority: "High",
-      description:
-        "Pre-populated feature toggle group showing 2–3 recommended defaults. Users toggle pills and confirm before advancing.",
-      steps: [
-        { id: "s1", title: "Build FeaturePill toggle with active/inactive states", done: false },
-        { id: "s2", title: "Render recommendation label and rationale tooltip", done: false },
-        { id: "s3", title: "Connect to DefaultRecommendation API response", done: false },
-      ],
-      dependencies: ["GET /defaults/recommendations"],
-    },
-    {
-      id: "t3",
-      title: "Build ProgressStepper navigation",
-      type: "Frontend",
-      status: "todo",
-      priority: "Medium",
-      description:
-        "Horizontal step indicator showing current position. Dots cycle through completed / active / pending states. Connector lines fill as steps complete.",
-      steps: [
-        { id: "s1", title: "Render step dots with 3 visual states", done: false },
-        { id: "s2", title: "Animate connector line fill on step advance", done: false },
-        { id: "s3", title: "Accept totalSteps + currentStep as props", done: false },
-      ],
-      dependencies: ["Build OnboardingShell screen"],
-    },
-    {
-      id: "t4",
-      title: "Build SettingsTourOverlay modal",
-      type: "Frontend",
-      status: "todo",
-      priority: "Low",
-      description:
-        "Post-activation spotlight overlay introducing advanced settings. Appears once after first onboarding completion; dismissed by user or auto-dismissed after 10s.",
-      steps: [
-        { id: "s1", title: "Implement spotlight mask with target element cutout", done: false },
-        { id: "s2", title: "Build tooltip card with Next/Dismiss controls", done: false },
-        { id: "s3", title: "Set tourSeen flag on dismiss via PATCH /preferences", done: false },
-      ],
-      dependencies: ["Activate feature set endpoint", "UserPreferences model"],
-    },
-    {
-      id: "t5",
-      title: "Build ConfirmationCard component",
-      type: "Frontend",
-      status: "todo",
-      priority: "Medium",
-      description:
-        "Final onboarding step summary card listing selected features before the user activates. Includes an Edit link to go back.",
-      steps: [
-        { id: "s1", title: "Render selected feature list with check icons", done: false },
-        { id: "s2", title: "Wire Edit link to return to DefaultsSelector step", done: false },
-        { id: "s3", title: "Trigger POST /onboarding/complete on Activate click", done: false },
-      ],
-      dependencies: ["Build DefaultsSelector component", "POST /onboarding/complete"],
-    },
-
-    // BACKEND (4)
-    {
-      id: "t6",
-      title: "Create OnboardingSession model",
-      type: "Backend",
-      status: "todo",
-      priority: "High",
-      description:
-        "Define the OnboardingSession table and ORM model. Includes userId, currentStep, totalSteps, selectedFeatures[], completedAt, and createdAt fields.",
-      steps: [
-        { id: "s1", title: "Write migration: create onboarding_sessions table", done: false },
-        { id: "s2", title: "Define ORM model with field validations", done: false },
-        { id: "s3", title: "Add userId foreign key constraint and index", done: false },
-      ],
-      dependencies: [],
-    },
-    {
-      id: "t7",
-      title: "Create UserPreferences model",
-      type: "Backend",
-      status: "todo",
-      priority: "High",
-      description:
-        "Define UserPreferences table storing per-user feature flag map, tourSeen flag, and onboardingVersion. One row per user.",
-      steps: [
-        { id: "s1", title: "Write migration: create user_preferences table", done: false },
-        { id: "s2", title: "Define ORM model and upsert method", done: false },
-        { id: "s3", title: "Seed default row on user creation via post-signup hook", done: false },
-      ],
-      dependencies: [],
-    },
-    {
-      id: "t8",
-      title: "Seed DefaultRecommendation table",
-      type: "Backend",
-      status: "todo",
-      priority: "Medium",
-      description:
-        "Write a seed script that populates the DefaultRecommendation table with the initial 3 recommended features, their labels, rationales, and ordering.",
-      steps: [
-        { id: "s1", title: "Create DefaultRecommendation migration", done: false },
-        { id: "s2", title: "Write seed file with 3 default recommendations", done: false },
-        { id: "s3", title: "Verify ordering by `order` field in query", done: false },
-      ],
-      dependencies: [],
-    },
-    {
-      id: "t9",
-      title: "Implement activate feature set logic",
-      type: "Backend",
-      status: "todo",
-      priority: "High",
-      description:
-        "Business logic layer: on activation, write selected features to UserPreferences, mark OnboardingSession.completedAt, and fire onboarding_complete analytics event.",
-      steps: [
-        { id: "s1", title: "Write activateFeatureSet(userId, features) service function", done: false },
-        { id: "s2", title: "Wrap in transaction: update prefs + session atomically", done: false },
-        { id: "s3", title: "Emit onboarding_complete event to analytics queue", done: false },
-      ],
-      dependencies: ["OnboardingSession model", "UserPreferences model"],
-    },
-
-    // API (3)
-    {
-      id: "t10",
-      title: "GET /onboarding/session",
-      type: "API",
-      status: "todo",
-      priority: "High",
-      description:
-        "Returns or creates an OnboardingSession for the authenticated user. If no session exists, creates one with currentStep=1. Returns session state for the frontend to render the correct step.",
-      steps: [
-        { id: "s1", title: "Add route handler with auth middleware", done: false },
-        { id: "s2", title: "Implement find-or-create session logic", done: false },
-        { id: "s3", title: "Return { id, currentStep, totalSteps, selectedFeatures }", done: false },
-      ],
-      dependencies: ["OnboardingSession model"],
-    },
-    {
-      id: "t11",
-      title: "GET /defaults/recommendations",
-      type: "API",
-      status: "todo",
-      priority: "High",
-      description:
-        "Returns the top 3 enabled DefaultRecommendation rows ordered by `order`. Used by DefaultsSelector to pre-populate feature toggles.",
-      steps: [
-        { id: "s1", title: "Add route handler", done: false },
-        { id: "s2", title: "Query enabled=true ORDER BY order LIMIT 3", done: false },
-        { id: "s3", title: "Return array of { id, featureKey, label, rationale }", done: false },
-      ],
-      dependencies: ["Seed DefaultRecommendation table"],
-    },
-    {
-      id: "t12",
-      title: "POST /onboarding/complete",
-      type: "API",
-      status: "todo",
-      priority: "High",
-      description:
-        "Accepts { selectedFeatures: string[] } in request body. Calls activateFeatureSet service and returns { success: true, activatedFeatures }.",
-      steps: [
-        { id: "s1", title: "Add route with body validation (selectedFeatures required)", done: false },
-        { id: "s2", title: "Call activateFeatureSet service", done: false },
-        { id: "s3", title: "Return 200 with activated feature list", done: false },
-      ],
-      dependencies: ["Activate feature set logic"],
-    },
-
-    // INFRASTRUCTURE (3)
-    {
-      id: "t13",
-      title: "Set up analytics event pipeline",
-      type: "Infrastructure",
-      status: "todo",
-      priority: "Medium",
-      description:
-        "Configure the analytics event queue to handle the onboarding_complete event. Ensure the event schema includes userId, selectedFeatures[], and timestamp.",
-      steps: [
-        { id: "s1", title: "Define onboarding_complete event schema", done: false },
-        { id: "s2", title: "Add queue consumer for the event type", done: false },
-        { id: "s3", title: "Verify event appears in analytics dashboard", done: false },
-      ],
-      dependencies: [],
-    },
-    {
-      id: "t14",
-      title: "Configure feature flag service",
-      type: "Infrastructure",
-      status: "todo",
-      priority: "High",
-      description:
-        "Ensure the feature flag service reads from UserPreferences.features at runtime. Add a helper that returns whether a given featureKey is enabled for a userId.",
-      steps: [
-        { id: "s1", title: "Create isFeatureEnabled(userId, featureKey) helper", done: false },
-        { id: "s2", title: "Cache flag lookups with 60s TTL", done: false },
-        { id: "s3", title: "Add cache invalidation on UserPreferences update", done: false },
-      ],
-      dependencies: ["UserPreferences model"],
-    },
-    {
-      id: "t15",
-      title: "Add viewport regression tests to CI",
-      type: "Infrastructure",
-      status: "todo",
-      priority: "Low",
-      description:
-        "Add automated screenshot tests at 320px, 375px, and 414px viewports for all onboarding screens. Run on every PR. Fail build on visual diff > 2%.",
-      steps: [
-        { id: "s1", title: "Install playwright or percy in CI pipeline", done: false },
-        { id: "s2", title: "Write viewport test suite for 3 breakpoints", done: false },
-        { id: "s3", title: "Set visual diff threshold to 2% and wire to PR checks", done: false },
-      ],
-      dependencies: ["Build OnboardingShell screen", "Build DefaultsSelector component"],
-    },
-  ];
-}
-
-// ─── Pipeline Adapter ─────────────────────────────────────────────────────────
+// ─── Pipeline Adapter (session / API output only — no mock data) ──────────────
 
 const TYPE_MAP: Record<string, TaskType> = {
   frontend: "Frontend", ui: "Frontend", component: "Frontend",
@@ -291,30 +57,126 @@ function toTaskType(val: unknown): TaskType {
 }
 
 function toPriority(val: unknown): Task["priority"] {
-  if (!val) return "Medium";
+  if (val == null || val === "") return "Medium";
+  if (typeof val === "number") {
+    if (val >= 7) return "High";
+    if (val <= 3) return "Low";
+    return "Medium";
+  }
   const v = String(val).toLowerCase();
   if (v === "high" || v === "critical") return "High";
   if (v === "low") return "Low";
   return "Medium";
 }
 
+/**
+ * Pull task rows from `outputs.tasks` whether it is a flat list, `{ tasks: [] }`,
+ * grouped maps (`{ Group: { tasks: [] } }`), or parallel pipeline output
+ * (`[{ Group: { tasks: [] } }, ...]`).
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractFromGroupMap(map: Record<string, unknown>): any[] {
+  const out: any[] = [];
+  for (const v of Object.values(map)) {
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      const vo = v as Record<string, unknown>;
+      if (Array.isArray(vo.tasks)) {
+        out.push(...vo.tasks);
+        continue;
+      }
+    }
+    if (Array.isArray(v)) {
+      out.push(...v);
+    }
+  }
+  return out;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function extractTaskRowsFromPipelineTasks(tasksField: unknown): any[] {
+  if (tasksField == null) return [];
+
+  if (typeof tasksField === "object" && !Array.isArray(tasksField)) {
+    const o = tasksField as Record<string, unknown>;
+    if (Array.isArray(o.tasks)) return o.tasks as any[];
+    if (Array.isArray(o.items)) return o.items as any[];
+    if (o.groups && typeof o.groups === "object" && !Array.isArray(o.groups)) {
+      return extractFromGroupMap(o.groups as Record<string, unknown>);
+    }
+    const fromMap = extractFromGroupMap(o);
+    if (fromMap.length > 0) return fromMap;
+    if (
+      (typeof o.title === "string" && o.title.trim() !== "") ||
+      (typeof o.name === "string" && o.name.trim() !== "") ||
+      (typeof o.description === "string" && o.description.trim() !== "")
+    ) {
+      return [o];
+    }
+    return [];
+  }
+
+  if (!Array.isArray(tasksField)) return [];
+
+  const out: any[] = [];
+  for (const el of tasksField) {
+    if (el == null || typeof el !== "object") continue;
+    const row = el as Record<string, unknown>;
+
+    const titled =
+      (typeof row.title === "string" && row.title.trim() !== "") ||
+      (typeof row.name === "string" && row.name.trim() !== "");
+    const summaryOnly =
+      (typeof row.description === "string" && row.description.trim() !== "") ||
+      (typeof row.summary === "string" && row.summary.trim() !== "");
+
+    if (titled || (summaryOnly && Array.isArray(row.subtasks || row.steps))) {
+      out.push(row);
+      continue;
+    }
+
+    if (row.groups && typeof row.groups === "object" && !Array.isArray(row.groups)) {
+      out.push(...extractFromGroupMap(row.groups as Record<string, unknown>));
+      continue;
+    }
+
+    const fromValues = extractFromGroupMap(row);
+    if (fromValues.length > 0) {
+      out.push(...fromValues);
+      continue;
+    }
+
+    if (Array.isArray(row.tasks)) {
+      out.push(...row.tasks);
+    }
+  }
+  return out;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function adaptTasks(data: Record<string, unknown>): Task[] {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let raw: any[] = [];
-  const t = data.tasks;
-  if (Array.isArray(t)) raw = t;
-  else if (t && typeof t === "object" && !Array.isArray(t)) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const nested = (t as any).tasks ?? (t as any).items ?? [];
-    if (Array.isArray(nested)) raw = nested;
-  }
+  const raw = extractTaskRowsFromPipelineTasks(data.tasks);
   if (raw.length === 0) return [];
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return raw.map((item: any, idx: number) => {
+    const attrs =
+      item.attributes && typeof item.attributes === "object"
+        ? (item.attributes as Record<string, unknown>)
+        : undefined;
+    const stepSourceRaw =
+      Array.isArray(item.subtasks)
+        ? item.subtasks
+        : Array.isArray(item.steps)
+          ? item.steps
+          : attrs && Array.isArray(attrs.subtasks)
+            ? attrs.subtasks
+            : attrs && Array.isArray(attrs.steps)
+              ? attrs.steps
+              : Array.isArray(item.action_items)
+                ? item.action_items
+                : [];
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const subtasks: TaskStep[] = (Array.isArray(item.subtasks) ? item.subtasks : Array.isArray(item.steps) ? item.steps : []).map((s: any, si: number) => ({
+    const subtasks: TaskStep[] = stepSourceRaw.map((s: any, si: number) => ({
       id: s.id ?? `${idx}-s${si}`,
       title: s.title ?? s.name ?? s.description ?? `Step ${si + 1}`,
       done: s.done ?? s.completed ?? false,
@@ -322,12 +184,26 @@ function adaptTasks(data: Record<string, unknown>): Task[] {
     return {
       id: item.id ?? `t${idx}`,
       title: item.title ?? item.name ?? `Task ${idx + 1}`,
-      description: item.description ?? item.summary ?? "",
-      type: toTaskType(item.type ?? item.layer ?? item.category),
-      status: (["todo", "in-progress", "done"].includes(item.status) ? item.status : "todo") as TaskStatus,
-      priority: toPriority(item.priority),
+      description:
+        item.description ??
+        item.summary ??
+        (typeof attrs?.description === "string" ? attrs.description : "") ??
+        "",
+      type: toTaskType(
+        item.type ?? item.layer ?? item.category ?? attrs?.layer ?? attrs?.category
+      ),
+      status: (["todo", "in-progress", "done"].includes(item.status)
+        ? item.status
+        : "todo") as TaskStatus,
+      priority: toPriority(
+        item.priority ?? attrs?.priority ?? attrs?.complexity
+      ),
       steps: subtasks,
-      dependencies: Array.isArray(item.dependencies) ? item.dependencies.map(String) : [],
+      dependencies: Array.isArray(item.dependencies)
+        ? item.dependencies.map(String)
+        : Array.isArray(attrs?.dependencies)
+          ? (attrs.dependencies as unknown[]).map(String)
+          : [],
     };
   });
 }
@@ -402,6 +278,7 @@ function TypeBadge({ type }: { type: TaskType }) {
 // ─── Tasks Page ───────────────────────────────────────────────────────────────
 
 export default function TasksPage() {
+  const { activeSessionId } = useActiveSession();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -421,20 +298,42 @@ export default function TasksPage() {
   const selectedTask = tasks.find((t) => t.id === selectedId) ?? null;
   const effectiveStatus = (t: Task): TaskStatus => statusMap[t.id] ?? t.status;
 
-  const activeSessionId = getActiveSessionId();
   const stepStatuses = computeStepStatuses(sessionDetail);
   const runModeSession = !!activeSessionId;
 
   useEffect(() => {
-    const id = getActiveSessionId();
-    if (!id) {
-      setSessionDetail(null);
-      return;
-    }
-    getSession(id)
-      .then(setSessionDetail)
-      .catch(() => setSessionDetail(null));
-  }, []);
+    setTasks([]);
+    setSelectedId(null);
+    setStatusMap({});
+    setStepsMap({});
+    setFromSession(false);
+    setSessionDetail(null);
+    if (!activeSessionId) return;
+    let cancelled = false;
+    getSession(activeSessionId)
+      .then((d) => {
+        if (cancelled) return;
+        setSessionDetail(d);
+        const out = d.state?.state?.outputs as
+          | Record<string, unknown>
+          | undefined;
+        if (out && out.tasks != null) {
+          setFromSession(true);
+          const adapted = adaptTasks({
+            ...out,
+            tasks: out.tasks,
+          } as Record<string, unknown>);
+          setTasks(adapted);
+          if (adapted.length > 0) setSelectedId(adapted[0].id);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setSessionDetail(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSessionId]);
 
   const tasksByGroup = GROUPS.map((type) => ({
     type,
@@ -471,18 +370,23 @@ export default function TasksPage() {
     setStatusMap({});
     setStepsMap({});
     setFromSession(false);
-    const isAutorun = localStorage.getItem("specflow_autorun") === "1";
+    const isAutorun = isAutorunPending(activeSessionId ?? undefined);
     try {
-      const inputData: PipelineInput = buildPipelineInputFromStorage();
-      const { data, mode } = await runPipelineStepOrFull("tasks", inputData);
+      const inputData: PipelineInput = buildPipelineInputFromStorage(
+        activeSessionId ?? undefined
+      );
+      const { data, mode } = await runPipelineStepOrFull(
+        "tasks",
+        inputData,
+        activeSessionId
+      );
       setFromSession(mode === "session");
       const adapted = adaptTasks(data);
       setTasks(adapted);
       if (adapted.length > 0) setSelectedId(adapted[0].id);
-      const sid = getActiveSessionId();
-      if (sid) {
+      if (activeSessionId) {
         try {
-          setSessionDetail(await getSession(sid));
+          setSessionDetail(await getSession(activeSessionId));
         } catch {
           /* ignore */
         }
@@ -490,18 +394,16 @@ export default function TasksPage() {
     } catch {
       /* ignore */
     } finally {
-      if (isAutorun) localStorage.removeItem("specflow_autorun");
+      if (isAutorun) clearAutorunFlag(activeSessionId ?? undefined);
       setGenerating(false);
     }
   }
 
-  // Auto-run on mount when redirected from sessions "Run All Steps"
   useEffect(() => {
-    if (localStorage.getItem("specflow_autorun") === "1") {
-      handleGenerate();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!activeSessionId || !isAutorunPending(activeSessionId)) return;
+    handleGenerate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSessionId]);
 
   return (
     <div
@@ -634,18 +536,7 @@ export default function TasksPage() {
             >
               {generating ? (
                 <>
-                  <span
-                    style={{
-                      width: 12,
-                      height: 12,
-                      borderRadius: "50%",
-                      border: "1.5px solid #E4DDD4",
-                      borderTopColor: "#E8561B",
-                      display: "inline-block",
-                      animation: "spin 0.7s linear infinite",
-                    }}
-                  />
-                  Running…
+                  <TextShimmer duration={1.2}>Running…</TextShimmer>
                 </>
               ) : runModeSession ? (
                 "Run Tasks (this step)"
@@ -768,20 +659,11 @@ export default function TasksPage() {
               gap: 10,
             }}
           >
-            <span
-              style={{
-                width: 20,
-                height: 20,
-                borderRadius: "50%",
-                border: "2px solid #E4DDD4",
-                borderTopColor: "#E8561B",
-                display: "inline-block",
-                animation: "spin 0.7s linear infinite",
-              }}
-            />
-            <span style={{ fontSize: 13, color: "#9E9E9E" }}>
-              Generating tasks…
-            </span>
+            <div
+              style={{ fontSize: 13, color: "#9E9E9E" }}
+            >
+              <TextShimmer duration={1.2}>Generating tasks…</TextShimmer>
+            </div>
           </div>
         ) : (
           // Two-column layout

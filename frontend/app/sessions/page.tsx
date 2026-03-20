@@ -9,6 +9,7 @@ import {
   getSession,
 } from "@/lib/api/session";
 import type { SessionDetail, SessionEvent } from "@/lib/api/session";
+import { TextShimmer } from "@/components/ui/text-shimmer";
 import {
   PIPELINE_STEPS,
   computeStepStatuses,
@@ -16,12 +17,20 @@ import {
   type StepStatus,
 } from "@/lib/pipeline-session";
 import {
+  getContextObject,
   getResearchPayload,
   hasContextSaved,
-  setActiveSessionId,
+  setAutorunFlag,
 } from "@/lib/pipeline-input";
+import { useActiveSession } from "@/lib/active-session-context";
+import {
+  migrateGlobalToScopedOnce,
+  readScopedRaw,
+  writeScopedRaw,
+} from "@/lib/session-scoped-storage";
 
 const LS_KEY = "specflow_sessions";
+const INGEST_GLOBAL_KEY = "ingest_entries";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -283,6 +292,7 @@ function EventLogRow({ event }: { event: SessionEvent }) {
 
 export default function SessionsPage() {
   const router = useRouter();
+  const { selectSession } = useActiveSession();
   const [sessions, setSessions] = useState<StoredSession[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
@@ -345,11 +355,11 @@ export default function SessionsPage() {
   const handleSelectSession = useCallback(
     (id: string) => {
       setSelectedId(id);
-      setActiveSessionId(id);
+      selectSession(id);
       setRunError(null);
       loadDetail(id);
     },
-    [loadDetail]
+    [loadDetail, selectSession]
   );
 
   // Create session
@@ -375,46 +385,61 @@ export default function SessionsPage() {
       setNewUserId("");
       setIsCreating(false);
       setSelectedId(result.session_id);
-      setActiveSessionId(result.session_id);
+      selectSession(result.session_id);
       loadDetail(result.session_id);
     } catch (e) {
       setCreateError(String(e));
     } finally {
       setIsCreatingSession(false);
     }
-  }, [newProjectId, newUserId, sessions, persistSessions, loadDetail]);
+  }, [newProjectId, newUserId, sessions, persistSessions, loadDetail, selectSession]);
 
-  // Build inputData from the ingest form
-  const buildInputData = useCallback((): Record<string, unknown> => {
-    const entry =
-      activeTab === "interview"
-        ? {
-            id: crypto.randomUUID(),
-            type: "interview",
-            content: interviewContent,
-            metadata: interviewMeta,
-            createdAt: new Date().toISOString(),
-          }
-        : {
-            id: crypto.randomUUID(),
-            type: "product_data",
-            content: productContent,
-            metadata: { metrics: productMeta },
-            createdAt: new Date().toISOString(),
-          };
+  // Build inputData from the ingest form (scoped to sessionId)
+  const buildInputData = useCallback(
+    (sessionId: string): Record<string, unknown> => {
+      const entry =
+        activeTab === "interview"
+          ? {
+              id: crypto.randomUUID(),
+              type: "interview",
+              content: interviewContent,
+              metadata: interviewMeta,
+              createdAt: new Date().toISOString(),
+            }
+          : {
+              id: crypto.randomUUID(),
+              type: "product_data",
+              content: productContent,
+              metadata: { metrics: productMeta },
+              createdAt: new Date().toISOString(),
+            };
 
-    // Persist to ingest_entries (max 10)
-    try {
-      const existing = JSON.parse(localStorage.getItem("ingest_entries") || "[]");
-      localStorage.setItem("ingest_entries", JSON.stringify([entry, ...existing].slice(0, 10)));
-    } catch { /* ignore */ }
+      try {
+        migrateGlobalToScopedOnce(
+          sessionId,
+          "ingest_entries",
+          INGEST_GLOBAL_KEY
+        );
+        const existingRaw = readScopedRaw(sessionId, "ingest_entries");
+        const existing = JSON.parse(existingRaw || "[]") as unknown[];
+        const list = Array.isArray(existing) ? existing : [];
+        writeScopedRaw(
+          sessionId,
+          "ingest_entries",
+          JSON.stringify([entry, ...list].slice(0, 10))
+        );
+      } catch {
+        /* ignore */
+      }
 
-    return {
-      context: (() => { try { return JSON.parse(localStorage.getItem("specflow_context") || "{}"); } catch { return {}; } })(),
-      research: getResearchPayload(),
-      ingest: [entry],
-    };
-  }, [activeTab, interviewContent, interviewMeta, productContent, productMeta]);
+      return {
+        context: getContextObject(sessionId),
+        research: getResearchPayload(sessionId),
+        ingest: [entry],
+      };
+    },
+    [activeTab, interviewContent, interviewMeta, productContent, productMeta]
+  );
 
   // Run pipeline
   const handleRun = useCallback(
@@ -422,15 +447,21 @@ export default function SessionsPage() {
       if (!selectedId) return;
       setRunError(null);
 
-      const inputData = buildInputData();
+      const inputData = buildInputData(selectedId);
 
       // Full run: save input for pipeline pages and navigate immediately
       if (!step) {
         try {
-          setActiveSessionId(selectedId);
-          localStorage.setItem("specflow_pending_input", JSON.stringify(inputData));
-          localStorage.setItem("specflow_autorun", "1");
-        } catch { /* ignore */ }
+          selectSession(selectedId);
+          writeScopedRaw(
+            selectedId,
+            "pending_input",
+            JSON.stringify(inputData)
+          );
+          setAutorunFlag(selectedId);
+        } catch {
+          /* ignore */
+        }
         router.push("/problems");
         return;
       }
@@ -447,7 +478,7 @@ export default function SessionsPage() {
         setIsRunning(false);
       }
     },
-    [selectedId, buildInputData, loadDetail, router]
+    [selectedId, buildInputData, loadDetail, router, selectSession]
   );
 
   const stepStatuses = computeStepStatuses(detail);
@@ -456,8 +487,8 @@ export default function SessionsPage() {
   const isSessionFailed = detail?.session.status === "failed";
   const outputSummary = getOutputSummary(detail);
   const selectedStored = sessions.find((s) => s.session_id === selectedId);
-  const researchCount = getResearchPayload().length;
-  const contextSaved = hasContextSaved();
+  const researchCount = getResearchPayload(selectedId ?? undefined).length;
+  const contextSaved = hasContextSaved(selectedId ?? undefined);
 
   return (
     <>
@@ -952,13 +983,13 @@ export default function SessionsPage() {
                           onMouseLeave={(e) => { if (!isRunning) { (e.currentTarget as HTMLElement).style.background = "#0D0D0D"; (e.currentTarget as HTMLElement).style.transform = ""; } }}
                         >
                           {isRunning ? (
-                            <span style={{ width: 13, height: 13, border: "1.5px solid #C8C0B8", borderTop: "1.5px solid #E8561B", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
+                            <TextShimmer duration={1.2}>Running…</TextShimmer>
                           ) : (
                             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
                               <polygon points="5 3 19 12 5 21 5 3" />
                             </svg>
                           )}
-                          {isRunning ? "Running…" : "Run full pipeline (Problems → Features → Decompose → Tasks)"}
+                          {isRunning ? null : "Run full pipeline (Problems → Features → Decompose → Tasks)"}
                         </button>
 
                         {/* Run Next Step */}

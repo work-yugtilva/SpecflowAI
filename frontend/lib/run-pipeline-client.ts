@@ -5,12 +5,15 @@ import type { PipelineStepId } from "@/lib/pipeline-session";
 
 export async function runPipelineStepOrFull(
   step: PipelineStepId,
-  inputData: PipelineInput
+  inputData: PipelineInput,
+  /** When set, overrides localStorage active session; pass `null` to force non-session run. */
+  explicitSessionId?: string | null
 ): Promise<{
   data: Record<string, unknown>;
   mode: "session" | "full";
 }> {
-  const sessionId = getActiveSessionId();
+  const sessionId =
+    explicitSessionId !== undefined ? explicitSessionId : getActiveSessionId();
   if (sessionId) {
     const res = await runSession(
       sessionId,

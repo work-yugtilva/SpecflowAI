@@ -1,7 +1,7 @@
-import asyncio
 from datetime import datetime, timezone
 from typing import List, Optional
 
+from services.db.supabase_async import first_row_from_result, rows_from_result, run_sync
 from services.db.supabase_client import get_supabase_client
 from services.db.models.session import Session, SessionEvent, SessionState
 
@@ -14,16 +14,11 @@ class SessionRepository:
     """
     Persistence layer for session, session_state, and session_events tables.
     Follows the same pattern as MemoryRepository: sync Supabase calls
-    wrapped in run_in_executor.
+    wrapped in run_sync (thread pool).
     """
 
     def __init__(self):
         self.client = get_supabase_client()
-
-    def _run_sync(self, fn):
-        """Wrap synchronous supabase-py calls for async interface."""
-        loop = asyncio.get_event_loop()
-        return loop.run_in_executor(None, fn)
 
     # -------------------------------------------------------------------------
     # sessions table
@@ -42,9 +37,10 @@ class SessionRepository:
         def _insert():
             return self.client.table(SESSIONS_TABLE).insert(data).execute()
 
-        result = await self._run_sync(_insert)
-        if result.data:
-            return Session(**result.data[0])
+        result = await run_sync(_insert)
+        rows = rows_from_result(result)
+        if rows:
+            return Session(**rows[0])
         return session
 
     async def get_session(self, session_id: str) -> Optional[Session]:
@@ -59,10 +55,11 @@ class SessionRepository:
                 .execute()
             )
 
-        result = await self._run_sync(_select)
-        if result.data:
-            return Session(**result.data)
-        return None
+        result = await run_sync(_select)
+        row = first_row_from_result(result)
+        if row is None:
+            return None
+        return Session(**row)
 
     async def update_session_status(self, session_id: str, status: str) -> None:
         """UPDATE sessions SET status = ?, updated_at = NOW() WHERE id = ?."""
@@ -76,7 +73,7 @@ class SessionRepository:
                 .execute()
             )
 
-        await self._run_sync(_update)
+        await run_sync(_update)
 
     # -------------------------------------------------------------------------
     # session_state table (one row per session, upserted)
@@ -94,10 +91,11 @@ class SessionRepository:
                 .execute()
             )
 
-        result = await self._run_sync(_select)
-        if result.data:
-            return SessionState(**result.data)
-        return None
+        result = await run_sync(_select)
+        row = first_row_from_result(result)
+        if row is None:
+            return None
+        return SessionState(**row)
 
     async def upsert_state(self, session_state: SessionState) -> SessionState:
         """
@@ -119,9 +117,10 @@ class SessionRepository:
                 .execute()
             )
 
-        result = await self._run_sync(_upsert)
-        if result.data:
-            return SessionState(**result.data[0])
+        result = await run_sync(_upsert)
+        rows = rows_from_result(result)
+        if rows:
+            return SessionState(**rows[0])
         return session_state
 
     # -------------------------------------------------------------------------
@@ -138,9 +137,10 @@ class SessionRepository:
         def _insert():
             return self.client.table(SESSION_EVENTS_TABLE).insert(data).execute()
 
-        result = await self._run_sync(_insert)
-        if result.data:
-            return SessionEvent(**result.data[0])
+        result = await run_sync(_insert)
+        rows = rows_from_result(result)
+        if rows:
+            return SessionEvent(**rows[0])
         return event
 
     async def get_events(self, session_id: str) -> List[SessionEvent]:
@@ -155,5 +155,5 @@ class SessionRepository:
                 .execute()
             )
 
-        result = await self._run_sync(_select)
-        return [SessionEvent(**row) for row in (result.data or [])]
+        result = await run_sync(_select)
+        return [SessionEvent(**row) for row in rows_from_result(result)]

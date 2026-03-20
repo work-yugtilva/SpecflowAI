@@ -1,8 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Sidebar } from "@/components/ui/sidebar";
+import { useActiveSession } from "@/lib/active-session-context";
+import {
+  getContextObject,
+  LS_CONTEXT,
+} from "@/lib/pipeline-input";
+import { scopedStorageKey } from "@/lib/session-scoped-storage";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -145,18 +151,26 @@ function SummaryText({
 
 // ─── Context Page ─────────────────────────────────────────────────────────────
 
+function mergeContextFromStorage(raw: Record<string, unknown>): ContextForm {
+  return {
+    companyName: String(raw.companyName ?? ""),
+    companyType: String(raw.companyType ?? ""),
+    productName: String(raw.productName ?? ""),
+    productDescription: String(raw.productDescription ?? ""),
+    targetUsers: String(raw.targetUsers ?? ""),
+    goals: String(raw.goals ?? ""),
+    constraints: String(raw.constraints ?? ""),
+  };
+}
+
 export default function ContextPage() {
-  const [form, setForm] = useState<ContextForm>(() => {
-    if (typeof window !== "undefined") {
-      const raw = localStorage.getItem("specflow_context");
-      if (raw) {
-        try {
-          return JSON.parse(raw);
-        } catch {}
-      }
-    }
-    return INITIAL_FORM;
-  });
+  const { activeSessionId } = useActiveSession();
+  const [form, setForm] = useState<ContextForm>(INITIAL_FORM);
+
+  useEffect(() => {
+    const raw = getContextObject(activeSessionId ?? undefined);
+    setForm(mergeContextFromStorage(raw));
+  }, [activeSessionId]);
 
   const [saved, setSaved] = useState(false);
   const [saveTimer, setSaveTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
@@ -167,7 +181,18 @@ export default function ContextPage() {
   }
 
   function handleSave() {
-    localStorage.setItem("specflow_context", JSON.stringify(form));
+    try {
+      if (activeSessionId) {
+        localStorage.setItem(
+          scopedStorageKey(activeSessionId, "context"),
+          JSON.stringify(form)
+        );
+      } else {
+        localStorage.setItem(LS_CONTEXT, JSON.stringify(form));
+      }
+    } catch {
+      /* ignore */
+    }
     setSaved(true);
     if (saveTimer) clearTimeout(saveTimer);
     const t = setTimeout(() => setSaved(false), 2500);

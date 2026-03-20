@@ -6,7 +6,12 @@ import { Sidebar } from "@/components/ui/sidebar";
 import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
 import { getSession } from "@/lib/api/session";
 import type { SessionDetail } from "@/lib/api/session";
-import { buildPipelineInputFromStorage, getActiveSessionId } from "@/lib/pipeline-input";
+import {
+  buildPipelineInputFromStorage,
+  clearAutorunFlag,
+  isAutorunPending,
+} from "@/lib/pipeline-input";
+import { useActiveSession } from "@/lib/active-session-context";
 import { computeStepStatuses } from "@/lib/pipeline-session";
 import { runPipelineStepOrFull } from "@/lib/run-pipeline-client";
 import type { PipelineInput } from "@/lib/api/pipeline";
@@ -226,6 +231,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 export default function DecomposePage() {
   const router = useRouter();
+  const { activeSessionId } = useActiveSession();
   const [decomposition, setDecomposition] = useState<Decomposition | null>(
     null
   );
@@ -234,35 +240,60 @@ export default function DecomposePage() {
   const [fromSession, setFromSession] = useState(false);
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
 
-  const activeSessionId = getActiveSessionId();
   const stepStatuses = computeStepStatuses(sessionDetail);
   const runModeSession = !!activeSessionId;
 
   useEffect(() => {
-    const id = getActiveSessionId();
-    if (!id) {
-      setSessionDetail(null);
-      return;
-    }
-    getSession(id)
-      .then(setSessionDetail)
-      .catch(() => setSessionDetail(null));
-  }, []);
+    setDecomposition(null);
+    setError(null);
+    setFromSession(false);
+    setSessionDetail(null);
+    if (!activeSessionId) return;
+    let cancelled = false;
+    getSession(activeSessionId)
+      .then((d) => {
+        if (cancelled) return;
+        setSessionDetail(d);
+        const out = d.state?.state?.outputs as
+          | Record<string, unknown>
+          | undefined;
+        if (out && out.decompositions != null) {
+          setFromSession(true);
+          setDecomposition(
+            adaptPipelineResult({
+              ...out,
+              decompositions: out.decompositions,
+            } as Record<string, unknown>)
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setSessionDetail(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSessionId]);
 
   async function handleGenerate() {
     setGenerating(true);
     setError(null);
     setFromSession(false);
-    const isAutorun = localStorage.getItem("specflow_autorun") === "1";
+    const isAutorun = isAutorunPending(activeSessionId ?? undefined);
     try {
-      const inputData: PipelineInput = buildPipelineInputFromStorage();
-      const { data, mode } = await runPipelineStepOrFull("decompose", inputData);
+      const inputData: PipelineInput = buildPipelineInputFromStorage(
+        activeSessionId ?? undefined
+      );
+      const { data, mode } = await runPipelineStepOrFull(
+        "decompose",
+        inputData,
+        activeSessionId
+      );
       setFromSession(mode === "session");
       setDecomposition(adaptPipelineResult(data));
-      const sid = getActiveSessionId();
-      if (sid) {
+      if (activeSessionId) {
         try {
-          setSessionDetail(await getSession(sid));
+          setSessionDetail(await getSession(activeSessionId));
         } catch {
           /* ignore */
         }
@@ -270,18 +301,16 @@ export default function DecomposePage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
-      if (isAutorun) localStorage.removeItem("specflow_autorun");
+      if (isAutorun) clearAutorunFlag(activeSessionId ?? undefined);
       setGenerating(false);
     }
   }
 
-  // Auto-run on mount when redirected from sessions "Run All Steps"
   useEffect(() => {
-    if (localStorage.getItem("specflow_autorun") === "1") {
-      handleGenerate();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!activeSessionId || !isAutorunPending(activeSessionId)) return;
+    handleGenerate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSessionId]);
 
   const dm = decomposition;
 

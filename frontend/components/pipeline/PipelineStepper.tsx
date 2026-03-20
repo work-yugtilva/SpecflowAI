@@ -64,9 +64,9 @@ export function PipelineStepper({
             letterSpacing: "0.03em",
             marginRight: 8,
           }}
-          title="Runs use this session (step-by-step). Clear session in Sessions to run the full pipeline instead."
+          title="Pipeline runs and saved outputs are scoped to this session. Switch sessions from the Sessions page."
         >
-          Session {sessionIdShort}
+          Active session · {sessionIdShort}
         </span>
       )}
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
@@ -105,8 +105,9 @@ export function PipelineStepper({
       </div>
       {!sessionIdShort && (
         <span style={{ fontSize: 11, color: "#9B9189", marginLeft: "auto" }}>
-          No active session — generate runs the{" "}
-          <strong style={{ color: "#6B6B6B" }}>full pipeline</strong> (all steps)
+          No active session — open{" "}
+          <strong style={{ color: "#6B6B6B" }}>Sessions</strong> to select one, or
+          generate runs the <strong style={{ color: "#6B6B6B" }}>full pipeline</strong>
         </span>
       )}
     </div>

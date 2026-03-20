@@ -1,11 +1,10 @@
+import 'dotenv/config';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
+
 import { errorHandler, notFoundHandler } from '@/middleware/errorHandler.js';
 import contextRoutes from '@/routes/context.js';
 import researchRoutes from '@/routes/research.js';
-
-dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3001;

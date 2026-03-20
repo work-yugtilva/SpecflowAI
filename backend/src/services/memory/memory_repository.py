@@ -1,7 +1,7 @@
 # services/memory/memory_repository.py
 
-import asyncio
 from typing import Any, List, Optional
+from services.db.supabase_async import first_row_from_result, rows_from_result, run_sync
 from services.db.supabase_client import get_supabase_client
 from services.memory.memory_schemas import MemoryEntry
 
@@ -18,14 +18,9 @@ class MemoryRepository:
     def __init__(self):
         self.client = get_supabase_client()
 
-    def _run_sync(self, fn):
-        """Wrap synchronous supabase-py calls for async interface."""
-        loop = asyncio.get_event_loop()
-        return loop.run_in_executor(None, fn)
-
     async def save(self, entry: MemoryEntry) -> MemoryEntry:
         """
-        Upsert a memory entry. Uses (project_id, memory_key) as
+        Upsert a memory entry using (project_id, memory_key) as
         the conflict target — no duplicate rows per project+key.
         """
         data = entry.model_dump(
@@ -38,10 +33,11 @@ class MemoryRepository:
                 data, on_conflict="project_id,memory_key"
             ).execute()
 
-        result = await self._run_sync(_upsert)
+        result = await run_sync(_upsert)
 
-        if result.data:
-            return MemoryEntry(**result.data[0])
+        rows = rows_from_result(result)
+        if rows:
+            return MemoryEntry(**rows[0])
         return entry
 
     async def get_by_project(self, project_id: str) -> List[MemoryEntry]:
@@ -56,8 +52,8 @@ class MemoryRepository:
                 .execute()
             )
 
-        result = await self._run_sync(_select)
-        return [MemoryEntry(**row) for row in (result.data or [])]
+        result = await run_sync(_select)
+        return [MemoryEntry(**row) for row in rows_from_result(result)]
 
     async def get_by_key(
         self, project_id: str, key: str
@@ -74,11 +70,12 @@ class MemoryRepository:
                 .execute()
             )
 
-        result = await self._run_sync(_select)
+        result = await run_sync(_select)
 
-        if result.data:
-            return MemoryEntry(**result.data)
-        return None
+        row = first_row_from_result(result)
+        if row is None:
+            return None
+        return MemoryEntry(**row)
 
     async def append_to_key(
         self,
@@ -125,7 +122,7 @@ class MemoryRepository:
                 .execute()
             )
 
-        await self._run_sync(_delete)
+        await run_sync(_delete)
 
     async def save_for_session(self, entry: MemoryEntry) -> MemoryEntry:
         """
@@ -144,10 +141,11 @@ class MemoryRepository:
                 data, on_conflict="session_id,memory_key"
             ).execute()
 
-        result = await self._run_sync(_upsert)
+        result = await run_sync(_upsert)
 
-        if result.data:
-            return MemoryEntry(**result.data[0])
+        rows = rows_from_result(result)
+        if rows:
+            return MemoryEntry(**rows[0])
         return entry
 
     async def get_by_session(self, session_id: str) -> List[MemoryEntry]:
@@ -162,8 +160,8 @@ class MemoryRepository:
                 .execute()
             )
 
-        result = await self._run_sync(_select)
-        return [MemoryEntry(**row) for row in (result.data or [])]
+        result = await run_sync(_select)
+        return [MemoryEntry(**row) for row in rows_from_result(result)]
 
     async def get_by_session_and_key(
         self, session_id: str, key: str
@@ -180,10 +178,11 @@ class MemoryRepository:
                 .execute()
             )
 
-        result = await self._run_sync(_select)
-        if result.data:
-            return MemoryEntry(**result.data)
-        return None
+        result = await run_sync(_select)
+        row = first_row_from_result(result)
+        if row is None:
+            return None
+        return MemoryEntry(**row)
 
     async def delete_by_key(self, project_id: str, key: str) -> None:
         """Delete a specific memory entry."""
@@ -197,4 +196,4 @@ class MemoryRepository:
                 .execute()
             )
 
-        await self._run_sync(_delete)
+        await run_sync(_delete)

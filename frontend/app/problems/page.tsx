@@ -6,10 +6,16 @@ import { Sidebar } from "@/components/ui/sidebar";
 import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
 import { getSession } from "@/lib/api/session";
 import type { SessionDetail } from "@/lib/api/session";
-import { buildPipelineInputFromStorage, getActiveSessionId } from "@/lib/pipeline-input";
+import {
+  buildPipelineInputFromStorage,
+  clearAutorunFlag,
+  isAutorunPending,
+} from "@/lib/pipeline-input";
+import { useActiveSession } from "@/lib/active-session-context";
 import { computeStepStatuses } from "@/lib/pipeline-session";
 import { runPipelineStepOrFull } from "@/lib/run-pipeline-client";
 import type { PipelineInput } from "@/lib/api/pipeline";
+import { TextShimmer } from "@/components/ui/text-shimmer";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -144,6 +150,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 export default function ProblemsPage() {
   const router = useRouter();
+  const { activeSessionId } = useActiveSession();
   const [problems, setProblems] = useState<Problem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -152,38 +159,64 @@ export default function ProblemsPage() {
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
 
   const selectedProblem = problems.find((p) => p.id === selectedId) ?? null;
-  const activeSessionId = getActiveSessionId();
   const stepStatuses = computeStepStatuses(sessionDetail);
   const runModeSession = !!activeSessionId;
 
   useEffect(() => {
-    const id = getActiveSessionId();
-    if (!id) {
-      setSessionDetail(null);
-      return;
-    }
-    getSession(id)
-      .then(setSessionDetail)
-      .catch(() => setSessionDetail(null));
-  }, []);
+    setProblems([]);
+    setSelectedId(null);
+    setError(null);
+    setFromSession(false);
+    setSessionDetail(null);
+    if (!activeSessionId) return;
+    let cancelled = false;
+    getSession(activeSessionId)
+      .then((d) => {
+        if (cancelled) return;
+        setSessionDetail(d);
+        const out = d.state?.state?.outputs as
+          | Record<string, unknown>
+          | undefined;
+        if (out && out.problems != null) {
+          setFromSession(true);
+          const adapted = adaptPipelineProblems({
+            ...out,
+            problems: out.problems,
+          } as Record<string, unknown>);
+          setProblems(adapted);
+          if (adapted.length > 0) setSelectedId(adapted[0].id);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setSessionDetail(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSessionId]);
 
   async function handleGenerate() {
     setGenerating(true);
     setSelectedId(null);
     setError(null);
     setFromSession(false);
-    const isAutorun = localStorage.getItem("specflow_autorun") === "1";
+    const isAutorun = isAutorunPending(activeSessionId ?? undefined);
     try {
-      const inputData: PipelineInput = buildPipelineInputFromStorage();
-      const { data, mode } = await runPipelineStepOrFull("problems", inputData);
+      const inputData: PipelineInput = buildPipelineInputFromStorage(
+        activeSessionId ?? undefined
+      );
+      const { data, mode } = await runPipelineStepOrFull(
+        "problems",
+        inputData,
+        activeSessionId
+      );
       setFromSession(mode === "session");
       const adapted = adaptPipelineProblems(data);
       setProblems(adapted);
       if (adapted.length > 0) setSelectedId(adapted[0].id);
-      const sid = getActiveSessionId();
-      if (sid) {
+      if (activeSessionId) {
         try {
-          const d = await getSession(sid);
+          const d = await getSession(activeSessionId);
           setSessionDetail(d);
         } catch {
           /* ignore */
@@ -192,18 +225,16 @@ export default function ProblemsPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
-      if (isAutorun) localStorage.removeItem("specflow_autorun");
+      if (isAutorun) clearAutorunFlag(activeSessionId ?? undefined);
       setGenerating(false);
     }
   }
 
-  // Auto-run on mount when redirected from sessions "Run All Steps"
   useEffect(() => {
-    if (localStorage.getItem("specflow_autorun") === "1") {
-      handleGenerate();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!activeSessionId || !isAutorunPending(activeSessionId)) return;
+    handleGenerate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSessionId]);
 
   return (
     <div
@@ -263,7 +294,7 @@ export default function ProblemsPage() {
             }}
           >
             {generating
-              ? "Running…"
+              ? <TextShimmer duration={1.2}>Running…</TextShimmer>
               : runModeSession
                 ? "Run Problems (this step)"
                 : "Run full pipeline (all 4 steps)"}
@@ -279,20 +310,7 @@ export default function ProblemsPage() {
           >
             {generating ? (
               <div className="flex flex-col items-center gap-3">
-                <div
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: "50%",
-                    border: "2.5px solid #E4DDD4",
-                    borderTopColor: "#E8561B",
-                    animation: "spin 0.7s linear infinite",
-                  }}
-                />
-                <p style={{ fontSize: 13.5, color: "#6B6B6B" }}>
-                  Running pipeline…
-                </p>
-                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                <TextShimmer duration={1.2} className="text-sm">Running pipeline…</TextShimmer>
               </div>
             ) : (
               <div

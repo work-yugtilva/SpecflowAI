@@ -3,6 +3,11 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { LS_RESEARCH } from "@/lib/pipeline-input";
+import { useActiveSession } from "@/lib/active-session-context";
+import {
+  migrateGlobalToScopedOnce,
+  scopedStorageKey,
+} from "@/lib/session-scoped-storage";
 import { Sidebar } from "@/components/ui/sidebar";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -175,34 +180,54 @@ function FieldLabel({
 // ─── Research Page ────────────────────────────────────────────────────────────
 
 export default function ResearchPage() {
+  const { activeSessionId } = useActiveSession();
+  const researchStorageKey = activeSessionId
+    ? scopedStorageKey(activeSessionId, "research")
+    : LS_RESEARCH;
+
   const [entries, setEntries] = useState<ResearchEntry[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [researchHydrated, setResearchHydrated] = useState(false);
 
   useEffect(() => {
+    setResearchHydrated(false);
     try {
-      const raw = localStorage.getItem(LS_RESEARCH);
+      if (activeSessionId) {
+        migrateGlobalToScopedOnce(
+          activeSessionId,
+          "research",
+          LS_RESEARCH
+        );
+      }
+      const raw = localStorage.getItem(researchStorageKey);
       if (raw) {
         const parsed = JSON.parse(raw) as ResearchEntry[];
         if (Array.isArray(parsed) && parsed.length > 0) {
           setEntries(parsed);
           setSelectedId(parsed[0].id);
+        } else {
+          setEntries([]);
+          setSelectedId(null);
         }
+      } else {
+        setEntries([]);
+        setSelectedId(null);
       }
     } catch {
-      /* ignore */
+      setEntries([]);
+      setSelectedId(null);
     }
     setResearchHydrated(true);
-  }, []);
+  }, [researchStorageKey]);
 
   useEffect(() => {
     if (!researchHydrated) return;
     try {
-      localStorage.setItem(LS_RESEARCH, JSON.stringify(entries));
+      localStorage.setItem(researchStorageKey, JSON.stringify(entries));
     } catch {
       /* ignore */
     }
-  }, [entries, researchHydrated]);
+  }, [entries, researchHydrated, researchStorageKey]);
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);

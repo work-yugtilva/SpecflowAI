@@ -5,6 +5,7 @@ import Image from "next/image";
 import { useRouter, usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
+import { useActiveSessionOptional } from "@/lib/active-session-context";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -23,6 +24,14 @@ const HomeIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z" />
     <path d="M9 21V12h6v9" />
+  </svg>
+);
+
+/** Primary nav: pipeline sessions */
+const SessionsStackIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 3L4 7v10l8 4 8-4V7l-8-4z" />
+    <path d="M4 12l8 4 8-4" opacity="0.45" />
   </svg>
 );
 
@@ -96,7 +105,6 @@ const NAV_SECTIONS: NavSection[] = [
       { id: "features", label: "Features" },
       { id: "decompose", label: "Decompose" },
       { id: "tasks", label: "Tasks" },
-      { id: "sessions", label: "Sessions" },
     ],
   },
   {
@@ -247,9 +255,20 @@ const RailButton = memo(function RailButton({
 // Items that have dedicated pages
 const ROUTED_ITEMS = new Set(["problems", "features", "decompose", "tasks", "sessions", "context", "research"]);
 
+const PANEL_TITLE_BY_ROUTE: Record<string, string> = {
+  sessions: "Sessions",
+  problems: "Signals",
+  features: "Signals",
+  decompose: "Signals",
+  tasks: "Signals",
+  context: "Discovery",
+  research: "Discovery",
+};
+
 export function Sidebar() {
   const router = useRouter();
   const pathname = usePathname();
+  const sessionCtx = useActiveSessionOptional();
   // Derive active item from current URL path (e.g. "/ingest" → "ingest")
   const pathnameItem = pathname?.split("/")[1] ?? null;
 
@@ -257,6 +276,11 @@ export function Sidebar() {
   const [activeItem, setActiveItem] = useState<string | null>(pathnameItem);
   const [expandedSections, setExpandedSections] = useState<string[]>(["signals"]);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
+
+  const sessionsPathActive = pathnameItem === "sessions";
+  const activeSessionId = sessionCtx?.activeSessionId ?? null;
+  const showSessionChip =
+    !!activeSessionId && pathnameItem !== "sessions" && !!pathnameItem;
 
   const handleSelectSection = useCallback((id: string) => {
     setActiveSection(id);
@@ -286,6 +310,15 @@ export function Sidebar() {
   const effectiveActiveItem = pathnameItem || activeItem;
 
   const currentSection = NAV_SECTIONS.find((s) => s.id === activeSection);
+  const panelHeaderTitle =
+    pathnameItem && PANEL_TITLE_BY_ROUTE[pathnameItem]
+      ? PANEL_TITLE_BY_ROUTE[pathnameItem]
+      : currentSection?.title ?? "Dashboard";
+
+  const goSessions = useCallback(() => {
+    setActiveItem("sessions");
+    router.push("/sessions");
+  }, [router]);
 
   return (
     <div className="flex h-full flex-shrink-0" style={{ fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif" }}>
@@ -314,13 +347,36 @@ export function Sidebar() {
           </div>
         </a>
 
+        {/* Primary: Sessions — always visible */}
+        <button
+          type="button"
+          onClick={goSessions}
+          title="Sessions"
+          className="w-10 h-10 flex items-center justify-center rounded-[10px] transition-colors duration-150 mb-0.5"
+          style={{
+            background: sessionsPathActive ? "#111111" : "transparent",
+            color: sessionsPathActive ? "#ffffff" : "#6B6B6B",
+          }}
+          onMouseEnter={(e) => {
+            if (!sessionsPathActive)
+              e.currentTarget.style.background = "rgba(0,0,0,0.06)";
+          }}
+          onMouseLeave={(e) => {
+            if (!sessionsPathActive)
+              e.currentTarget.style.background = "transparent";
+          }}
+          aria-label="Sessions"
+        >
+          <SessionsStackIcon />
+        </button>
+
         {/* Nav icons */}
         <div className="flex flex-col gap-1 flex-1">
           {NAV_SECTIONS.map((section) => (
             <RailButton
               key={section.id}
               section={section}
-              isActive={activeSection === section.id}
+              isActive={activeSection === section.id && !sessionsPathActive}
               onSelect={handleSelectSection}
             />
           ))}
@@ -350,7 +406,7 @@ export function Sidebar() {
             className="font-medium truncate"
             style={{ fontSize: 14, color: "#0D0D0D", letterSpacing: "-0.01em" }}
           >
-            {currentSection?.title ?? "Dashboard"}
+            {panelHeaderTitle}
           </span>
           <button
             onClick={() => setPanelCollapsed(true)}
@@ -362,6 +418,49 @@ export function Sidebar() {
           >
             <CollapseIcon collapsed={false} />
           </button>
+        </div>
+
+        {/* Primary nav: Sessions — pinned below header, always visible */}
+        <div
+          className="flex-shrink-0 px-2 pt-2 pb-2"
+          style={{ borderBottom: "1px solid #F0EDE9" }}
+        >
+          <button
+            type="button"
+            onClick={goSessions}
+            className={cn(
+              "w-full text-left flex items-center h-8 px-3 rounded-lg text-[13.5px] font-sans",
+              "transition-colors duration-150",
+              sessionsPathActive
+                ? "font-medium"
+                : "text-[#3a3530] hover:bg-black/[0.04]"
+            )}
+            style={
+              sessionsPathActive
+                ? {
+                    background: "rgba(232,86,27,0.10)",
+                    borderLeft: "2px solid #E8561B",
+                    color: "#0D0D0D",
+                    paddingLeft: "10px",
+                    fontWeight: 500,
+                  }
+                : {}
+            }
+          >
+            Sessions
+          </button>
+          {showSessionChip && (
+            <div
+              className="mt-1.5 px-3 font-mono text-[11px]"
+              style={{ color: "#9B9189", letterSpacing: "0.04em" }}
+              title={activeSessionId}
+            >
+              Active{" "}
+              <span style={{ color: "#E8561B", fontWeight: 600 }}>
+                {activeSessionId.slice(0, 8).toUpperCase()}
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Scrollable nav list */}

@@ -6,7 +6,12 @@ import { Sidebar } from "@/components/ui/sidebar";
 import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
 import { getSession } from "@/lib/api/session";
 import type { SessionDetail } from "@/lib/api/session";
-import { buildPipelineInputFromStorage, getActiveSessionId } from "@/lib/pipeline-input";
+import {
+  buildPipelineInputFromStorage,
+  clearAutorunFlag,
+  isAutorunPending,
+} from "@/lib/pipeline-input";
+import { useActiveSession } from "@/lib/active-session-context";
 import { computeStepStatuses } from "@/lib/pipeline-session";
 import { runPipelineStepOrFull } from "@/lib/run-pipeline-client";
 import type { PipelineInput } from "@/lib/api/pipeline";
@@ -173,31 +178,61 @@ export default function FeaturesPage() {
   const [fromSession, setFromSession] = useState(false);
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
 
+  const { activeSessionId } = useActiveSession();
   const selectedFeature = features.find((f) => f.id === selectedId) ?? null;
-  const activeSessionId = getActiveSessionId();
   const stepStatuses = computeStepStatuses(sessionDetail);
   const runModeSession = !!activeSessionId;
 
   useEffect(() => {
-    const id = getActiveSessionId();
-    if (!id) {
-      setSessionDetail(null);
-      return;
-    }
-    getSession(id)
-      .then(setSessionDetail)
-      .catch(() => setSessionDetail(null));
-  }, []);
+    setFeatures([]);
+    setSelectedId(null);
+    setError(null);
+    setFromSession(false);
+    setSessionDetail(null);
+    if (!activeSessionId) return;
+    let cancelled = false;
+    getSession(activeSessionId)
+      .then((d) => {
+        if (cancelled) return;
+        setSessionDetail(d);
+        const out = d.state?.state?.outputs as
+          | Record<string, unknown>
+          | undefined;
+        if (out && out.features != null) {
+          setFromSession(true);
+          const adapted = adaptFeatures({
+            ...out,
+            features: out.features,
+          } as Record<string, unknown>);
+          if (adapted.length > 0) {
+            setFeatures(adapted);
+            setSelectedId(adapted[0].id);
+          }
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setSessionDetail(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSessionId]);
 
   async function handleGenerate() {
     setGenerating(true);
     setSelectedId(null);
     setError(null);
     setFromSession(false);
-    const isAutorun = localStorage.getItem("specflow_autorun") === "1";
+    const isAutorun = isAutorunPending(activeSessionId ?? undefined);
     try {
-      const inputData: PipelineInput = buildPipelineInputFromStorage();
-      const { data, mode } = await runPipelineStepOrFull("features", inputData);
+      const inputData: PipelineInput = buildPipelineInputFromStorage(
+        activeSessionId ?? undefined
+      );
+      const { data, mode } = await runPipelineStepOrFull(
+        "features",
+        inputData,
+        activeSessionId
+      );
       setFromSession(mode === "session");
       const adapted = adaptFeatures(data);
       if (adapted.length > 0) {
@@ -206,10 +241,9 @@ export default function FeaturesPage() {
       } else {
         setError("Pipeline returned no features. Check your context input.");
       }
-      const sid = getActiveSessionId();
-      if (sid) {
+      if (activeSessionId) {
         try {
-          setSessionDetail(await getSession(sid));
+          setSessionDetail(await getSession(activeSessionId));
         } catch {
           /* ignore */
         }
@@ -218,18 +252,16 @@ export default function FeaturesPage() {
       const msg = err instanceof Error ? err.message : "Something went wrong";
       setError(msg);
     } finally {
-      if (isAutorun) localStorage.removeItem("specflow_autorun");
+      if (isAutorun) clearAutorunFlag(activeSessionId ?? undefined);
       setGenerating(false);
     }
   }
 
-  // Auto-run on mount when redirected from sessions "Run All Steps"
   useEffect(() => {
-    if (localStorage.getItem("specflow_autorun") === "1") {
-      handleGenerate();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!activeSessionId || !isAutorunPending(activeSessionId)) return;
+    handleGenerate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSessionId]);
 
   return (
     <div

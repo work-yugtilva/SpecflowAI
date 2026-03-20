@@ -36,7 +36,9 @@ CREATE TABLE IF NOT EXISTS session_events (
 -- Add session_id to existing memory_entries table for session-scoped memory
 ALTER TABLE memory_entries ADD COLUMN IF NOT EXISTS session_id UUID REFERENCES sessions(id) ON DELETE SET NULL;
 
--- Partial unique index: one memory entry per (session_id, memory_key) when session-scoped
-CREATE UNIQUE INDEX IF NOT EXISTS memory_entries_session_key_unique
-  ON memory_entries(session_id, memory_key)
-  WHERE session_id IS NOT NULL;
+-- Session-scoped memory: one row per (session_id, memory_key).
+-- Must be a non-partial UNIQUE index so INSERT ... ON CONFLICT (session_id, memory_key) works
+-- (Postgres 42P10 if you only have a partial unique index). NULL session_id remains allowed for
+-- project-scoped rows; multiple (NULL, same_key) are allowed under Postgres UNIQUE NULL rules.
+CREATE UNIQUE INDEX IF NOT EXISTS memory_entries_session_memory_key_uidx
+  ON memory_entries(session_id, memory_key);
