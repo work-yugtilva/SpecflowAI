@@ -40,46 +40,6 @@ const CompassIcon = () => (
   </svg>
 );
 
-const AlertIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-    <line x1="12" y1="9" x2="12" y2="13" />
-    <line x1="12" y1="17" x2="12.01" y2="17" />
-  </svg>
-);
-
-const LightbulbIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="9" y1="18" x2="15" y2="18" />
-    <line x1="10" y1="22" x2="14" y2="22" />
-    <path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0018 8 6 6 0 006 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 018.91 14" />
-  </svg>
-);
-
-const HammerIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M15 12l-8.5 8.5c-.83.83-2.17.83-3 0 0 0 0 0 0 0a2.12 2.12 0 010-3L12 9" />
-    <path d="M17.64 15L22 10.64M20.35 6.22l-2.83-2.83a1 1 0 00-1.41 0L14.5 5l3.5 3.5 2.35-2.28z" />
-  </svg>
-);
-
-const ChartIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
-    <polyline points="17 6 23 6 23 12" />
-  </svg>
-);
-
-const DocIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-    <polyline points="14 2 14 8 20 8" />
-    <line x1="16" y1="13" x2="8" y2="13" />
-    <line x1="16" y1="17" x2="8" y2="17" />
-    <polyline points="10 9 9 9 8 9" />
-  </svg>
-);
-
 const GearIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="3" />
@@ -146,64 +106,6 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { id: "context", label: "Context" },
       { id: "research", label: "Research" },
-    ],
-  },
-  {
-    id: "problem",
-    title: "Problem",
-    icon: <AlertIcon />,
-    items: [
-      { id: "problem-def", label: "Problem" },
-      { id: "root-cause", label: "Root Cause" },
-      { id: "success", label: "Success" },
-    ],
-  },
-  {
-    id: "solution",
-    title: "Solution",
-    icon: <LightbulbIcon />,
-    items: [
-      { id: "strategy", label: "Strategy" },
-      { id: "prioritization", label: "Prioritization" },
-      { id: "spec", label: "Spec" },
-    ],
-  },
-  {
-    id: "build",
-    title: "Build",
-    icon: <HammerIcon />,
-    items: [
-      { id: "design", label: "Design" },
-      { id: "technical", label: "Technical" },
-      { id: "system", label: "System" },
-      { id: "build-ops", label: "Build Ops" },
-      { id: "release", label: "Release" },
-      { id: "rollout", label: "Rollout" },
-    ],
-  },
-  {
-    id: "growth",
-    title: "Growth",
-    icon: <ChartIcon />,
-    items: [
-      { id: "gtm", label: "Go-To-Market" },
-      { id: "adoption", label: "Adoption" },
-      { id: "measurement", label: "Measurement" },
-      { id: "iteration", label: "Iteration" },
-      { id: "experiments", label: "Experiments" },
-      { id: "scaling", label: "Scaling" },
-    ],
-  },
-  {
-    id: "documents",
-    title: "Documents",
-    icon: <DocIcon />,
-    items: [
-      { id: "prds", label: "PRDs" },
-      { id: "user-stories", label: "User Stories" },
-      { id: "launch-plan", label: "Launch Plan" },
-      { id: "rfc", label: "RFC / Tech Spec" },
-      { id: "competitive", label: "Competitive Analysis" },
     ],
   },
   { id: "settings", title: "Settings", icon: <GearIcon />, items: [] },

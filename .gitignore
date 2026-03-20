@@ -11,3 +11,8 @@ __pycache__/
 .bfg-report/
 ..bfg-report/
 
+# Local / editor
+.claude/
+*.tsbuildinfo
+Screenshot*.png
+

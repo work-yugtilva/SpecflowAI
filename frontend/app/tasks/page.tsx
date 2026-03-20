@@ -1,9 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { runPipeline } from "@/lib/api/pipeline";
-import type { PipelineInput } from "@/lib/api/pipeline";
 import { Sidebar } from "@/components/ui/sidebar";
+import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
+import { getSession } from "@/lib/api/session";
+import type { SessionDetail } from "@/lib/api/session";
+import { buildPipelineInputFromStorage, getActiveSessionId } from "@/lib/pipeline-input";
+import { computeStepStatuses } from "@/lib/pipeline-session";
+import { runPipelineStepOrFull } from "@/lib/run-pipeline-client";
+import type { PipelineInput } from "@/lib/api/pipeline";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -401,6 +406,7 @@ export default function TasksPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [fromSession, setFromSession] = useState(false);
+  const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
 
   const [expandedGroups, setExpandedGroups] = useState<Set<TaskType>>(
     new Set<TaskType>(["Frontend", "Backend", "API", "Infrastructure"])
@@ -414,6 +420,21 @@ export default function TasksPage() {
 
   const selectedTask = tasks.find((t) => t.id === selectedId) ?? null;
   const effectiveStatus = (t: Task): TaskStatus => statusMap[t.id] ?? t.status;
+
+  const activeSessionId = getActiveSessionId();
+  const stepStatuses = computeStepStatuses(sessionDetail);
+  const runModeSession = !!activeSessionId;
+
+  useEffect(() => {
+    const id = getActiveSessionId();
+    if (!id) {
+      setSessionDetail(null);
+      return;
+    }
+    getSession(id)
+      .then(setSessionDetail)
+      .catch(() => setSessionDetail(null));
+  }, []);
 
   const tasksByGroup = GROUPS.map((type) => ({
     type,
@@ -452,16 +473,23 @@ export default function TasksPage() {
     setFromSession(false);
     const isAutorun = localStorage.getItem("specflow_autorun") === "1";
     try {
-      const pending = localStorage.getItem("specflow_pending_input");
-      const inputData: PipelineInput = pending
-        ? JSON.parse(pending)
-        : { context: JSON.parse(localStorage.getItem("specflow_context") ?? "{}"), research: [], ingest: [] };
-      const { data } = await runPipeline(inputData);
+      const inputData: PipelineInput = buildPipelineInputFromStorage();
+      const { data, mode } = await runPipelineStepOrFull("tasks", inputData);
+      setFromSession(mode === "session");
       const adapted = adaptTasks(data);
       setTasks(adapted);
       if (adapted.length > 0) setSelectedId(adapted[0].id);
-    } catch { /* ignore */ }
-    finally {
+      const sid = getActiveSessionId();
+      if (sid) {
+        try {
+          setSessionDetail(await getSession(sid));
+        } catch {
+          /* ignore */
+        }
+      }
+    } catch {
+      /* ignore */
+    } finally {
       if (isAutorun) localStorage.removeItem("specflow_autorun");
       setGenerating(false);
     }
@@ -496,6 +524,11 @@ export default function TasksPage() {
           overflow: "hidden",
         }}
       >
+        <PipelineStepper
+          currentStepId="tasks"
+          stepStatuses={stepStatuses}
+          sessionIdShort={activeSessionId ? activeSessionId.slice(0, 8).toUpperCase() : null}
+        />
         {/* Top bar */}
         <header
           style={{
@@ -612,10 +645,12 @@ export default function TasksPage() {
                       animation: "spin 0.7s linear infinite",
                     }}
                   />
-                  Generating…
+                  Running…
                 </>
+              ) : runModeSession ? (
+                "Run Tasks (this step)"
               ) : (
-                "Generate Tasks"
+                "Run full pipeline (all 4 steps)"
               )}
             </button>
           </div>
@@ -704,7 +739,7 @@ export default function TasksPage() {
                   lineHeight: 1.5,
                 }}
               >
-                Generate an execution plan from your decomposition.
+                With a session, only the Tasks agent runs. Without one, the full pipeline runs all four steps.
               </p>
             </div>
             <button
@@ -716,7 +751,9 @@ export default function TasksPage() {
                 marginTop: 4,
               }}
             >
-              Generate Tasks
+              {runModeSession
+                ? "Run Tasks (this step)"
+                : "Run full pipeline (all 4 steps)"}
             </button>
           </div>
         ) : generating ? (

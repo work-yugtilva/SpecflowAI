@@ -9,10 +9,28 @@
   --orange-hover: #D44A12;
   --bg: #F8F4EF;
   --bg-dark: #F0EAE1;
-  --text: #0D0D0D;
-  --muted: #6B6B6B;
-  --border: #E4DDD4;
-  --surface: #FFFFFF;
+  --text: #0d0d0d;
+  --text-muted: #6b6b6b;
+  --surface: #ffffff;
+  /* HSL triples (use as hsl(var(--name))) */
+  --border: 33 22% 85%;
+  --background: 40 33% 96%;
+  --foreground: 0 0% 5%;
+  --primary: 18 82% 51%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 33 28% 92%;
+  --secondary-foreground: 0 0% 12%;
+  --muted: 33 22% 90%;
+  --muted-foreground: 0 0% 42%;
+  --accent: 33 28% 92%;
+  --accent-foreground: 0 0% 12%;
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+  --input: 33 22% 85%;
+  --ring: 18 82% 51%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 5%;
+  --radius: 0.5rem;
 }
 
 * {
@@ -114,7 +132,7 @@ body {
 .float-label {
   background: rgba(255,255,255,0.92);
   backdrop-filter: blur(8px);
-  border: 1px solid var(--border);
+  border: 1px solid hsl(var(--border));
   border-radius: 8px;
   padding: 0.35rem 0.75rem;
   font-size: 0.75rem;
@@ -127,7 +145,7 @@ body {
 /* ─── Feature card ───────────────────────────────── */
 .feature-card {
   background: var(--surface);
-  border: 1px solid var(--border);
+  border: 1px solid hsl(var(--border));
   border-radius: 16px;
   padding: 1.5rem;
   transition: box-shadow 0.22s ease, transform 0.22s ease;
@@ -192,7 +210,7 @@ body {
   width: 44px;
   height: 44px;
   border-radius: 12px;
-  border: 1px solid var(--border);
+  border: 1px solid hsl(var(--border));
   background: var(--surface);
   box-shadow: 0 2px 12px rgba(0,0,0,0.06);
   font-size: 1.1rem;
@@ -227,7 +245,7 @@ body {
   width: 100%;
   padding: 0.7rem 1rem 0.7rem 2.75rem;
   background: var(--surface);
-  border: 1.5px solid var(--border);
+  border: 1.5px solid hsl(var(--border));
   border-radius: 10px;
   font-size: 0.9375rem;
   color: var(--text);
@@ -235,7 +253,7 @@ body {
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
   font-family: var(--font-dm-sans), 'DM Sans', sans-serif;
 }
-.form-input::placeholder { color: var(--muted); }
+.form-input::placeholder { color: var(--text-muted); }
 .form-input:focus {
   border-color: var(--orange);
   box-shadow: 0 0 0 3px rgba(232,86,27,0.12);

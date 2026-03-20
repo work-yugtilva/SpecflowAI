@@ -3,8 +3,14 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
-import { runPipeline } from "@/lib/api/pipeline";
+import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
+import { getSession } from "@/lib/api/session";
+import type { SessionDetail } from "@/lib/api/session";
+import { buildPipelineInputFromStorage, getActiveSessionId } from "@/lib/pipeline-input";
+import { computeStepStatuses } from "@/lib/pipeline-session";
+import { runPipelineStepOrFull } from "@/lib/run-pipeline-client";
 import type { PipelineInput } from "@/lib/api/pipeline";
+import { TextShimmer } from "@/components/ui/text-shimmer";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -165,20 +171,34 @@ export default function FeaturesPage() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fromSession, setFromSession] = useState(false);
+  const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
 
   const selectedFeature = features.find((f) => f.id === selectedId) ?? null;
+  const activeSessionId = getActiveSessionId();
+  const stepStatuses = computeStepStatuses(sessionDetail);
+  const runModeSession = !!activeSessionId;
+
+  useEffect(() => {
+    const id = getActiveSessionId();
+    if (!id) {
+      setSessionDetail(null);
+      return;
+    }
+    getSession(id)
+      .then(setSessionDetail)
+      .catch(() => setSessionDetail(null));
+  }, []);
 
   async function handleGenerate() {
     setGenerating(true);
     setSelectedId(null);
     setError(null);
     setFromSession(false);
+    const isAutorun = localStorage.getItem("specflow_autorun") === "1";
     try {
-      const pending = localStorage.getItem("specflow_pending_input");
-      const inputData: PipelineInput = pending
-        ? JSON.parse(pending)
-        : { context: JSON.parse(localStorage.getItem("specflow_context") ?? "{}"), research: [], ingest: [] };
-      const { data } = await runPipeline(inputData);
+      const inputData: PipelineInput = buildPipelineInputFromStorage();
+      const { data, mode } = await runPipelineStepOrFull("features", inputData);
+      setFromSession(mode === "session");
       const adapted = adaptFeatures(data);
       if (adapted.length > 0) {
         setFeatures(adapted);
@@ -186,10 +206,19 @@ export default function FeaturesPage() {
       } else {
         setError("Pipeline returned no features. Check your context input.");
       }
+      const sid = getActiveSessionId();
+      if (sid) {
+        try {
+          setSessionDetail(await getSession(sid));
+        } catch {
+          /* ignore */
+        }
+      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Something went wrong";
       setError(msg);
     } finally {
+      if (isAutorun) localStorage.removeItem("specflow_autorun");
       setGenerating(false);
     }
   }
@@ -217,6 +246,11 @@ export default function FeaturesPage() {
 
       {/* Main area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <PipelineStepper
+          currentStepId="features"
+          stepStatuses={stepStatuses}
+          sessionIdShort={activeSessionId ? activeSessionId.slice(0, 8).toUpperCase() : null}
+        />
         {/* Top bar */}
         <header
           className="flex items-center justify-between px-6 flex-shrink-0"
@@ -254,7 +288,13 @@ export default function FeaturesPage() {
               cursor: generating ? "not-allowed" : "pointer",
             }}
           >
-            {generating ? "Generating…" : "Generate Features"}
+            {generating ? (
+              <TextShimmer duration={1.2}>Running…</TextShimmer>
+            ) : runModeSession ? (
+              "Run Features (this step)"
+            ) : (
+              "Run full pipeline (all 4 steps)"
+            )}
           </button>
         </header>
 
@@ -275,7 +315,7 @@ export default function FeaturesPage() {
                   }}
                 />
                 <p style={{ fontSize: 13.5, color: "#6B6B6B" }}>
-                  Analysing problems…
+                  <TextShimmer duration={1.2}>Analysing problems…</TextShimmer>
                 </p>
                 <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
               </div>
@@ -323,7 +363,8 @@ export default function FeaturesPage() {
                     {error ? "Pipeline error" : "No features generated yet."}
                   </p>
                   <p style={{ fontSize: 13.5, color: "#6B6B6B", lineHeight: 1.6 }}>
-                    {error ?? "Generate feature solutions from your identified problems."}
+                    {error ??
+                      "With an active session, only the Features agent runs. Without a session, all four agents run end-to-end."}
                   </p>
                 </div>
                 <button
@@ -331,7 +372,11 @@ export default function FeaturesPage() {
                   className="btn-dark"
                   style={{ fontSize: 14, padding: "0.65rem 1.5rem" }}
                 >
-                  {error ? "Retry" : "Generate Features"}
+                  {error
+                    ? "Retry"
+                    : runModeSession
+                      ? "Run Features (this step)"
+                      : "Run full pipeline (all 4 steps)"}
                 </button>
               </div>
             )}

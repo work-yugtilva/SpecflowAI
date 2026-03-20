@@ -3,8 +3,14 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
-import { runPipeline } from "@/lib/api/pipeline";
+import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
+import { getSession } from "@/lib/api/session";
+import type { SessionDetail } from "@/lib/api/session";
+import { buildPipelineInputFromStorage, getActiveSessionId } from "@/lib/pipeline-input";
+import { computeStepStatuses } from "@/lib/pipeline-session";
+import { runPipelineStepOrFull } from "@/lib/run-pipeline-client";
 import type { PipelineInput } from "@/lib/api/pipeline";
+import { TextShimmer } from "@/components/ui/text-shimmer";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -226,21 +232,45 @@ export default function DecomposePage() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fromSession, setFromSession] = useState(false);
+  const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
+
+  const activeSessionId = getActiveSessionId();
+  const stepStatuses = computeStepStatuses(sessionDetail);
+  const runModeSession = !!activeSessionId;
+
+  useEffect(() => {
+    const id = getActiveSessionId();
+    if (!id) {
+      setSessionDetail(null);
+      return;
+    }
+    getSession(id)
+      .then(setSessionDetail)
+      .catch(() => setSessionDetail(null));
+  }, []);
 
   async function handleGenerate() {
     setGenerating(true);
     setError(null);
     setFromSession(false);
+    const isAutorun = localStorage.getItem("specflow_autorun") === "1";
     try {
-      const pending = localStorage.getItem("specflow_pending_input");
-      const inputData: PipelineInput = pending
-        ? JSON.parse(pending)
-        : { context: JSON.parse(localStorage.getItem("specflow_context") ?? "{}"), research: [], ingest: [] };
-      const { data } = await runPipeline(inputData);
+      const inputData: PipelineInput = buildPipelineInputFromStorage();
+      const { data, mode } = await runPipelineStepOrFull("decompose", inputData);
+      setFromSession(mode === "session");
       setDecomposition(adaptPipelineResult(data));
+      const sid = getActiveSessionId();
+      if (sid) {
+        try {
+          setSessionDetail(await getSession(sid));
+        } catch {
+          /* ignore */
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
+      if (isAutorun) localStorage.removeItem("specflow_autorun");
       setGenerating(false);
     }
   }
@@ -282,6 +312,11 @@ export default function DecomposePage() {
           overflow: "hidden",
         }}
       >
+        <PipelineStepper
+          currentStepId="decompose"
+          stepStatuses={stepStatuses}
+          sessionIdShort={activeSessionId ? activeSessionId.slice(0, 8).toUpperCase() : null}
+        />
         {/* Top bar */}
         <header
           style={{
@@ -355,7 +390,7 @@ export default function DecomposePage() {
                 className="btn-dark"
                 style={{ fontSize: "0.8125rem", padding: "0.4rem 0.875rem" }}
               >
-                Generate Tasks →
+                Open Tasks →
               </button>
             )}
             <button
@@ -390,10 +425,12 @@ export default function DecomposePage() {
                       animation: "spin 0.7s linear infinite",
                     }}
                   />
-                  Decomposing…
+                  <TextShimmer duration={1.2}>Decomposing…</TextShimmer>
                 </>
+              ) : runModeSession ? (
+                "Run Decompose (this step)"
               ) : (
-                "Generate Decomposition"
+                "Run full pipeline (all 4 steps)"
               )}
             </button>
           </div>
@@ -458,7 +495,8 @@ export default function DecomposePage() {
                   maxWidth: 320,
                 }}
               >
-                {error ?? "Break down a feature into UI, data, and workflow layers."}
+                {error ??
+                  "With a session, only the Decompose agent runs. Without one, the full pipeline runs all four steps."}
               </p>
             </div>
             <button
@@ -466,7 +504,11 @@ export default function DecomposePage() {
               className="btn-dark"
               style={{ fontSize: "0.8125rem", padding: "0.45rem 1rem", marginTop: 4 }}
             >
-              {error ? "Retry" : "Generate Decomposition"}
+              {error
+                ? "Retry"
+                : runModeSession
+                  ? "Run Decompose (this step)"
+                  : "Run full pipeline (all 4 steps)"}
             </button>
           </div>
         ) : generating ? (
@@ -493,7 +535,7 @@ export default function DecomposePage() {
               }}
             />
             <span style={{ fontSize: 13, color: "#9E9E9E" }}>
-              Decomposing feature…
+              <TextShimmer duration={1.2}>Decomposing feature…</TextShimmer>
             </span>
           </div>
         ) : (

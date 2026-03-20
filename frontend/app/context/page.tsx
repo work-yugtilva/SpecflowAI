@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Sidebar } from "@/components/ui/sidebar";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -610,6 +611,39 @@ export default function ContextPage() {
               )}
             </div>
           </div>
+        </div>
+
+        <div
+          style={{
+            flexShrink: 0,
+            padding: "12px 20px",
+            borderTop: "1px solid #E4DDD4",
+            background: "#FFFFFF",
+            fontSize: 12.5,
+            color: "#6B6B6B",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 16,
+            flexWrap: "wrap",
+          }}
+        >
+          <span>
+            After you <strong style={{ color: "#3a3530" }}>Save Context</strong>, this
+            data is merged into pipeline runs (with Research and ingest from Sessions).
+          </span>
+          <Link
+            href="/sessions"
+            style={{
+              fontSize: 12.5,
+              fontWeight: 600,
+              color: "#E8561B",
+              textDecoration: "none",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Open Sessions →
+          </Link>
         </div>
       </div>
     </div>

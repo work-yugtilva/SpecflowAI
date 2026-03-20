@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import { LS_RESEARCH } from "@/lib/pipeline-input";
 import { Sidebar } from "@/components/ui/sidebar";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -54,59 +56,6 @@ const EMPTY_FORM: FormState = {
   context: "",
   tagsRaw: "",
 };
-
-// ─── Mock seed data ───────────────────────────────────────────────────────────
-
-const MOCK_ENTRIES: ResearchEntry[] = [
-  {
-    id: "r1",
-    type: "Interview",
-    title: "PM power user session — Sarah K.",
-    content:
-      "Interviewed a senior PM at a 50-person startup. She runs 3–5 PRD cycles per month and spends roughly 4 hours per PRD on structure alone. Major pain: context switching between discovery notes and the actual spec document. She tried Linear docs but couldn't maintain structure across a team. Would pay for a tool that transforms rough notes into a structured PRD draft automatically.",
-    user: "Sarah K., Senior PM at Roam",
-    pain: "Context switching between notes and document structure wastes 40% of spec time",
-    context: "Remote user interview, 45 minutes, Jan 2026",
-    tags: ["pm", "power-user", "prd", "discovery"],
-    date: "2026-01-14T10:00:00Z",
-  },
-  {
-    id: "r2",
-    type: "Survey",
-    title: "Product team survey — 34 responses",
-    content:
-      "Ran a 10-question survey across 34 product managers and engineering leads. 76% reported spending 3+ hours per spec cycle on structure rather than thinking. 62% use a mix of Notion and Google Docs. Only 14% have a standardized spec template. Top request: AI that understands their domain and fills in gaps without hallucinating features.",
-    user: "",
-    pain: "Lack of structured tooling leads to inconsistent specs across teams",
-    context: "Typeform survey, distributed via PM newsletter, 34 responses in 48 hours",
-    tags: ["survey", "quantitative", "tooling"],
-    date: "2026-02-01T09:00:00Z",
-  },
-  {
-    id: "r3",
-    type: "Market Insight",
-    title: "Competitive landscape — spec tooling 2026",
-    content:
-      "Linear, Notion, and Confluence dominate the market but none offer AI-native spec generation. Linear is workflow-first. Notion is flexible but unstructured. ProductBoard focuses on roadmaps. There is a clear gap for a tool that takes a problem statement all the way to an implementation-ready spec. Closest competitors: Fibery, Coda. Neither has deep spec intelligence.",
-    user: "",
-    pain: "",
-    context: "Desk research + G2 reviews analysis, Feb 2026",
-    tags: ["competitive", "market", "positioning"],
-    date: "2026-02-10T14:00:00Z",
-  },
-  {
-    id: "r4",
-    type: "Analytics",
-    title: "Usage drop-off at step 3 — onboarding funnel",
-    content:
-      "Funnel analysis shows 68% of users who reach the 'Add Product Description' step do not complete onboarding. Median time spent on that step is 4m 12s — indicating friction, not disinterest. Heatmaps show repeated clicks on the placeholder text suggesting users expect it to be auto-filled. A/B test with pre-filled example reduced drop-off to 31%.",
-    user: "",
-    pain: "Users expect AI assistance earlier in the flow but find a blank form instead",
-    context: "Mixpanel funnel data, cohort Jan–Feb 2026, n=1,420 sessions",
-    tags: ["funnel", "onboarding", "drop-off", "analytics"],
-    date: "2026-02-18T11:30:00Z",
-  },
-];
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -226,10 +175,34 @@ function FieldLabel({
 // ─── Research Page ────────────────────────────────────────────────────────────
 
 export default function ResearchPage() {
-  const [entries, setEntries] = useState<ResearchEntry[]>(MOCK_ENTRIES);
-  const [selectedId, setSelectedId] = useState<string | null>(
-    MOCK_ENTRIES[0]?.id ?? null
-  );
+  const [entries, setEntries] = useState<ResearchEntry[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [researchHydrated, setResearchHydrated] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(LS_RESEARCH);
+      if (raw) {
+        const parsed = JSON.parse(raw) as ResearchEntry[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setEntries(parsed);
+          setSelectedId(parsed[0].id);
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+    setResearchHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!researchHydrated) return;
+    try {
+      localStorage.setItem(LS_RESEARCH, JSON.stringify(entries));
+    } catch {
+      /* ignore */
+    }
+  }, [entries, researchHydrated]);
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
@@ -502,6 +475,7 @@ export default function ResearchPage() {
                         flexDirection: "column",
                         gap: 5,
                         padding: "11px 16px",
+                        border: "none",
                         borderBottom: "1px solid #F0EDE9",
                         borderLeft: active
                           ? "3px solid #E8561B"
@@ -510,11 +484,6 @@ export default function ResearchPage() {
                           ? "rgba(232,86,27,0.04)"
                           : "transparent",
                         cursor: "pointer",
-                        border: "none",
-                        borderLeft: active
-                          ? "3px solid #E8561B"
-                          : "3px solid transparent",
-                        borderBottom: "1px solid #F0EDE9",
                         fontFamily:
                           "var(--font-dm-sans), 'DM Sans', sans-serif",
                         transition:
@@ -993,6 +962,40 @@ export default function ResearchPage() {
               </div>
             )}
           </div>
+        </div>
+
+        <div
+          style={{
+            flexShrink: 0,
+            padding: "12px 20px",
+            borderTop: "1px solid #E4DDD4",
+            background: "#FFFFFF",
+            fontSize: 12.5,
+            color: "#6B6B6B",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 16,
+            flexWrap: "wrap",
+          }}
+        >
+          <span>
+            Entries are saved to your browser and passed as{" "}
+            <strong style={{ color: "#3a3530" }}>research</strong> on the next pipeline
+            run.
+          </span>
+          <Link
+            href="/sessions"
+            style={{
+              fontSize: 12.5,
+              fontWeight: 600,
+              color: "#E8561B",
+              textDecoration: "none",
+              whiteSpace: "nowrap",
+            }}
+          >
+            Open Sessions →
+          </Link>
         </div>
       </div>
 

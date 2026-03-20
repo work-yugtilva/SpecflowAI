@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Sidebar } from "@/components/ui/sidebar";
 
 // ─── Stat Card ───────────────────────────────────────────────────────────────
@@ -101,12 +102,23 @@ export default function DashboardPage() {
           {/* Breadcrumb */}
           <div className="flex items-center gap-1.5 text-[13px]" style={{ color: "#6B6B6B" }}>
             <span className="font-medium" style={{ color: "#0D0D0D" }}>Dashboard</span>
-            <span style={{ color: "#C0B8B0" }}>/</span>
-            <span>Signals</span>
           </div>
 
           {/* Right actions */}
           <div className="flex items-center gap-2">
+            <Link
+              href="/sessions"
+              className="text-[13px] font-medium px-3 py-1.5 rounded-lg transition-colors duration-150"
+              style={{ color: "#E8561B" }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "rgba(232,86,27,0.08)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+              }}
+            >
+              Sessions
+            </Link>
             {/* Search */}
             <button
               className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors duration-150"

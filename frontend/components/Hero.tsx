@@ -1,5 +1,14 @@
 "use client";
 
+import Link from "next/link";
+import { MoveRight, PhoneCall } from "lucide-react";
+
+import { Button } from "@/components/ui/button";
+import {
+  DEFAULT_ROTATING_WORDS,
+  RotatingHeroTitle,
+} from "@/components/ui/animated-hero";
+
 const floatingLabelsLeft = [
   { label: "Requirements", top: "12%", left: "4%" },
   { label: "User Stories", top: "32%", left: "1%" },
@@ -183,64 +192,82 @@ export default function Hero() {
       />
 
       <div className="relative max-w-6xl mx-auto px-6 pt-16 pb-12 flex flex-col items-center text-center">
-        {/* Badge */}
-        <div
-          className="fade-up inline-flex items-center gap-2 px-3 py-1.5 rounded-full mb-8 text-xs font-medium"
-          style={{
-            background: "rgba(232,86,27,0.10)",
-            border: "1px solid rgba(232,86,27,0.25)",
-            color: "#E8561B",
-          }}
-        >
-          <span
-            className="w-1.5 h-1.5 rounded-full"
-            style={{ background: "#E8561B" }}
-          />
-          Introducing SpecFlow AI — Now in Beta
-        </div>
-
-        {/* Headline */}
-        <h1
-          className="fade-up-1 font-display text-center mb-6"
-          style={{
-            fontSize: "clamp(2.4rem, 6vw, 4.5rem)",
-            fontWeight: 400,
-            lineHeight: 1.1,
-            letterSpacing: "-0.03em",
-            color: "#0D0D0D",
-            maxWidth: "780px",
-          }}
-        >
-          Build Specs That Power{" "}
-          <span
+        {/* Intro + launch link */}
+        <div className="fade-up mb-6 flex flex-col items-center gap-5">
+          <div
+            className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium"
             style={{
+              background: "rgba(232,86,27,0.10)",
+              border: "1px solid rgba(232,86,27,0.25)",
               color: "#E8561B",
-              fontStyle: "italic",
-              display: "block",
             }}
           >
-            Your AI Workflow.
+            <span
+              className="h-1.5 w-1.5 rounded-full"
+              style={{ background: "#E8561B" }}
+            />
+            Introducing SpecFlow AI — Now in Beta
+          </div>
+          <Button variant="secondary" size="sm" className="gap-2 rounded-full" asChild>
+            <Link href="/features">
+              Read our launch article <MoveRight className="h-4 w-4" />
+            </Link>
+          </Button>
+        </div>
+
+        {/* Headline + rotating line */}
+        <h1
+          className="fade-up-1 font-display mb-6 max-w-[780px] text-center"
+          style={{
+            fontSize: "clamp(2.4rem, 6vw, 4.5rem)",
+            lineHeight: 1.12,
+            letterSpacing: "-0.03em",
+            color: "#0D0D0D",
+          }}
+        >
+          <span className="font-semibold">Build specs that ship</span>
+          <RotatingHeroTitle
+            words={DEFAULT_ROTATING_WORDS}
+            intervalMs={2000}
+            className="my-1 text-[clamp(2.4rem,6vw,4.5rem)] leading-[1.12]"
+          />
+          <span
+            className="mt-1 block font-normal italic"
+            style={{ color: "#E8561B" }}
+          >
+            Your AI workflow.
           </span>
         </h1>
 
         {/* Subtitle */}
         <p
-          className="fade-up-2 font-sans text-center mb-10 max-w-lg"
+          className="fade-up-2 font-sans mb-10 max-w-lg text-center text-muted-foreground"
           style={{
             fontSize: "1.0625rem",
             lineHeight: 1.7,
-            color: "#6B6B6B",
           }}
         >
           SpecFlow connects AI tools with your development workflow, uniting
           engineers and PMs to tackle key spec challenges — faster, together.
         </p>
 
-        {/* CTA */}
-        <div className="fade-up-3">
-          <a href="/login" className="btn-dark text-[15px] px-7 py-3">
-            Get started
-          </a>
+        {/* CTAs */}
+        <div className="fade-up-3 flex flex-row flex-wrap items-center justify-center gap-3">
+          <Button
+            size="lg"
+            variant="outline"
+            className="gap-2 rounded-full border-[hsl(var(--border))] bg-background"
+            asChild
+          >
+            <a href="mailto:hello@specflow.app">
+              Book a demo <PhoneCall className="h-4 w-4" />
+            </a>
+          </Button>
+          <Button size="lg" className="gap-2 rounded-full" asChild>
+            <Link href="/login">
+              Get started <MoveRight className="h-4 w-4" />
+            </Link>
+          </Button>
         </div>
 
         {/* Hero visual area */}

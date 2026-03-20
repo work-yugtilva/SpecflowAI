@@ -1,3 +1,7 @@
+"use client";
+
+import { GlowingEffect } from "@/components/ui/glowing-effect";
+
 const features = [
   {
     icon: (
@@ -150,28 +154,42 @@ export default function Features() {
         {/* Feature grid */}
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {features.map((feature, i) => (
-            <div key={i} className="feature-card">
-              {/* Icon */}
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center mb-4"
-                style={{
-                  background: feature.iconBg,
-                  boxShadow: `0 4px 16px ${feature.iconBg}35`,
-                }}
-              >
-                {feature.icon}
+            <div
+              key={i}
+              className="relative rounded-2xl border p-[2px]"
+              style={{ borderColor: "hsl(var(--border))" }}
+            >
+              <GlowingEffect
+                spread={40}
+                glow
+                disabled={false}
+                proximity={64}
+                inactiveZone={0.01}
+                borderWidth={3}
+              />
+              <div className="feature-card relative z-10 h-full !border-0 rounded-[14px]">
+                {/* Icon */}
+                <div
+                  className="w-10 h-10 rounded-xl flex items-center justify-center mb-4"
+                  style={{
+                    background: feature.iconBg,
+                    boxShadow: `0 4px 16px ${feature.iconBg}35`,
+                  }}
+                >
+                  {feature.icon}
+                </div>
+
+                {/* Content */}
+                <h3 className="font-sans font-semibold mb-2" style={{ fontSize: "1rem", color: "#0D0D0D", letterSpacing: "-0.01em" }}>
+                  {feature.title}
+                </h3>
+                <p className="font-sans" style={{ fontSize: "0.875rem", lineHeight: 1.65, color: "#6B6B6B" }}>
+                  {feature.desc}
+                </p>
+
+                {/* Mockup */}
+                {feature.mockup}
               </div>
-
-              {/* Content */}
-              <h3 className="font-sans font-semibold mb-2" style={{ fontSize: "1rem", color: "#0D0D0D", letterSpacing: "-0.01em" }}>
-                {feature.title}
-              </h3>
-              <p className="font-sans" style={{ fontSize: "0.875rem", lineHeight: 1.65, color: "#6B6B6B" }}>
-                {feature.desc}
-              </p>
-
-              {/* Mockup */}
-              {feature.mockup}
             </div>
           ))}
         </div>

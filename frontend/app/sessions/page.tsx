@@ -9,15 +9,17 @@ import {
   getSession,
 } from "@/lib/api/session";
 import type { SessionDetail, SessionEvent } from "@/lib/api/session";
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const PIPELINE_STEPS = [
-  { id: "problems", label: "Problems", description: "Surface pain points" },
-  { id: "features", label: "Features", description: "Define capabilities" },
-  { id: "decompose", label: "Decompose", description: "Break into components" },
-  { id: "tasks", label: "Tasks", description: "Generate action items" },
-];
+import {
+  PIPELINE_STEPS,
+  computeStepStatuses,
+  getNextStep,
+  type StepStatus,
+} from "@/lib/pipeline-session";
+import {
+  getResearchPayload,
+  hasContextSaved,
+  setActiveSessionId,
+} from "@/lib/pipeline-input";
 
 const LS_KEY = "specflow_sessions";
 
@@ -29,56 +31,6 @@ interface StoredSession {
   user_id: string;
   status: string;
   created_at: string | null;
-}
-
-type StepStatus = "pending" | "completed" | "failed" | "running";
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function computeStepStatuses(
-  detail: SessionDetail | null
-): Record<string, StepStatus> {
-  const result: Record<string, StepStatus> = {};
-  PIPELINE_STEPS.forEach((s) => {
-    result[s.id] = "pending";
-  });
-  if (!detail) return result;
-
-  const { session, state } = detail;
-  const lastCompleted = state?.state?.last_completed_step ?? null;
-
-  if (session.status === "completed") {
-    PIPELINE_STEPS.forEach((s) => {
-      result[s.id] = "completed";
-    });
-    return result;
-  }
-
-  if (lastCompleted) {
-    for (const step of PIPELINE_STEPS) {
-      result[step.id] = "completed";
-      if (step.id === lastCompleted) break;
-    }
-  }
-
-  if (session.status === "failed") {
-    const lastIdx = lastCompleted
-      ? PIPELINE_STEPS.findIndex((s) => s.id === lastCompleted)
-      : -1;
-    const failedIdx = lastIdx + 1;
-    if (failedIdx >= 0 && failedIdx < PIPELINE_STEPS.length) {
-      result[PIPELINE_STEPS[failedIdx].id] = "failed";
-    }
-  }
-
-  return result;
-}
-
-function getNextStep(statuses: Record<string, StepStatus>): string | null {
-  for (const step of PIPELINE_STEPS) {
-    if (statuses[step.id] === "pending") return step.id;
-  }
-  return null;
 }
 
 function shortId(id: string): string {
@@ -393,6 +345,7 @@ export default function SessionsPage() {
   const handleSelectSession = useCallback(
     (id: string) => {
       setSelectedId(id);
+      setActiveSessionId(id);
       setRunError(null);
       loadDetail(id);
     },
@@ -422,6 +375,7 @@ export default function SessionsPage() {
       setNewUserId("");
       setIsCreating(false);
       setSelectedId(result.session_id);
+      setActiveSessionId(result.session_id);
       loadDetail(result.session_id);
     } catch (e) {
       setCreateError(String(e));
@@ -457,7 +411,7 @@ export default function SessionsPage() {
 
     return {
       context: (() => { try { return JSON.parse(localStorage.getItem("specflow_context") || "{}"); } catch { return {}; } })(),
-      research: [],
+      research: getResearchPayload(),
       ingest: [entry],
     };
   }, [activeTab, interviewContent, interviewMeta, productContent, productMeta]);
@@ -473,6 +427,7 @@ export default function SessionsPage() {
       // Full run: save input for pipeline pages and navigate immediately
       if (!step) {
         try {
+          setActiveSessionId(selectedId);
           localStorage.setItem("specflow_pending_input", JSON.stringify(inputData));
           localStorage.setItem("specflow_autorun", "1");
         } catch { /* ignore */ }
@@ -501,6 +456,8 @@ export default function SessionsPage() {
   const isSessionFailed = detail?.session.status === "failed";
   const outputSummary = getOutputSummary(detail);
   const selectedStored = sessions.find((s) => s.session_id === selectedId);
+  const researchCount = getResearchPayload().length;
+  const contextSaved = hasContextSaved();
 
   return (
     <>
@@ -767,160 +724,62 @@ export default function SessionsPage() {
                     )}
                   </div>
 
-                  {/* Pipeline step tracker */}
+                  {/* Next run input summary */}
                   <div
                     style={{
                       background: "#FFFFFF",
                       border: "1px solid #E4DDD4",
                       borderRadius: 14,
-                      padding: "18px 22px",
+                      padding: "12px 16px",
                       marginBottom: 18,
+                      display: "flex",
+                      flexWrap: "wrap",
+                      alignItems: "center",
+                      gap: 8,
                     }}
                   >
-                    <div style={{ fontSize: 11, fontWeight: 600, color: "#9B9189", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 16 }}>
-                      Pipeline Progress
-                    </div>
-                    <StepTracker statuses={stepStatuses} running={isRunning} />
-                  </div>
-
-                  {/* Run controls */}
-                  <div
-                    style={{
-                      background: "#FFFFFF",
-                      border: "1px solid #E4DDD4",
-                      borderRadius: 14,
-                      padding: "18px 22px",
-                      marginBottom: 18,
-                    }}
-                  >
-                    <div style={{ fontSize: 11, fontWeight: 600, color: "#9B9189", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 14 }}>
-                      Run Controls
-                    </div>
-
-                    {isSessionDone ? (
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#15803D", fontSize: 13.5 }}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                          <path d="M22 11.08V12a10 10 0 11-5.93-9.14" />
-                          <polyline points="22 4 12 14.01 9 11.01" />
-                        </svg>
-                        Session completed — all steps finished successfully.
-                      </div>
-                    ) : (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-                        {/* Run All */}
-                        <button
-                          onClick={() => handleRun()}
-                          disabled={isRunning || isSessionDone}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 7,
-                            padding: "8px 16px",
-                            borderRadius: 9,
-                            background: isRunning ? "#F0EAE1" : "#0D0D0D",
-                            color: isRunning ? "#9B9189" : "#FFFFFF",
-                            border: "none",
-                            fontSize: 13,
-                            fontWeight: 500,
-                            cursor: isRunning ? "not-allowed" : "pointer",
-                            transition: "all 0.18s ease",
-                          }}
-                          onMouseEnter={(e) => { if (!isRunning) { (e.currentTarget as HTMLElement).style.background = "#2a2a2a"; (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; } }}
-                          onMouseLeave={(e) => { if (!isRunning) { (e.currentTarget as HTMLElement).style.background = "#0D0D0D"; (e.currentTarget as HTMLElement).style.transform = ""; } }}
-                        >
-                          {isRunning ? (
-                            <span style={{ width: 13, height: 13, border: "1.5px solid #C8C0B8", borderTop: "1.5px solid #E8561B", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
-                          ) : (
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                              <polygon points="5 3 19 12 5 21 5 3" />
-                            </svg>
-                          )}
-                          {isRunning ? "Running…" : "Run All Steps"}
-                        </button>
-
-                        {/* Run Next Step */}
-                        {nextStep && (
-                          <button
-                            onClick={() => handleRun(nextStep)}
-                            disabled={isRunning}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 7,
-                              padding: "8px 16px",
-                              borderRadius: 9,
-                              background: "#FFF7ED",
-                              color: "#C2410C",
-                              border: "1.5px solid #FED7AA",
-                              fontSize: 13,
-                              fontWeight: 500,
-                              cursor: isRunning ? "not-allowed" : "pointer",
-                              transition: "all 0.18s ease",
-                            }}
-                            onMouseEnter={(e) => { if (!isRunning) { (e.currentTarget as HTMLElement).style.background = "#FFEDD5"; (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; } }}
-                            onMouseLeave={(e) => { if (!isRunning) { (e.currentTarget as HTMLElement).style.background = "#FFF7ED"; (e.currentTarget as HTMLElement).style.transform = ""; } }}
-                          >
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                              <polygon points="5 3 19 12 5 21 5 3" />
-                            </svg>
-                            Run Next: {PIPELINE_STEPS.find((s) => s.id === nextStep)?.label}
-                          </button>
-                        )}
-
-                        {/* Individual step buttons */}
-                        {PIPELINE_STEPS.filter((s) => stepStatuses[s.id] === "pending" || stepStatuses[s.id] === "failed").map((step) => (
-                          step.id !== nextStep ? (
-                            <button
-                              key={step.id}
-                              onClick={() => handleRun(step.id)}
-                              disabled={isRunning}
-                              style={{
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 6,
-                                padding: "7px 12px",
-                                borderRadius: 8,
-                                background: stepStatuses[step.id] === "failed" ? "#FEF2F2" : "#F8F4EF",
-                                color: stepStatuses[step.id] === "failed" ? "#B91C1C" : "#6B6B6B",
-                                border: `1px solid ${stepStatuses[step.id] === "failed" ? "#FECACA" : "#E4DDD4"}`,
-                                fontSize: 12,
-                                fontWeight: 500,
-                                cursor: isRunning ? "not-allowed" : "pointer",
-                                transition: "all 0.15s ease",
-                              }}
-                              onMouseEnter={(e) => { if (!isRunning) { (e.currentTarget as HTMLElement).style.borderColor = "#E8561B"; } }}
-                              onMouseLeave={(e) => { if (!isRunning) { (e.currentTarget as HTMLElement).style.borderColor = stepStatuses[step.id] === "failed" ? "#FECACA" : "#E4DDD4"; } }}
-                            >
-                              {stepStatuses[step.id] === "failed" && (
-                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                                  <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-                                  <line x1="12" y1="9" x2="12" y2="13" />
-                                </svg>
-                              )}
-                              Retry: {step.label}
-                            </button>
-                          ) : null
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Run error */}
-                    {runError && (
-                      <div
-                        style={{
-                          marginTop: 12,
-                          padding: "10px 14px",
-                          background: "#FEF2F2",
-                          border: "1px solid #FECACA",
-                          borderRadius: 8,
-                          fontSize: 12.5,
-                          color: "#B91C1C",
-                          lineHeight: 1.5,
-                        }}
-                      >
-                        {runError}
-                      </div>
-                    )}
+                    <span style={{ fontSize: 10, fontWeight: 600, color: "#9B9189", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                      Next run includes
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 500,
+                        padding: "3px 10px",
+                        borderRadius: 20,
+                        border: `1px solid ${contextSaved ? "#BBF7D0" : "#E4DDD4"}`,
+                        background: contextSaved ? "#F0FDF4" : "#F8F4EF",
+                        color: contextSaved ? "#15803D" : "#9B9189",
+                      }}
+                    >
+                      Context{contextSaved ? " ✓" : " —"}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 500,
+                        padding: "3px 10px",
+                        borderRadius: 20,
+                        border: `1px solid ${researchCount > 0 ? "#BBF7D0" : "#E4DDD4"}`,
+                        background: researchCount > 0 ? "#F0FDF4" : "#F8F4EF",
+                        color: researchCount > 0 ? "#15803D" : "#9B9189",
+                      }}
+                    >
+                      Research ({researchCount}){researchCount > 0 ? " ✓" : ""}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 12,
+                        fontWeight: 500,
+                        padding: "3px 10px",
+                        borderRadius: 20,
+                        border: "1px solid #BBF7D0",
+                        background: "#F0FDF4",
+                        color: "#15803D",
+                      }}
+                    >
+                      Ingest (this tab) ✓
+                    </span>
                   </div>
 
                   {/* Input data — structured ingest form */}
@@ -1024,6 +883,165 @@ export default function SessionsPage() {
                             </div>
                           ))}
                         </div>
+                      </div>
+                    )}
+                    <p style={{ fontSize: 11.5, color: "#9B9189", marginTop: 12, lineHeight: 1.5 }}>
+                      Add Context on the Context page and Research on the Research page — both are merged into runs automatically.
+                    </p>
+                  </div>
+
+                  {/* Pipeline step tracker */}
+                  <div
+                    style={{
+                      background: "#FFFFFF",
+                      border: "1px solid #E4DDD4",
+                      borderRadius: 14,
+                      padding: "18px 22px",
+                      marginBottom: 18,
+                    }}
+                  >
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#9B9189", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 16 }}>
+                      Pipeline Progress
+                    </div>
+                    <StepTracker statuses={stepStatuses} running={isRunning} />
+                  </div>
+
+                  {/* Run controls */}
+                  <div
+                    style={{
+                      background: "#FFFFFF",
+                      border: "1px solid #E4DDD4",
+                      borderRadius: 14,
+                      padding: "18px 22px",
+                      marginBottom: 18,
+                    }}
+                  >
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#9B9189", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 14 }}>
+                      Run Controls
+                    </div>
+
+                    {isSessionDone ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#15803D", fontSize: 13.5 }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M22 11.08V12a10 10 0 11-5.93-9.14" />
+                          <polyline points="22 4 12 14.01 9 11.01" />
+                        </svg>
+                        Session completed — all steps finished successfully.
+                      </div>
+                    ) : (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                        {/* Run All */}
+                        <button
+                          onClick={() => handleRun()}
+                          disabled={isRunning || isSessionDone}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 7,
+                            padding: "8px 16px",
+                            borderRadius: 9,
+                            background: isRunning ? "#F0EAE1" : "#0D0D0D",
+                            color: isRunning ? "#9B9189" : "#FFFFFF",
+                            border: "none",
+                            fontSize: 13,
+                            fontWeight: 500,
+                            cursor: isRunning ? "not-allowed" : "pointer",
+                            transition: "all 0.18s ease",
+                          }}
+                          onMouseEnter={(e) => { if (!isRunning) { (e.currentTarget as HTMLElement).style.background = "#2a2a2a"; (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; } }}
+                          onMouseLeave={(e) => { if (!isRunning) { (e.currentTarget as HTMLElement).style.background = "#0D0D0D"; (e.currentTarget as HTMLElement).style.transform = ""; } }}
+                        >
+                          {isRunning ? (
+                            <span style={{ width: 13, height: 13, border: "1.5px solid #C8C0B8", borderTop: "1.5px solid #E8561B", borderRadius: "50%", animation: "spin 0.7s linear infinite", display: "inline-block" }} />
+                          ) : (
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                              <polygon points="5 3 19 12 5 21 5 3" />
+                            </svg>
+                          )}
+                          {isRunning ? "Running…" : "Run full pipeline (Problems → Features → Decompose → Tasks)"}
+                        </button>
+
+                        {/* Run Next Step */}
+                        {nextStep && (
+                          <button
+                            onClick={() => handleRun(nextStep)}
+                            disabled={isRunning}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 7,
+                              padding: "8px 16px",
+                              borderRadius: 9,
+                              background: "#FFF7ED",
+                              color: "#C2410C",
+                              border: "1.5px solid #FED7AA",
+                              fontSize: 13,
+                              fontWeight: 500,
+                              cursor: isRunning ? "not-allowed" : "pointer",
+                              transition: "all 0.18s ease",
+                            }}
+                            onMouseEnter={(e) => { if (!isRunning) { (e.currentTarget as HTMLElement).style.background = "#FFEDD5"; (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; } }}
+                            onMouseLeave={(e) => { if (!isRunning) { (e.currentTarget as HTMLElement).style.background = "#FFF7ED"; (e.currentTarget as HTMLElement).style.transform = ""; } }}
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                              <polygon points="5 3 19 12 5 21 5 3" />
+                            </svg>
+                            Continue: run {PIPELINE_STEPS.find((s) => s.id === nextStep)?.label} only
+                          </button>
+                        )}
+
+                        {/* Individual step buttons */}
+                        {PIPELINE_STEPS.filter((s) => stepStatuses[s.id] === "pending" || stepStatuses[s.id] === "failed").map((step) => (
+                          step.id !== nextStep ? (
+                            <button
+                              key={step.id}
+                              onClick={() => handleRun(step.id)}
+                              disabled={isRunning}
+                              style={{
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 6,
+                                padding: "7px 12px",
+                                borderRadius: 8,
+                                background: stepStatuses[step.id] === "failed" ? "#FEF2F2" : "#F8F4EF",
+                                color: stepStatuses[step.id] === "failed" ? "#B91C1C" : "#6B6B6B",
+                                border: `1px solid ${stepStatuses[step.id] === "failed" ? "#FECACA" : "#E4DDD4"}`,
+                                fontSize: 12,
+                                fontWeight: 500,
+                                cursor: isRunning ? "not-allowed" : "pointer",
+                                transition: "all 0.15s ease",
+                              }}
+                              onMouseEnter={(e) => { if (!isRunning) { (e.currentTarget as HTMLElement).style.borderColor = "#E8561B"; } }}
+                              onMouseLeave={(e) => { if (!isRunning) { (e.currentTarget as HTMLElement).style.borderColor = stepStatuses[step.id] === "failed" ? "#FECACA" : "#E4DDD4"; } }}
+                            >
+                              {stepStatuses[step.id] === "failed" && (
+                                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                                  <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                                  <line x1="12" y1="9" x2="12" y2="13" />
+                                </svg>
+                              )}
+                              Retry: {step.label}
+                            </button>
+                          ) : null
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Run error */}
+                    {runError && (
+                      <div
+                        style={{
+                          marginTop: 12,
+                          padding: "10px 14px",
+                          background: "#FEF2F2",
+                          border: "1px solid #FECACA",
+                          borderRadius: 8,
+                          fontSize: 12.5,
+                          color: "#B91C1C",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        {runError}
                       </div>
                     )}
                   </div>

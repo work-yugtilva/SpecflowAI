@@ -3,7 +3,12 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
-import { runPipeline } from "@/lib/api/pipeline";
+import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
+import { getSession } from "@/lib/api/session";
+import type { SessionDetail } from "@/lib/api/session";
+import { buildPipelineInputFromStorage, getActiveSessionId } from "@/lib/pipeline-input";
+import { computeStepStatuses } from "@/lib/pipeline-session";
+import { runPipelineStepOrFull } from "@/lib/run-pipeline-client";
 import type { PipelineInput } from "@/lib/api/pipeline";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -144,26 +149,50 @@ export default function ProblemsPage() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fromSession, setFromSession] = useState(false);
+  const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
 
   const selectedProblem = problems.find((p) => p.id === selectedId) ?? null;
+  const activeSessionId = getActiveSessionId();
+  const stepStatuses = computeStepStatuses(sessionDetail);
+  const runModeSession = !!activeSessionId;
+
+  useEffect(() => {
+    const id = getActiveSessionId();
+    if (!id) {
+      setSessionDetail(null);
+      return;
+    }
+    getSession(id)
+      .then(setSessionDetail)
+      .catch(() => setSessionDetail(null));
+  }, []);
 
   async function handleGenerate() {
     setGenerating(true);
     setSelectedId(null);
     setError(null);
     setFromSession(false);
+    const isAutorun = localStorage.getItem("specflow_autorun") === "1";
     try {
-      const pending = localStorage.getItem("specflow_pending_input");
-      const inputData: PipelineInput = pending
-        ? JSON.parse(pending)
-        : { context: JSON.parse(localStorage.getItem("specflow_context") ?? "{}"), research: [], ingest: [] };
-      const { data } = await runPipeline(inputData);
+      const inputData: PipelineInput = buildPipelineInputFromStorage();
+      const { data, mode } = await runPipelineStepOrFull("problems", inputData);
+      setFromSession(mode === "session");
       const adapted = adaptPipelineProblems(data);
       setProblems(adapted);
       if (adapted.length > 0) setSelectedId(adapted[0].id);
+      const sid = getActiveSessionId();
+      if (sid) {
+        try {
+          const d = await getSession(sid);
+          setSessionDetail(d);
+        } catch {
+          /* ignore */
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
     } finally {
+      if (isAutorun) localStorage.removeItem("specflow_autorun");
       setGenerating(false);
     }
   }
@@ -191,6 +220,11 @@ export default function ProblemsPage() {
 
       {/* Main area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <PipelineStepper
+          currentStepId="problems"
+          stepStatuses={stepStatuses}
+          sessionIdShort={activeSessionId ? activeSessionId.slice(0, 8).toUpperCase() : null}
+        />
         {/* Top bar */}
         <header
           className="flex items-center justify-between px-6 flex-shrink-0"
@@ -228,7 +262,11 @@ export default function ProblemsPage() {
               cursor: generating ? "not-allowed" : "pointer",
             }}
           >
-            {generating ? "Generating…" : "Generate Problems"}
+            {generating
+              ? "Running…"
+              : runModeSession
+                ? "Run Problems (this step)"
+                : "Run full pipeline (all 4 steps)"}
           </button>
         </header>
 
@@ -252,7 +290,7 @@ export default function ProblemsPage() {
                   }}
                 />
                 <p style={{ fontSize: 13.5, color: "#6B6B6B" }}>
-                  Analysing ingest data…
+                  Running pipeline…
                 </p>
                 <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
               </div>
@@ -309,7 +347,8 @@ export default function ProblemsPage() {
                     {error ? "Pipeline error" : "No problems generated yet."}
                   </p>
                   <p style={{ fontSize: 13.5, color: "#6B6B6B", lineHeight: 1.6 }}>
-                    {error ?? "Analyse your ingest data to surface structured problem statements with supporting evidence."}
+                    {error ??
+                      "Runs use Context, Research, and Ingest from Sessions (or pending input). Without an active session, this runs all four agents end-to-end."}
                   </p>
                 </div>
                 <button
@@ -317,7 +356,11 @@ export default function ProblemsPage() {
                   className="btn-dark"
                   style={{ fontSize: 14, padding: "0.65rem 1.5rem" }}
                 >
-                  {error ? "Retry" : "Generate Problems"}
+                  {error
+                    ? "Retry"
+                    : runModeSession
+                      ? "Run Problems (this step)"
+                      : "Run full pipeline (all 4 steps)"}
                 </button>
               </div>
             )}
