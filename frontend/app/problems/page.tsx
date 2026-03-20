@@ -56,27 +56,198 @@ function toImpact(val: any): Problem["impact"] {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+function firstArray(...candidates: any[]): any[] | null {
+  for (const c of candidates) {
+    if (Array.isArray(c)) return c;
+  }
+  return null;
+}
+
+function isPlainObject(x: unknown): x is Record<string, unknown> {
+  return typeof x === "object" && x !== null && !Array.isArray(x);
+}
+
+/** Model sometimes returns one problem object instead of `[{ ... }]`. */
+function isLikelySingleProblemRecord(o: Record<string, unknown>): boolean {
+  if ("error" in o) return false;
+  const title = o.title ?? o.name;
+  if (typeof title !== "string" || !title.trim()) return false;
+  const schemaKeys = [
+    "summary",
+    "description",
+    "time_cost",
+    "error_risk",
+    "user_frustration",
+    "desired_outcome",
+    "cluster",
+    "sources",
+    "attributes",
+    "metadata",
+  ];
+  return schemaKeys.some((k) => k in o);
+}
+
+/** Collect every array whose elements are all plain objects (nested groups/sections). */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function collectListsOfObjects(node: unknown, depth: number, acc: any[][]): void {
+  if (depth > 14) return;
+  if (Array.isArray(node)) {
+    if (
+      node.length > 0 &&
+      node.every((x) => isPlainObject(x)) &&
+      !node.some((x) => "error" in x)
+    ) {
+      acc.push(node);
+    }
+    for (const x of node) {
+      if (isPlainObject(x) || Array.isArray(x)) {
+        collectListsOfObjects(x, depth + 1, acc);
+      }
+    }
+    return;
+  }
+  if (isPlainObject(node)) {
+    if ("error" in node) return;
+    for (const v of Object.values(node)) {
+      collectListsOfObjects(v, depth + 1, acc);
+    }
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function discoverProblemRowsFromTree(root: unknown): any[] {
+  const buckets: any[][] = [];
+  collectListsOfObjects(root, 0, buckets);
+  if (buckets.length === 0) return [];
+  return buckets.reduce((best, arr) =>
+    arr.length > best.length ? arr : best
+  );
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function unwrapProblemRows(raw: any, data: Record<string, unknown>): any[] {
+  if (typeof raw === "string") {
+    try {
+      return unwrapProblemRows(JSON.parse(raw), data);
+    } catch {
+      return [];
+    }
+  }
+  if (Array.isArray(raw)) {
+    if (
+      raw.length > 0 &&
+      raw.every((x) => typeof x === "string")
+    ) {
+      return raw.map((s: string) => ({
+        title: (s || "").slice(0, 240),
+        summary: s || "",
+      }));
+    }
+    return raw;
+  }
+  if (raw && typeof raw === "object") {
+    const o = raw as Record<string, unknown>;
+    if (isLikelySingleProblemRecord(o)) {
+      return [o];
+    }
+    const fromO = firstArray(
+      o.problems,
+      o.items,
+      o.identified_problems,
+      o.problem_list,
+      o.issues,
+      o.pain_points,
+      o.data as unknown[],
+      o.results,
+      o.value
+    );
+    if (fromO) return unwrapProblemRows(fromO, data);
+    if (typeof o.data === "object" && o.data !== null && !Array.isArray(o.data)) {
+      const d = o.data as Record<string, unknown>;
+      const inner = firstArray(d.items, d.problems);
+      if (inner) return unwrapProblemRows(inner, data);
+    }
+    const discovered = discoverProblemRowsFromTree(raw);
+    if (discovered.length > 0) return discovered;
+  }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const dAny = data as any;
+  const top =
+    firstArray(dAny.items, dAny.identified_problems, dAny.problems) ?? [];
+  return Array.isArray(top) ? unwrapProblemRows(top, data) : [];
+}
+
+function coalesceProblemsRaw(
+  data: Record<string, unknown>,
+  sessionState: Record<string, unknown> | null | undefined
+): unknown {
+  const fromData = data.problems;
+  const fromNested = (data as { outputs?: { problems?: unknown } }).outputs
+    ?.problems;
+  const fromSession =
+    sessionState &&
+    typeof sessionState === "object" &&
+    (sessionState as { outputs?: { problems?: unknown } }).outputs?.problems;
+  if (fromData !== undefined && fromData !== null) return fromData;
+  if (fromNested !== undefined && fromNested !== null) return fromNested;
+  if (fromSession !== undefined && fromSession !== null) return fromSession;
+  return undefined;
+}
+
+function emptyProblemsUserMessage(
+  data: Record<string, unknown>,
+  rawCoalesced: unknown
+): string {
+  const p = rawCoalesced !== undefined ? rawCoalesced : data.problems;
+  if (p && typeof p === "object" && !Array.isArray(p) && "error" in p) {
+    const o = p as { error?: unknown; raw?: unknown };
+    const tail = o.raw != null ? ` ${String(o.raw).slice(0, 280)}` : "";
+    return `The model did not return valid JSON (${String(o.error)}).${tail}`;
+  }
+  if (Array.isArray(p) && p.length === 0) {
+    return "The model returned an empty list. Add more context and research for this session, then try again.";
+  }
+  if (p === undefined || p === null) {
+    return "No problems output was found in the API response. Confirm NEXT_PUBLIC_PIPELINE_URL matches your pipeline server and check its logs.";
+  }
+  const keys =
+    p && typeof p === "object" && !Array.isArray(p)
+      ? Object.keys(p as object).slice(0, 12).join(", ")
+      : "";
+  return keys
+    ? `Could not extract a list of problems from the model output (saw keys: ${keys}). Check pipeline logs or simplify the JSON shape.`
+    : "Problems were returned in a shape we could not map to cards. Check pipeline logs.";
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function adaptPipelineProblems(data: Record<string, unknown>): Problem[] {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let raw: any = data.problems;
+  let raw: any[] = unwrapProblemRows(data.problems, data);
 
-  // Unwrap if AI returned { problems: [...] } or { items: [...] }
-  if (raw && !Array.isArray(raw) && typeof raw === "object") {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const nested = (raw as any).problems ?? (raw as any).items ?? (raw as any).identified_problems;
-    if (Array.isArray(nested)) raw = nested;
-  }
-
-  // If still not an array, try top-level data keys
-  if (!Array.isArray(raw)) {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    raw = (data as any).items ?? (data as any).identified_problems ?? [];
+  if (!Array.isArray(raw) || raw.length === 0) {
+    const d = discoverProblemRowsFromTree(data.problems);
+    if (d.length > 0) raw = d;
   }
 
   if (!Array.isArray(raw)) return [];
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return (raw as any[]).map((p: any, idx: number) => ({
+  return (raw as any[]).map((p: any, idx: number) => {
+    if (typeof p === "string") {
+      return {
+        id: `p${idx}`,
+        title: p.slice(0, 120) || `Problem ${idx + 1}`,
+        summary: p,
+        confidence: 0,
+        impact: "Medium" as const,
+        frequency: 0,
+        tags: [],
+        signals: 0,
+        evidence: [],
+        rootCause: { primary: p.slice(0, 200) },
+      };
+    }
+    return {
     id: p.id ?? `p${idx}`,
     title: p.title ?? p.name ?? `Problem ${idx + 1}`,
     summary: p.summary ?? p.description ?? "",
@@ -90,7 +261,8 @@ function adaptPipelineProblems(data: Record<string, unknown>): Problem[] {
       primary: p.rootCause?.primary ?? p.primary ?? p.summary ?? "",
       secondary: p.rootCause?.secondary ?? p.secondary,
     },
-  }));
+  };
+  });
 }
 
 // ─── Impact badge ─────────────────────────────────────────────────────────────
@@ -160,7 +332,6 @@ export default function ProblemsPage() {
 
   const selectedProblem = problems.find((p) => p.id === selectedId) ?? null;
   const stepStatuses = computeStepStatuses(sessionDetail);
-  const runModeSession = !!activeSessionId;
 
   useEffect(() => {
     setProblems([]);
@@ -177,14 +348,18 @@ export default function ProblemsPage() {
         const out = d.state?.state?.outputs as
           | Record<string, unknown>
           | undefined;
+        // Only hydrate non-empty lists so a stale in-flight GET cannot overwrite
+        // a successful run with an empty `problems: []` snapshot.
         if (out && out.problems != null) {
-          setFromSession(true);
           const adapted = adaptPipelineProblems({
             ...out,
             problems: out.problems,
           } as Record<string, unknown>);
-          setProblems(adapted);
-          if (adapted.length > 0) setSelectedId(adapted[0].id);
+          if (adapted.length > 0) {
+            setFromSession(true);
+            setProblems(adapted);
+            setSelectedId(adapted[0].id);
+          }
         }
       })
       .catch(() => {
@@ -200,20 +375,30 @@ export default function ProblemsPage() {
     setSelectedId(null);
     setError(null);
     setFromSession(false);
+    setProblems([]);
     const isAutorun = isAutorunPending(activeSessionId ?? undefined);
     try {
       const inputData: PipelineInput = buildPipelineInputFromStorage(
         activeSessionId ?? undefined
       );
-      const { data, mode } = await runPipelineStepOrFull(
+      const { data, mode, sessionState } = await runPipelineStepOrFull(
         "problems",
         inputData,
         activeSessionId
       );
       setFromSession(mode === "session");
-      const adapted = adaptPipelineProblems(data);
+      const rawProblems = coalesceProblemsRaw(data, sessionState);
+      const merged =
+        rawProblems !== undefined
+          ? { ...data, problems: rawProblems }
+          : data;
+      const adapted = adaptPipelineProblems(merged as Record<string, unknown>);
       setProblems(adapted);
-      if (adapted.length > 0) setSelectedId(adapted[0].id);
+      if (adapted.length > 0) {
+        setSelectedId(adapted[0].id);
+      } else {
+        setError(emptyProblemsUserMessage(data, rawProblems));
+      }
       if (activeSessionId) {
         try {
           const d = await getSession(activeSessionId);
@@ -284,20 +469,20 @@ export default function ProblemsPage() {
           </div>
           <button
             onClick={handleGenerate}
-            disabled={generating}
+            disabled={generating || !activeSessionId}
             className="btn-dark"
             style={{
               fontSize: 13,
               padding: "0.45rem 1rem",
-              opacity: generating ? 0.6 : 1,
-              cursor: generating ? "not-allowed" : "pointer",
+              opacity: generating || !activeSessionId ? 0.6 : 1,
+              cursor: generating || !activeSessionId ? "not-allowed" : "pointer",
             }}
           >
             {generating
               ? <TextShimmer duration={1.2}>Running…</TextShimmer>
-              : runModeSession
-                ? "Run Problems (this step)"
-                : "Run full pipeline (all 4 steps)"}
+              : !activeSessionId
+                ? "Select a session in Sessions"
+                : "Run Problems (this step)"}
           </button>
         </header>
 
@@ -364,21 +549,28 @@ export default function ProblemsPage() {
                   >
                     {error ? "Pipeline error" : "No problems generated yet."}
                   </p>
-                  <p style={{ fontSize: 13.5, color: "#6B6B6B", lineHeight: 1.6 }}>
-                    {error ??
-                      "Runs use Context, Research, and Ingest from Sessions (or pending input). Without an active session, this runs all four agents end-to-end."}
-                  </p>
+                  {error ? (
+                    <p style={{ fontSize: 13.5, color: "#6B6B6B", lineHeight: 1.6 }}>
+                      {error}
+                    </p>
+                  ) : null}
                 </div>
                 <button
                   onClick={handleGenerate}
+                  disabled={!error && !activeSessionId}
                   className="btn-dark"
-                  style={{ fontSize: 14, padding: "0.65rem 1.5rem" }}
+                  style={{
+                    fontSize: 14,
+                    padding: "0.65rem 1.5rem",
+                    opacity: !error && !activeSessionId ? 0.6 : 1,
+                    cursor: !error && !activeSessionId ? "not-allowed" : "pointer",
+                  }}
                 >
                   {error
                     ? "Retry"
-                    : runModeSession
-                      ? "Run Problems (this step)"
-                      : "Run full pipeline (all 4 steps)"}
+                    : !activeSessionId
+                      ? "Select a session in Sessions"
+                      : "Run Problems (this step)"}
                 </button>
               </div>
             )}

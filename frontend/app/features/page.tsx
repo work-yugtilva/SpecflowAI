@@ -47,39 +47,239 @@ function numericToEffort(n: number): Feature["effort"] {
   return "Low";
 }
 
+function isPlainObject(x: unknown): x is Record<string, unknown> {
+  return typeof x === "object" && x !== null && !Array.isArray(x);
+}
+
+function isLikelySingleFeatureRecord(o: Record<string, unknown>): boolean {
+  if ("error" in o) return false;
+  const title = o.title ?? o.name;
+  if (typeof title !== "string" || !title.trim()) return false;
+  return [
+    "description",
+    "summary",
+    "linked_problems",
+    "linked_items",
+    "priority_tier",
+    "success_metrics",
+    "attributes",
+    "reasoning",
+    "metadata",
+  ].some((k) => k in o);
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function adaptFeatures(data: Record<string, unknown>): Feature[] {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let raw: any[] = Array.isArray(data.features) ? data.features : [];
-  // Unwrap if AI returned { features: [...] } or { items: [...] }
-  if (raw.length === 0 && data.features && typeof data.features === "object") {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const nested = (data.features as any).features ?? (data.features as any).items ?? [];
-    if (Array.isArray(nested)) raw = nested;
+function collectListsOfObjects(node: unknown, depth: number, acc: any[][]): void {
+  if (depth > 14) return;
+  if (Array.isArray(node)) {
+    if (
+      node.length > 0 &&
+      node.every((x) => isPlainObject(x)) &&
+      !node.some((x) => "error" in x)
+    ) {
+      acc.push(node);
+    }
+    for (const x of node) {
+      if (isPlainObject(x) || Array.isArray(x)) {
+        collectListsOfObjects(x, depth + 1, acc);
+      }
+    }
+    return;
+  }
+  if (isPlainObject(node)) {
+    if ("error" in node) return;
+    for (const v of Object.values(node)) {
+      collectListsOfObjects(v, depth + 1, acc);
+    }
+  }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function discoverLongestObjectList(root: unknown): any[] {
+  const buckets: any[][] = [];
+  collectListsOfObjects(root, 0, buckets);
+  if (buckets.length === 0) return [];
+  return buckets.reduce((best, arr) => (arr.length > best.length ? arr : best));
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function firstFeatureArray(...candidates: any[]): any[] | null {
+  for (const c of candidates) {
+    if (Array.isArray(c) && c.length > 0) return c;
+  }
+  return null;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function unwrapFeatureRows(raw: any, data: Record<string, unknown>): any[] {
+  if (typeof raw === "string") {
+    try {
+      return unwrapFeatureRows(JSON.parse(raw), data);
+    } catch {
+      return [];
+    }
+  }
+  if (Array.isArray(raw)) {
+    if (raw.length > 0 && raw.every((x: unknown) => typeof x === "string")) {
+      return raw.map((s: string) => ({
+        title: (s || "").slice(0, 240),
+        description: s || "",
+        linked_problems: [],
+      }));
+    }
+    return raw;
+  }
+  if (raw && typeof raw === "object") {
+    const o = raw as Record<string, unknown>;
+    if (isLikelySingleFeatureRecord(o)) return [o];
+    const nested = firstFeatureArray(
+      o.features,
+      o.items,
+      o.capabilities,
+      o.results,
+      o.product_features,
+      o.data as unknown[],
+      o.value
+    );
+    if (nested) return unwrapFeatureRows(nested, data);
+    if (typeof o.data === "object" && o.data !== null && !Array.isArray(o.data)) {
+      const d = o.data as Record<string, unknown>;
+      const inner = firstFeatureArray(d.items, d.features);
+      if (inner) return unwrapFeatureRows(inner, data);
+    }
+    const discovered = discoverLongestObjectList(raw);
+    if (discovered.length > 0) return discovered;
   }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const problems: any[] = Array.isArray(data.problems) ? data.problems : [];
+  const dAny = data as any;
+  const top = firstFeatureArray(dAny.features, dAny.items);
+  return top ? unwrapFeatureRows(top, data) : [];
+}
 
-  return raw.map((item: any, idx: number) => {
+function coalesceFeaturesRaw(
+  data: Record<string, unknown>,
+  sessionState: Record<string, unknown> | null | undefined
+): unknown {
+  const fromData = data.features;
+  const fromNested = (data as { outputs?: { features?: unknown } }).outputs
+    ?.features;
+  const fromSession =
+    sessionState &&
+    typeof sessionState === "object" &&
+    (sessionState as { outputs?: { features?: unknown } }).outputs?.features;
+  if (fromData !== undefined && fromData !== null) return fromData;
+  if (fromNested !== undefined && fromNested !== null) return fromNested;
+  if (fromSession !== undefined && fromSession !== null) return fromSession;
+  return undefined;
+}
+
+function emptyFeaturesMessage(
+  data: Record<string, unknown>,
+  rawCoalesced: unknown
+): string {
+  const p = rawCoalesced !== undefined ? rawCoalesced : data.features;
+  if (p && isPlainObject(p) && "error" in p) {
+    const o = p as { error?: unknown; raw?: unknown };
+    const tail = o.raw != null ? ` ${String(o.raw).slice(0, 280)}` : "";
+    return `The model did not return valid JSON (${String(o.error)}).${tail}`;
+  }
+  if (Array.isArray(p) && p.length === 0) {
+    return "The model returned an empty feature list. Run Problems for this session first, then try Features again.";
+  }
+  if (p === undefined || p === null) {
+    return "No features output was found in the API response. Confirm NEXT_PUBLIC_PIPELINE_URL matches your pipeline server.";
+  }
+  const keys = isPlainObject(p) ? Object.keys(p).slice(0, 12).join(", ") : "";
+  return keys
+    ? `Could not extract a list of features from the model output (saw keys: ${keys}).`
+    : "Could not map features from the pipeline response.";
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function adaptFeatures(
+  data: Record<string, unknown>,
+  sessionState?: Record<string, unknown> | null
+): Feature[] {
+  const rawFeatures = coalesceFeaturesRaw(data, sessionState);
+  const merged =
+    rawFeatures !== undefined
+      ? { ...data, features: rawFeatures }
+      : data;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let rows: any[] = unwrapFeatureRows(merged.features, merged);
+  if (!Array.isArray(rows) || rows.length === 0) {
+    const d = discoverLongestObjectList(merged.features);
+    if (d.length > 0) rows = d;
+  }
+  if (!Array.isArray(rows)) return [];
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const problems: any[] = Array.isArray(merged.problems) ? merged.problems : [];
+
+  return rows.map((item: any, idx: number) => {
+    if (typeof item === "string") {
+      const lp = problems[0] ?? {};
+      return {
+        id: `f${idx}`,
+        title: item.slice(0, 120) || `Feature ${idx + 1}`,
+        description: item,
+        linkedProblemId: String(lp.id ?? "p0"),
+        linkedProblemTitle: String(lp.title ?? lp.summary ?? ""),
+        impact: "Medium" as const,
+        effort: "Medium" as const,
+        confidence: 70,
+        score: 70,
+        reasoning: item,
+        successMetrics: [] as string[],
+      };
+    }
+
     const attrs = item.attributes ?? item;
     const reasoning = item.reasoning ?? {};
-    const linkedItems: string[] = Array.isArray(item.linked_items) ? item.linked_items : [];
-    const linkedProblem = problems[idx] ?? problems[0] ?? {};
+    const linkedItems: string[] = Array.isArray(item.linked_items)
+      ? item.linked_items.map(String)
+      : [];
+    const linkedTitles: string[] = Array.isArray(item.linked_problems)
+      ? item.linked_problems.map((x: unknown) => String(x))
+      : [];
 
-    // impact/effort can be numeric (0-100) or already a string label
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let linkedProblem: any = {};
+    if (linkedTitles.length > 0) {
+      const match = problems.find((pr: any) =>
+        linkedTitles.includes(String(pr?.title ?? ""))
+      );
+      if (match) linkedProblem = match;
+    }
+    if (!linkedProblem?.title && problems[idx]) linkedProblem = problems[idx];
+    if (!linkedProblem?.title && problems[0]) linkedProblem = problems[0];
+
     const impactRaw = attrs.impact ?? item.impact ?? 50;
     const effortRaw = attrs.effort ?? item.effort ?? 50;
     const impact: Feature["impact"] =
-      typeof impactRaw === "string" ? (impactRaw as Feature["impact"]) : numericToImpact(Number(impactRaw));
+      typeof impactRaw === "string"
+        ? (impactRaw as Feature["impact"])
+        : numericToImpact(Number(impactRaw));
     const effort: Feature["effort"] =
-      typeof effortRaw === "string" ? (effortRaw as Feature["effort"]) : numericToEffort(Number(effortRaw));
+      typeof effortRaw === "string"
+        ? (effortRaw as Feature["effort"])
+        : numericToEffort(Number(effortRaw));
 
     return {
       id: item.id ?? `f${idx}`,
       title: item.title ?? item.name ?? `Feature ${idx + 1}`,
       description: item.description ?? item.summary ?? "",
-      linkedProblemId: linkedProblem.id ?? linkedItems[0] ?? `p${idx}`,
-      linkedProblemTitle: linkedProblem.title ?? linkedProblem.summary ?? linkedItems[0] ?? "",
+      linkedProblemId:
+        linkedProblem?.id != null
+          ? String(linkedProblem.id)
+          : String(linkedItems[0] ?? `p${idx}`),
+      linkedProblemTitle: String(
+        linkedProblem.title ??
+          linkedProblem.summary ??
+          linkedItems[0] ??
+          linkedTitles[0] ??
+          ""
+      ),
       impact,
       effort,
       confidence: Number(attrs.confidence ?? item.confidence ?? 70),
@@ -87,12 +287,15 @@ function adaptFeatures(data: Record<string, unknown>): Feature[] {
       reasoning:
         typeof reasoning === "string"
           ? reasoning
-          : reasoning.why_it_matters ?? reasoning.summary ?? item.reasoning ?? "",
-      successMetrics: Array.isArray(reasoning.tradeoffs)
-        ? reasoning.tradeoffs
-        : Array.isArray(item.success_metrics)
-        ? item.success_metrics
-        : [],
+          : reasoning.why_it_matters ??
+            reasoning.summary ??
+            item.reasoning ??
+            "",
+      successMetrics: Array.isArray(item.success_metrics)
+        ? item.success_metrics.map(String)
+        : Array.isArray(reasoning.tradeoffs)
+          ? reasoning.tradeoffs.map(String)
+          : [],
     };
   });
 }
@@ -181,7 +384,6 @@ export default function FeaturesPage() {
   const { activeSessionId } = useActiveSession();
   const selectedFeature = features.find((f) => f.id === selectedId) ?? null;
   const stepStatuses = computeStepStatuses(sessionDetail);
-  const runModeSession = !!activeSessionId;
 
   useEffect(() => {
     setFeatures([]);
@@ -223,23 +425,25 @@ export default function FeaturesPage() {
     setSelectedId(null);
     setError(null);
     setFromSession(false);
+    setFeatures([]);
     const isAutorun = isAutorunPending(activeSessionId ?? undefined);
     try {
       const inputData: PipelineInput = buildPipelineInputFromStorage(
         activeSessionId ?? undefined
       );
-      const { data, mode } = await runPipelineStepOrFull(
+      const { data, mode, sessionState } = await runPipelineStepOrFull(
         "features",
         inputData,
         activeSessionId
       );
       setFromSession(mode === "session");
-      const adapted = adaptFeatures(data);
+      const rawCoalesced = coalesceFeaturesRaw(data, sessionState);
+      const adapted = adaptFeatures(data, sessionState);
       if (adapted.length > 0) {
         setFeatures(adapted);
         setSelectedId(adapted[0].id);
       } else {
-        setError("Pipeline returned no features. Check your context input.");
+        setError(emptyFeaturesMessage(data, rawCoalesced));
       }
       if (activeSessionId) {
         try {
@@ -311,21 +515,21 @@ export default function FeaturesPage() {
           </div>
           <button
             onClick={handleGenerate}
-            disabled={generating}
+            disabled={generating || !activeSessionId}
             className="btn-dark"
             style={{
               fontSize: 13,
               padding: "0.45rem 1rem",
-              opacity: generating ? 0.6 : 1,
-              cursor: generating ? "not-allowed" : "pointer",
+              opacity: generating || !activeSessionId ? 0.6 : 1,
+              cursor: generating || !activeSessionId ? "not-allowed" : "pointer",
             }}
           >
             {generating ? (
               <TextShimmer duration={1.2}>Running…</TextShimmer>
-            ) : runModeSession ? (
-              "Run Features (this step)"
+            ) : !activeSessionId ? (
+              "Select a session in Sessions"
             ) : (
-              "Run full pipeline (all 4 steps)"
+              "Run Features (this step)"
             )}
           </button>
         </header>
@@ -394,21 +598,28 @@ export default function FeaturesPage() {
                   >
                     {error ? "Pipeline error" : "No features generated yet."}
                   </p>
-                  <p style={{ fontSize: 13.5, color: "#6B6B6B", lineHeight: 1.6 }}>
-                    {error ??
-                      "With an active session, only the Features agent runs. Without a session, all four agents run end-to-end."}
-                  </p>
+                  {error ? (
+                    <p style={{ fontSize: 13.5, color: "#6B6B6B", lineHeight: 1.6 }}>
+                      {error}
+                    </p>
+                  ) : null}
                 </div>
                 <button
                   onClick={handleGenerate}
+                  disabled={!error && !activeSessionId}
                   className="btn-dark"
-                  style={{ fontSize: 14, padding: "0.65rem 1.5rem" }}
+                  style={{
+                    fontSize: 14,
+                    padding: "0.65rem 1.5rem",
+                    opacity: !error && !activeSessionId ? 0.6 : 1,
+                    cursor: !error && !activeSessionId ? "not-allowed" : "pointer",
+                  }}
                 >
                   {error
                     ? "Retry"
-                    : runModeSession
-                      ? "Run Features (this step)"
-                      : "Run full pipeline (all 4 steps)"}
+                    : !activeSessionId
+                      ? "Select a session in Sessions"
+                      : "Run Features (this step)"}
                 </button>
               </div>
             )}

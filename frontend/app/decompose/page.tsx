@@ -241,7 +241,6 @@ export default function DecomposePage() {
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
 
   const stepStatuses = computeStepStatuses(sessionDetail);
-  const runModeSession = !!activeSessionId;
 
   useEffect(() => {
     setDecomposition(null);
@@ -424,7 +423,7 @@ export default function DecomposePage() {
             )}
             <button
               onClick={handleGenerate}
-              disabled={generating}
+              disabled={generating || !activeSessionId}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -433,10 +432,10 @@ export default function DecomposePage() {
                 borderRadius: 8,
                 fontSize: "0.8125rem",
                 fontWeight: 500,
-                background: generating ? "#F8F4EF" : "#FFFFFF",
+                background: generating || !activeSessionId ? "#F8F4EF" : "#FFFFFF",
                 border: "1.5px solid #E4DDD4",
-                color: generating ? "#9E9E9E" : "#0D0D0D",
-                cursor: generating ? "not-allowed" : "pointer",
+                color: generating || !activeSessionId ? "#9E9E9E" : "#0D0D0D",
+                cursor: generating || !activeSessionId ? "not-allowed" : "pointer",
                 fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
                 transition: "background 150ms ease, border-color 150ms ease",
               }}
@@ -456,10 +455,10 @@ export default function DecomposePage() {
                   />
                   <TextShimmer duration={1.2}>Decomposing…</TextShimmer>
                 </>
-              ) : runModeSession ? (
-                "Run Decompose (this step)"
+              ) : !activeSessionId ? (
+                "Select a session in Sessions"
               ) : (
-                "Run full pipeline (all 4 steps)"
+                "Run Decompose (this step)"
               )}
             </button>
           </div>
@@ -515,29 +514,37 @@ export default function DecomposePage() {
               >
                 {error ? "Pipeline error" : "No decomposition generated yet."}
               </p>
-              <p
-                style={{
-                  fontSize: 12.5,
-                  color: "#9E9E9E",
-                  margin: "4px 0 0",
-                  lineHeight: 1.5,
-                  maxWidth: 320,
-                }}
-              >
-                {error ??
-                  "With a session, only the Decompose agent runs. Without one, the full pipeline runs all four steps."}
-              </p>
+              {error ? (
+                <p
+                  style={{
+                    fontSize: 12.5,
+                    color: "#9E9E9E",
+                    margin: "4px 0 0",
+                    lineHeight: 1.5,
+                    maxWidth: 320,
+                  }}
+                >
+                  {error}
+                </p>
+              ) : null}
             </div>
             <button
               onClick={handleGenerate}
+              disabled={!error && !activeSessionId}
               className="btn-dark"
-              style={{ fontSize: "0.8125rem", padding: "0.45rem 1rem", marginTop: 4 }}
+              style={{
+                fontSize: "0.8125rem",
+                padding: "0.45rem 1rem",
+                marginTop: 4,
+                opacity: !error && !activeSessionId ? 0.6 : 1,
+                cursor: !error && !activeSessionId ? "not-allowed" : "pointer",
+              }}
             >
               {error
                 ? "Retry"
-                : runModeSession
-                  ? "Run Decompose (this step)"
-                  : "Run full pipeline (all 4 steps)"}
+                : !activeSessionId
+                  ? "Select a session in Sessions"
+                  : "Run Decompose (this step)"}
             </button>
           </div>
         ) : generating ? (

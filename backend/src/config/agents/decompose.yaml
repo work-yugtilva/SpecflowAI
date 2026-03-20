@@ -14,15 +14,15 @@ instructions: |
 steps:
   - Understand the feature intent and the problems it solves from memory
   - Identify all UI components the user will interact with, including forms, views, and navigation
-  - Document all user interactions: clicks, submissions, state transitions, and feedback loops
+  - "Document all user interactions: clicks, submissions, state transitions, and feedback loops"
   - Define every API endpoint needed to support the UI interactions (method + path + purpose)
   - Identify backend services required and the business logic each encapsulates
-  - Map out async jobs: background processing, queues, scheduled tasks, webhooks
+  - "Map out async jobs: background processing, queues, scheduled tasks, webhooks"
   - Trace data flow from user action through API to database and back
-  - Define permission rules: who can perform which actions, role requirements
-  - Document failure handling: what happens when each layer fails, fallbacks, retries
+  - "Define permission rules: who can perform which actions, role requirements"
+  - "Document failure handling: what happens when each layer fails, fallbacks, retries"
   - List every data entity with its key fields
-  - Validate completeness: every UI interaction must have a corresponding API, every API must have a service, every service must have a data model
+  - "Validate completeness: every UI interaction must have a corresponding API, every API must have a service, every service must have a data model"
 
 generation_rules:
   - All three layers (ui_layer, backend_layer, system_layer) must be populated — never leave a layer empty

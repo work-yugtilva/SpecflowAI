@@ -20,6 +20,7 @@ steps:
   - Rank problems by weighted score, highest impact first
 
 generation_rules:
+  - Return ONLY a JSON array of problem objects (use [ ]). If there is exactly one problem, still return a one-element array — never return a single bare object.
   - Every problem title must name a specific workflow or action, not a vague category
   - Every problem must include a time_cost estimate (e.g. "3–5 minutes per occurrence")
   - Every problem must include an error_risk description (e.g. "data loss if user forgets to save")

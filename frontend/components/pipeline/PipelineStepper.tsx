@@ -105,9 +105,8 @@ export function PipelineStepper({
       </div>
       {!sessionIdShort && (
         <span style={{ fontSize: 11, color: "#9B9189", marginLeft: "auto" }}>
-          No active session — open{" "}
-          <strong style={{ color: "#6B6B6B" }}>Sessions</strong> to select one, or
-          generate runs the <strong style={{ color: "#6B6B6B" }}>full pipeline</strong>
+          No active session — pick one in{" "}
+          <strong style={{ color: "#6B6B6B" }}>Sessions</strong>.
         </span>
       )}
     </div>

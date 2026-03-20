@@ -21,6 +21,7 @@ steps:
   - Score each feature on impact (derived from linked problem severity + user_frustration), effort, and confidence
 
 generation_rules:
+  - Return ONLY a JSON array of feature objects (use [ ]). A single feature must still be wrapped as a one-element array — never return one bare object.
   - Every feature must list at least one entry in linked_problems matching a problem title from memory
   - success_metrics must be a list of measurable statements, not vague goals
   - why_it_matters must reference a specific desired_outcome from the linked problems

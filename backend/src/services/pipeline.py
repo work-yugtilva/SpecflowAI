@@ -3,7 +3,7 @@
 import asyncio
 import json
 import logging
-from typing import Optional
+from typing import Any, Optional
 from services.agent_factory import AgentFactory
 from services.config.config_manager import ConfigManager
 from services.memory.memory_store import MemoryStore
@@ -12,6 +12,188 @@ from services.memory.memory_repository import MemoryRepository
 from services.memory.memory_schemas import MemoryEntry
 
 logger = logging.getLogger("specflow.pipeline")
+
+
+def _collect_lists_of_dicts(node: Any, depth: int, acc: list) -> None:
+    """Find every list whose items are all dicts (e.g. nested groups/sections)."""
+    if depth > 14:
+        return
+    if isinstance(node, list):
+        if node and all(isinstance(x, dict) for x in node):
+            if not any(isinstance(x, dict) and "error" in x for x in node):
+                acc.append(node)
+        for x in node:
+            if isinstance(x, (dict, list)):
+                _collect_lists_of_dicts(x, depth + 1, acc)
+        return
+    if isinstance(node, dict):
+        if "error" in node:
+            return
+        for v in node.values():
+            _collect_lists_of_dicts(v, depth + 1, acc)
+
+
+def _discover_longest_dict_list(root: Any) -> Optional[list]:
+    acc: list = []
+    _collect_lists_of_dicts(root, 0, acc)
+    if not acc:
+        return None
+    return max(acc, key=len)
+
+
+def _is_single_problem_dict(d: dict) -> bool:
+    """Model returned one problem row instead of a JSON array."""
+    if "error" in d:
+        return False
+    title = d.get("title") or d.get("name")
+    if not isinstance(title, str) or not str(title).strip():
+        return False
+    schema_keys = (
+        "summary",
+        "description",
+        "time_cost",
+        "error_risk",
+        "user_frustration",
+        "desired_outcome",
+        "cluster",
+        "sources",
+        "attributes",
+        "metadata",
+    )
+    return any(k in d for k in schema_keys)
+
+
+def _coerce_problems_output(value: Any) -> Any:
+    """
+    Problems agent is instructed to return a JSON array but models often wrap it
+    ({ "problems": [...] }, { "items": [...] }, groups/sections, or stringified JSON).
+    Keep { "error": ... } payloads from failed parses unchanged.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        try:
+            return _coerce_problems_output(json.loads(value))
+        except Exception:
+            return value
+    if isinstance(value, dict) and "error" in value:
+        return value
+    if isinstance(value, list):
+        if not value:
+            return value
+        if all(isinstance(x, str) for x in value):
+            return [{"title": (s or "")[:240], "summary": s or ""} for s in value]
+        if all(isinstance(x, dict) for x in value):
+            return value
+        # Mixed list — try to salvage dict rows
+        dict_rows = [x for x in value if isinstance(x, dict) and "error" not in x]
+        if dict_rows:
+            return dict_rows
+        return value
+    if isinstance(value, dict):
+        if _is_single_problem_dict(value):
+            return [value]
+        for k in (
+            "problems",
+            "items",
+            "identified_problems",
+            "problem_list",
+            "issues",
+            "pain_points",
+            "data",
+            "results",
+            "value",
+        ):
+            inner = value.get(k)
+            if isinstance(inner, list) and inner:
+                coerced = _coerce_problems_output(inner)
+                if isinstance(coerced, list):
+                    return coerced
+            if isinstance(inner, dict):
+                for k2 in ("items", "problems", "results"):
+                    v2 = inner.get(k2)
+                    if isinstance(v2, list) and v2:
+                        return _coerce_problems_output(v2)
+        discovered = _discover_longest_dict_list(value)
+        if discovered:
+            return discovered
+    return value
+
+
+def _is_single_feature_dict(d: dict) -> bool:
+    """Model returned one feature object instead of a JSON array."""
+    if "error" in d:
+        return False
+    title = d.get("title") or d.get("name")
+    if not isinstance(title, str) or not str(title).strip():
+        return False
+    schema_keys = (
+        "description",
+        "summary",
+        "linked_problems",
+        "linked_items",
+        "priority_tier",
+        "success_metrics",
+        "attributes",
+        "reasoning",
+        "metadata",
+    )
+    return any(k in d for k in schema_keys)
+
+
+def _coerce_features_output(value: Any) -> Any:
+    """
+    Features agent should return a JSON array; normalize wrapped / single-object shapes.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        try:
+            return _coerce_features_output(json.loads(value))
+        except Exception:
+            return value
+    if isinstance(value, dict) and "error" in value:
+        return value
+    if isinstance(value, list):
+        if not value:
+            return value
+        if all(isinstance(x, str) for x in value):
+            return [
+                {"title": (s or "")[:240], "description": s or "", "linked_problems": []}
+                for s in value
+            ]
+        if all(isinstance(x, dict) for x in value):
+            return value
+        dict_rows = [x for x in value if isinstance(x, dict) and "error" not in x]
+        if dict_rows:
+            return dict_rows
+        return value
+    if isinstance(value, dict):
+        if _is_single_feature_dict(value):
+            return [value]
+        for k in (
+            "features",
+            "items",
+            "capabilities",
+            "results",
+            "data",
+            "value",
+            "product_features",
+        ):
+            inner = value.get(k)
+            if isinstance(inner, list) and inner:
+                coerced = _coerce_features_output(inner)
+                if isinstance(coerced, list):
+                    return coerced
+            if isinstance(inner, dict):
+                for k2 in ("items", "features", "results"):
+                    v2 = inner.get(k2)
+                    if isinstance(v2, list) and v2:
+                        return _coerce_features_output(v2)
+        discovered = _discover_longest_dict_list(value)
+        if discovered:
+            return discovered
+    return value
 
 
 class Pipeline:
@@ -171,7 +353,13 @@ class Pipeline:
                         step_cfg["task"], state, memory=memory_slice,
                         session=agent_session
                     )
-                    state[step_cfg["output_key"]] = result
+                    out_key = step_cfg.get("output_key", agent_name)
+                    if out_key == "problems":
+                        state[out_key] = _coerce_problems_output(result)
+                    elif out_key == "features":
+                        state[out_key] = _coerce_features_output(result)
+                    else:
+                        state[out_key] = result
 
                 # Optional: compress output before passing forward
                 if "compression" in step_cfg:

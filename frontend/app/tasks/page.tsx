@@ -299,7 +299,6 @@ export default function TasksPage() {
   const effectiveStatus = (t: Task): TaskStatus => statusMap[t.id] ?? t.status;
 
   const stepStatuses = computeStepStatuses(sessionDetail);
-  const runModeSession = !!activeSessionId;
 
   useEffect(() => {
     setTasks([]);
@@ -517,7 +516,7 @@ export default function TasksPage() {
             )}
             <button
               onClick={handleGenerate}
-              disabled={generating}
+              disabled={generating || !activeSessionId}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -526,10 +525,10 @@ export default function TasksPage() {
                 borderRadius: 8,
                 fontSize: "0.8125rem",
                 fontWeight: 500,
-                background: generating ? "#F8F4EF" : "#FFFFFF",
+                background: generating || !activeSessionId ? "#F8F4EF" : "#FFFFFF",
                 border: "1.5px solid #E4DDD4",
-                color: generating ? "#9E9E9E" : "#0D0D0D",
-                cursor: generating ? "not-allowed" : "pointer",
+                color: generating || !activeSessionId ? "#9E9E9E" : "#0D0D0D",
+                cursor: generating || !activeSessionId ? "not-allowed" : "pointer",
                 fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
                 transition: "background 150ms ease, border-color 150ms ease",
               }}
@@ -538,10 +537,10 @@ export default function TasksPage() {
                 <>
                   <TextShimmer duration={1.2}>Running…</TextShimmer>
                 </>
-              ) : runModeSession ? (
-                "Run Tasks (this step)"
+              ) : !activeSessionId ? (
+                "Select a session in Sessions"
               ) : (
-                "Run full pipeline (all 4 steps)"
+                "Run Tasks (this step)"
               )}
             </button>
           </div>
@@ -622,29 +621,22 @@ export default function TasksPage() {
               >
                 No tasks generated yet.
               </p>
-              <p
-                style={{
-                  fontSize: 12.5,
-                  color: "#9E9E9E",
-                  margin: "4px 0 0",
-                  lineHeight: 1.5,
-                }}
-              >
-                With a session, only the Tasks agent runs. Without one, the full pipeline runs all four steps.
-              </p>
             </div>
             <button
               onClick={handleGenerate}
+              disabled={!activeSessionId}
               className="btn-dark"
               style={{
                 fontSize: "0.8125rem",
                 padding: "0.45rem 1rem",
                 marginTop: 4,
+                opacity: !activeSessionId ? 0.6 : 1,
+                cursor: !activeSessionId ? "not-allowed" : "pointer",
               }}
             >
-              {runModeSession
-                ? "Run Tasks (this step)"
-                : "Run full pipeline (all 4 steps)"}
+              {!activeSessionId
+                ? "Select a session in Sessions"
+                : "Run Tasks (this step)"}
             </button>
           </div>
         ) : generating ? (
