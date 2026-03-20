@@ -48,6 +48,8 @@ app.get('/', (req: Request, res: Response) => {
     endpoints: {
       health: '/health',
       context: '/api/context',
+      contextMerged: '/api/context/merged?sessionId=<session-id>',
+      contextImportGlobal: '/api/context/import-global',
       research: '/api/research',
     },
   });

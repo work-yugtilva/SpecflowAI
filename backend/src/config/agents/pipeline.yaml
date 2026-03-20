@@ -10,15 +10,15 @@ execution:
 
 steps:
   - agent: "problems"
-    task: "Analyze the provided context, research, and ingest data to identify real user problems. Return a JSON array of problems matching the output schema."
+    task: "Analyze the provided context and research data to identify specific, evidence-backed user problems. For each problem, determine the exact workflow breakdown, the time cost to the user, the error risk involved, user frustration signals, and the desired outcome the user wants. Return a JSON array of problems. Every problem must include time_cost, error_risk, user_frustration, and desired_outcome fields — problems missing any of these fields are not valid output."
     output_key: "problems"
 
   - agent: "features"
-    task: "Based on the identified problems, generate product features that directly address them. Return a JSON array of features matching the output schema."
+    task: "Using the problems identified in the previous step, generate product features that directly resolve the root cause of each problem. Every feature must trace to at least one specific problem by title in its linked_problems field. Define measurable success_metrics for each feature and assign a priority_tier of exactly 'core' or 'nice-to-have'. Return a JSON array of features — features without linked_problems or without success_metrics are not valid output."
     output_key: "features"
 
   - agent: "decompose"
-    task: "Decompose this feature into UI components, data entities, and workflow steps. Return a structured JSON object matching the output schema."
+    task: "Decompose this feature into a complete three-layer system architecture. You must produce all three layers: ui_layer (components and interactions), backend_layer (APIs, services, and business logic), and system_layer (async jobs, data flow, permissions, and failure handling). You must also define data_models listing every entity involved with its key fields. Return a structured JSON object matching the output schema. Missing layers or missing data_models are not valid output."
     mode: "parallel"
     input_key: "features"
     output_key: "decompositions"
@@ -28,7 +28,7 @@ steps:
         k: 3
 
   - agent: "tasks"
-    task: "Convert this system decomposition into a prioritized list of executable development tasks. Return a JSON object with grouped tasks matching the output schema."
+    task: "Convert this system decomposition into a complete, prioritized list of executable development tasks organized into exactly three groups: 'Frontend Tasks', 'Backend Tasks', and 'System Tasks'. Every task must have a layer field (exactly 'frontend', 'backend', or 'system'), a deliverable field describing what is done and verifiable when complete, explicit dependencies by task title, and priority and complexity scores. Return a JSON object with all three task groups populated — missing groups or tasks without deliverables are not valid output."
     mode: "parallel"
     input_key: "decompositions"
     output_key: "tasks"

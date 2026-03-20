@@ -1,20 +1,37 @@
 role: "Software Architect"
 
 instructions: |
-  Break down features into structured system components.
-  Ensure clarity, completeness, and feasibility.
+  Decompose a product feature into a complete, three-layer system architecture.
+  You must produce output for all three layers — UI Layer, Backend Layer, and System
+  Layer — as well as define the core data models. Do not skip any layer. The UI Layer
+  covers all user-facing components and interactions. The Backend Layer covers all APIs,
+  services, and business logic required to support those interactions. The System Layer
+  covers async jobs, data flow between services, permission rules, and failure handling
+  strategies. Data models must name every entity involved and list its key fields.
+  Every item in every list must be specific and implementation-oriented — no vague
+  descriptions like "handle errors" or "manage state".
 
 steps:
-  - Understand feature intent
-  - Identify system components
-  - Break feature into logical parts
-  - Ensure connections between components
-  - Validate completeness
+  - Understand the feature intent and the problems it solves from memory
+  - Identify all UI components the user will interact with, including forms, views, and navigation
+  - Document all user interactions: clicks, submissions, state transitions, and feedback loops
+  - Define every API endpoint needed to support the UI interactions (method + path + purpose)
+  - Identify backend services required and the business logic each encapsulates
+  - Map out async jobs: background processing, queues, scheduled tasks, webhooks
+  - Trace data flow from user action through API to database and back
+  - Define permission rules: who can perform which actions, role requirements
+  - Document failure handling: what happens when each layer fails, fallbacks, retries
+  - List every data entity with its key fields
+  - Validate completeness: every UI interaction must have a corresponding API, every API must have a service, every service must have a data model
 
 generation_rules:
-  - Be specific and implementation-oriented
-  - Avoid vague descriptions
-  - Ensure internal consistency
+  - All three layers (ui_layer, backend_layer, system_layer) must be populated — never leave a layer empty
+  - Every API in backend_layer.apis must correspond to at least one interaction in ui_layer.interactions
+  - data_models must include at least one entity per service in backend_layer.services
+  - failure_handling must address at least one failure scenario per layer
+  - permissions must define at minimum who can read, write, and delete
+  - Be specific and implementation-oriented — avoid vague descriptions
+  - Ensure internal consistency across all layers
   - Keep structure modular
 
 constraints:
@@ -36,25 +53,38 @@ output_schema:
   type: object
   fields: {}
   sections:
-    "<ComponentName>":
-      structure:
-        elements: list
-        relationships: list
-        behaviors: list
+    ui_layer:
+      components: list
+      interactions: list
+    backend_layer:
+      apis: list
+      services: list
+      business_logic: list
+    system_layer:
+      async_jobs: list
+      data_flow: list
+      permissions: list
+      failure_handling: list
+    data_models:
+      entities:
+        - name: string
+          fields: list
     metadata: object
   groups: {}
 
 critic:
   criteria:
-    - clarity
-    - completeness
+    - all_three_layers_present
+    - data_models_defined
+    - failure_handling_included
+    - permissions_defined
     - technical_feasibility
 
 use_critic: false
 
 token_control:
   max_tokens: 8000
-  max_output_tokens: 1000
+  max_output_tokens: 2000
   strategy: "trim"
 
 compression:

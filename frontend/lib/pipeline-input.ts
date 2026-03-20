@@ -40,7 +40,7 @@ export function getContextObject(
   sessionId?: string | null
 ): Record<string, unknown> {
   if (typeof window === "undefined") return {};
-  const readKey = (key: string) => {
+  const readKey = (key: string): Record<string, unknown> => {
     try {
       return JSON.parse(localStorage.getItem(key) || "{}") as Record<
         string,
@@ -50,18 +50,12 @@ export function getContextObject(
       return {};
     }
   };
+  const globalContext = readKey(LS_CONTEXT);
   if (sessionId) {
-    migrateGlobalToScopedOnce(sessionId, "context", LS_CONTEXT);
-    return readKey(scopedStorageKey(sessionId, "context"));
+    const sessionContext = readKey(scopedStorageKey(sessionId, "context"));
+    return { ...globalContext, ...sessionContext };
   }
-  try {
-    return JSON.parse(localStorage.getItem(LS_CONTEXT) || "{}") as Record<
-      string,
-      unknown
-    >;
-  } catch {
-    return {};
-  }
+  return globalContext;
 }
 
 /** Research entries saved from the Research page — passed through to the API as `research`. */

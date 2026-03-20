@@ -11,6 +11,14 @@ export interface ContextData {
   updatedAt?: string;
 }
 
+export type ContextScope = 'global' | 'session';
+
+export interface ContextBundle {
+  global: ContextData | null;
+  session: ContextData | null;
+  merged: ContextData;
+}
+
 // Research types
 export type ResearchType = 'Interview' | 'Survey' | 'Analytics' | 'Market Insight';
 

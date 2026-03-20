@@ -20,14 +20,17 @@ import {
   getContextObject,
   getResearchPayload,
   hasContextSaved,
+  LS_CONTEXT,
   setAutorunFlag,
 } from "@/lib/pipeline-input";
 import { useActiveSession } from "@/lib/active-session-context";
 import {
   migrateGlobalToScopedOnce,
   readScopedRaw,
+  removeScopedRaw,
   writeScopedRaw,
 } from "@/lib/session-scoped-storage";
+import { importGlobalContextToSession } from "@/lib/api/context";
 
 const LS_KEY = "specflow_sessions";
 const INGEST_GLOBAL_KEY = "ingest_entries";
@@ -36,8 +39,7 @@ const INGEST_GLOBAL_KEY = "ingest_entries";
 
 interface StoredSession {
   session_id: string;
-  project_id: string;
-  user_id: string;
+  session_name?: string;
   status: string;
   created_at: string | null;
 }
@@ -309,10 +311,13 @@ export default function SessionsPage() {
   const [productMeta, setProductMeta] = useState({ dropOffRate: "", activeUsers: "" });
 
   // Create form state
-  const [newProjectId, setNewProjectId] = useState("");
-  const [newUserId, setNewUserId] = useState("");
+  const [newSessionName, setNewSessionName] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
   const [isCreatingSession, setIsCreatingSession] = useState(false);
+  const [showContextBootstrap, setShowContextBootstrap] = useState(false);
+  const [bootstrapSessionId, setBootstrapSessionId] = useState<string | null>(null);
+  const [isApplyingBootstrap, setIsApplyingBootstrap] = useState(false);
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
 
   // Load sessions from localStorage
   useEffect(() => {
@@ -364,35 +369,65 @@ export default function SessionsPage() {
 
   // Create session
   const handleCreate = useCallback(async () => {
-    if (!newProjectId.trim() || !newUserId.trim()) {
-      setCreateError("Both project ID and user ID are required.");
+    if (!newSessionName.trim()) {
+      setCreateError("Session name is required.");
       return;
     }
     setCreateError(null);
     setIsCreatingSession(true);
     try {
-      const result = await createSession(newProjectId.trim(), newUserId.trim());
+      const result = await createSession(newSessionName.trim());
       const stored: StoredSession = {
         session_id: result.session_id,
-        project_id: newProjectId.trim(),
-        user_id: newUserId.trim(),
+        session_name: result.session_name,
         status: result.status,
         created_at: result.created_at,
       };
       const updated = [stored, ...sessions];
       persistSessions(updated);
-      setNewProjectId("");
-      setNewUserId("");
+      setNewSessionName("");
       setIsCreating(false);
       setSelectedId(result.session_id);
       selectSession(result.session_id);
       loadDetail(result.session_id);
+      setBootstrapSessionId(result.session_id);
+      setBootstrapError(null);
+      setShowContextBootstrap(true);
     } catch (e) {
       setCreateError(String(e));
     } finally {
       setIsCreatingSession(false);
     }
-  }, [newProjectId, newUserId, sessions, persistSessions, loadDetail, selectSession]);
+  }, [newSessionName, sessions, persistSessions, loadDetail, selectSession]);
+
+  const handleBootstrapChoice = useCallback(
+    async (mode: "import" | "fresh") => {
+      if (!bootstrapSessionId) return;
+      setBootstrapError(null);
+      setIsApplyingBootstrap(true);
+      try {
+        if (mode === "import") {
+          const globalRaw = localStorage.getItem(LS_CONTEXT);
+          if (globalRaw) {
+            writeScopedRaw(bootstrapSessionId, "context", globalRaw);
+          }
+          await importGlobalContextToSession(bootstrapSessionId).catch(() => {
+            // Backend sync is best-effort here; local scoped copy remains source for immediate UX.
+          });
+        } else {
+          removeScopedRaw(bootstrapSessionId, "context");
+        }
+        setShowContextBootstrap(false);
+        setBootstrapSessionId(null);
+        router.push("/context");
+      } catch (e) {
+        setBootstrapError(String(e));
+      } finally {
+        setIsApplyingBootstrap(false);
+      }
+    },
+    [bootstrapSessionId, router]
+  );
 
   // Build inputData from the ingest form (scoped to sessionId)
   const buildInputData = useCallback(
@@ -486,7 +521,6 @@ export default function SessionsPage() {
   const isSessionDone = detail?.session.status === "completed";
   const isSessionFailed = detail?.session.status === "failed";
   const outputSummary = getOutputSummary(detail);
-  const selectedStored = sessions.find((s) => s.session_id === selectedId);
   const researchCount = getResearchPayload(selectedId ?? undefined).length;
   const contextSaved = hasContextSaved(selectedId ?? undefined);
 
@@ -631,10 +665,10 @@ export default function SessionsPage() {
                           <StatusBadge status={s.status} />
                         </div>
                         <div style={{ fontSize: 11.5, color: "#6B6B6B", marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {s.project_id}
+                          {s.session_name || `Session ${shortId(s.session_id)}`}
                         </div>
                         <div style={{ fontSize: 11, color: "#9B9189" }}>
-                          {relativeTime(s.created_at)} · {s.user_id}
+                          {relativeTime(s.created_at)}
                         </div>
                       </button>
                     );
@@ -741,8 +775,7 @@ export default function SessionsPage() {
                     {detail && (
                       <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
                         {[
-                          { label: "Project", value: detail.session.project_id },
-                          { label: "User", value: detail.session.user_id },
+                          { label: "Session Name", value: detail.session.session_name },
                           { label: "Created", value: relativeTime(detail.session.created_at) },
                           { label: "Updated", value: relativeTime(detail.session.updated_at) },
                         ].map(({ label, value }) => (
@@ -1186,36 +1219,31 @@ export default function SessionsPage() {
               </div>
             </div>
 
-            {[
-              { label: "Project ID", placeholder: "e.g. my-product-q1", value: newProjectId, setter: setNewProjectId },
-              { label: "User ID", placeholder: "e.g. user-123 or you@example.com", value: newUserId, setter: setNewUserId },
-            ].map(({ label, placeholder, value, setter }) => (
-              <div key={label} style={{ marginBottom: 16 }}>
-                <label style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: "#3a3530", marginBottom: 6, letterSpacing: "0.02em" }}>
-                  {label}
-                </label>
-                <input
-                  type="text"
-                  value={value}
-                  onChange={(e) => { setter(e.target.value); setCreateError(null); }}
-                  placeholder={placeholder}
-                  onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
-                  style={{
-                    width: "100%",
-                    padding: "9px 12px",
-                    background: "#F8F4EF",
-                    border: "1.5px solid #E4DDD4",
-                    borderRadius: 9,
-                    fontSize: 13.5,
-                    color: "#0D0D0D",
-                    fontFamily: "'DM Sans', sans-serif",
-                    transition: "border-color 0.15s",
-                  }}
-                  onFocus={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#E8561B"; (e.currentTarget as HTMLElement).style.background = "#FFFFFF"; }}
-                  onBlur={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#E4DDD4"; (e.currentTarget as HTMLElement).style.background = "#F8F4EF"; }}
-                />
-              </div>
-            ))}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: "block", fontSize: 11.5, fontWeight: 600, color: "#3a3530", marginBottom: 6, letterSpacing: "0.02em" }}>
+                Session Name
+              </label>
+              <input
+                type="text"
+                value={newSessionName}
+                onChange={(e) => { setNewSessionName(e.target.value); setCreateError(null); }}
+                placeholder="e.g. q2-growth-hypotheses"
+                onKeyDown={(e) => { if (e.key === "Enter") handleCreate(); }}
+                style={{
+                  width: "100%",
+                  padding: "9px 12px",
+                  background: "#F8F4EF",
+                  border: "1.5px solid #E4DDD4",
+                  borderRadius: 9,
+                  fontSize: 13.5,
+                  color: "#0D0D0D",
+                  fontFamily: "'DM Sans', sans-serif",
+                  transition: "border-color 0.15s",
+                }}
+                onFocus={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#E8561B"; (e.currentTarget as HTMLElement).style.background = "#FFFFFF"; }}
+                onBlur={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#E4DDD4"; (e.currentTarget as HTMLElement).style.background = "#F8F4EF"; }}
+              />
+            </div>
 
             {createError && (
               <div style={{ marginBottom: 14, padding: "9px 12px", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 8, fontSize: 12.5, color: "#B91C1C" }}>
@@ -1268,6 +1296,88 @@ export default function SessionsPage() {
                     Creating…
                   </>
                 ) : "Create Session"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showContextBootstrap && bootstrapSessionId && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(13,13,13,0.45)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1010,
+            animation: "fadeUp 0.2s ease",
+          }}
+        >
+          <div
+            style={{
+              background: "#FFFFFF",
+              borderRadius: 18,
+              padding: "26px 28px 24px",
+              width: 500,
+              boxShadow: "0 24px 60px rgba(13,13,13,0.18), 0 4px 16px rgba(13,13,13,0.08)",
+              border: "1px solid #E4DDD4",
+            }}
+          >
+            <div style={{ marginBottom: 18 }}>
+              <div style={{ fontFamily: "'Instrument Serif', serif", fontSize: 22, color: "#0D0D0D", marginBottom: 5 }}>
+                Configure Session Context
+              </div>
+              <div style={{ fontSize: 13, color: "#9B9189", lineHeight: 1.6 }}>
+                Pick how this new session should start. You can import the global workspace context
+                or start with a fresh session-specific context.
+              </div>
+            </div>
+
+            {bootstrapError && (
+              <div style={{ marginBottom: 14, padding: "9px 12px", background: "#FEF2F2", border: "1px solid #FECACA", borderRadius: 8, fontSize: 12.5, color: "#B91C1C" }}>
+                {bootstrapError}
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button
+                onClick={() => handleBootstrapChoice("import")}
+                disabled={isApplyingBootstrap}
+                style={{
+                  flex: 1,
+                  minWidth: 180,
+                  padding: "9px 14px",
+                  borderRadius: 9,
+                  background: "#0D0D0D",
+                  color: "#FFFFFF",
+                  border: "none",
+                  fontSize: 12.5,
+                  fontWeight: 500,
+                  cursor: isApplyingBootstrap ? "not-allowed" : "pointer",
+                }}
+              >
+                Import Workspace Context
+              </button>
+              <button
+                onClick={() => handleBootstrapChoice("fresh")}
+                disabled={isApplyingBootstrap}
+                style={{
+                  flex: 1,
+                  minWidth: 180,
+                  padding: "9px 14px",
+                  borderRadius: 9,
+                  background: "#F8F4EF",
+                  color: "#6B6B6B",
+                  border: "1px solid #E4DDD4",
+                  fontSize: 12.5,
+                  fontWeight: 500,
+                  cursor: isApplyingBootstrap ? "not-allowed" : "pointer",
+                }}
+              >
+                Start Fresh Context
               </button>
             </div>
           </div>

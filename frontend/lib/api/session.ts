@@ -15,6 +15,7 @@ async function handleResponse<T>(res: Response): Promise<T> {
 
 export interface SessionCreated {
   session_id: string;
+  session_name: string;
   status: string;
   created_at: string | null;
 }
@@ -46,8 +47,7 @@ export interface SessionStateSnapshot {
 export interface SessionDetail {
   session: {
     id: string;
-    project_id: string;
-    user_id: string;
+    session_name: string;
     status: string;
     metadata: Record<string, unknown>;
     created_at: string;
@@ -60,16 +60,14 @@ export interface SessionDetail {
 // ─── API Functions ─────────────────────────────────────────────────────────────
 
 export async function createSession(
-  projectId: string,
-  userId: string,
+  sessionName: string,
   metadata?: Record<string, unknown>
 ): Promise<SessionCreated> {
   const res = await fetch(`${PIPELINE_URL}/session/create`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      project_id: projectId,
-      user_id: userId,
+      session_name: sessionName,
       metadata: metadata ?? {},
     }),
   });

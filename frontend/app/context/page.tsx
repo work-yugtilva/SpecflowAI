@@ -5,10 +5,15 @@ import Link from "next/link";
 import { Sidebar } from "@/components/ui/sidebar";
 import { useActiveSession } from "@/lib/active-session-context";
 import {
-  getContextObject,
   LS_CONTEXT,
 } from "@/lib/pipeline-input";
 import { scopedStorageKey } from "@/lib/session-scoped-storage";
+import {
+  fetchScopedContext,
+  importGlobalContextToSession,
+  saveScopedContext,
+  type ContextScope,
+} from "@/lib/api/context";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -165,12 +170,40 @@ function mergeContextFromStorage(raw: Record<string, unknown>): ContextForm {
 
 export default function ContextPage() {
   const { activeSessionId } = useActiveSession();
+  const [scope, setScope] = useState<ContextScope>("global");
   const [form, setForm] = useState<ContextForm>(INITIAL_FORM);
 
   useEffect(() => {
-    const raw = getContextObject(activeSessionId ?? undefined);
-    setForm(mergeContextFromStorage(raw));
-  }, [activeSessionId]);
+    if (!activeSessionId && scope === "session") {
+      setScope("global");
+    }
+  }, [activeSessionId, scope]);
+
+  useEffect(() => {
+    const targetScope: ContextScope = scope === "session" && activeSessionId ? "session" : "global";
+    const readLocal = () => {
+      try {
+        if (targetScope === "session" && activeSessionId) {
+          return JSON.parse(
+            localStorage.getItem(scopedStorageKey(activeSessionId, "context")) || "{}"
+          ) as Record<string, unknown>;
+        }
+        return JSON.parse(localStorage.getItem(LS_CONTEXT) || "{}") as Record<string, unknown>;
+      } catch {
+        return {};
+      }
+    };
+
+    setForm(mergeContextFromStorage(readLocal()));
+
+    fetchScopedContext(targetScope, activeSessionId ?? undefined)
+      .then((remote) => {
+        if (remote) setForm(mergeContextFromStorage(remote as unknown as Record<string, unknown>));
+      })
+      .catch(() => {
+        // Keep local data as fallback if backend context API/auth is unavailable.
+      });
+  }, [activeSessionId, scope]);
 
   const [saved, setSaved] = useState(false);
   const [saveTimer, setSaveTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
@@ -181,8 +214,9 @@ export default function ContextPage() {
   }
 
   function handleSave() {
+    const targetScope: ContextScope = scope === "session" && activeSessionId ? "session" : "global";
     try {
-      if (activeSessionId) {
+      if (targetScope === "session" && activeSessionId) {
         localStorage.setItem(
           scopedStorageKey(activeSessionId, "context"),
           JSON.stringify(form)
@@ -193,6 +227,9 @@ export default function ContextPage() {
     } catch {
       /* ignore */
     }
+    saveScopedContext(targetScope, form, activeSessionId ?? undefined).catch(() => {
+      // Local save already completed; backend sync is best-effort.
+    });
     setSaved(true);
     if (saveTimer) clearTimeout(saveTimer);
     const t = setTimeout(() => setSaved(false), 2500);
@@ -200,6 +237,21 @@ export default function ContextPage() {
   }
 
   const isEmpty = Object.values(form).every((v) => !v.trim());
+
+  async function handleImportGlobalToSession() {
+    if (!activeSessionId) return;
+    try {
+      const raw = JSON.parse(localStorage.getItem(LS_CONTEXT) || "{}") as ContextForm;
+      localStorage.setItem(scopedStorageKey(activeSessionId, "context"), JSON.stringify(raw));
+      setForm(mergeContextFromStorage(raw as unknown as Record<string, unknown>));
+      await importGlobalContextToSession(activeSessionId).catch(() => {
+        // If backend import fails, local session copy still enables immediate use.
+      });
+      setSaved(true);
+    } catch {
+      // ignore
+    }
+  }
 
   return (
     <div
@@ -245,10 +297,65 @@ export default function ContextPage() {
             <span style={{ fontSize: 13, fontWeight: 500, color: "#0D0D0D" }}>
               Context
             </span>
+            <span style={{ marginLeft: 8, fontSize: 10.5, fontWeight: 600, color: "#E8561B", background: "rgba(232,86,27,0.1)", border: "1px solid rgba(232,86,27,0.2)", borderRadius: 12, padding: "2px 8px", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+              {scope === "global" ? "Workspace" : "Session"}
+            </span>
           </div>
 
           {/* Right actions */}
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {activeSessionId && (
+              <>
+                <button
+                  onClick={() => setScope("global")}
+                  style={{
+                    border: "1px solid #E4DDD4",
+                    borderRadius: 8,
+                    background: scope === "global" ? "#0D0D0D" : "#FFFFFF",
+                    color: scope === "global" ? "#FFFFFF" : "#6B6B6B",
+                    fontSize: 12,
+                    fontWeight: 500,
+                    padding: "0.35rem 0.625rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  Workspace
+                </button>
+                <button
+                  onClick={() => setScope("session")}
+                  style={{
+                    border: "1px solid #E4DDD4",
+                    borderRadius: 8,
+                    background: scope === "session" ? "#0D0D0D" : "#FFFFFF",
+                    color: scope === "session" ? "#FFFFFF" : "#6B6B6B",
+                    fontSize: 12,
+                    fontWeight: 500,
+                    padding: "0.35rem 0.625rem",
+                    cursor: "pointer",
+                  }}
+                >
+                  Session
+                </button>
+              </>
+            )}
+
+            {activeSessionId && scope === "session" && (
+              <button
+                onClick={handleImportGlobalToSession}
+                style={{
+                  fontSize: "0.8125rem",
+                  padding: "0.4rem 0.875rem",
+                  borderRadius: 8,
+                  border: "1px solid #E4DDD4",
+                  background: "#FFFFFF",
+                  color: "#6B6B6B",
+                  cursor: "pointer",
+                }}
+              >
+                Import Workspace
+              </button>
+            )}
+
             {/* Saved indicator */}
             {saved && (
               <div
@@ -655,7 +762,7 @@ export default function ContextPage() {
         >
           <span>
             After you <strong style={{ color: "#3a3530" }}>Save Context</strong>, this
-            data is merged into pipeline runs (with Research and ingest from Sessions).
+            data is merged into pipeline runs as workspace + session context (plus Research and ingest from Sessions).
           </span>
           <Link
             href="/sessions"

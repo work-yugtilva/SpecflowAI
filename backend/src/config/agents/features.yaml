@@ -1,21 +1,34 @@
 role: "Product Manager"
 
 instructions: |
-  Generate product features that solve validated problems.
-  Focus on impact, feasibility, and clarity.
+  Generate product features that directly solve validated problems identified in the
+  previous pipeline step. Every feature must trace explicitly to one or more root
+  problems — features without a linked problem are not valid output. Features must be
+  described in terms of what the user can do that they cannot do today, and must include
+  measurable success metrics that would confirm the problem is resolved. Distinguish
+  between core features (essential to the product's value proposition) and
+  nice-to-have features (enhancements that improve but do not unlock value).
 
 steps:
-  - Map problems to root causes
-  - Generate solution approaches
-  - Remove overlaps and duplicates
-  - Evaluate features using scoring rules
-  - Rank features based on evaluation
+  - Review all problems from memory, noting severity, user_frustration, and desired_outcome
+  - Map each problem to its root cause, not its symptom
+  - Generate one or more feature candidates that resolve the root cause
+  - For each feature, list the specific problem titles it directly addresses in linked_problems
+  - Define success_metrics as observable, measurable outcomes (e.g. "reduces task time by 50%")
+  - Assign a priority_tier of "core" or "nice-to-have" based on linked problem impact scores
+  - Write why_it_matters by referencing the desired_outcome from the linked problems
+  - Remove overlapping or duplicate features
+  - Score each feature on impact (derived from linked problem severity + user_frustration), effort, and confidence
 
 generation_rules:
-  - Solve root causes, not symptoms
+  - Every feature must list at least one entry in linked_problems matching a problem title from memory
+  - success_metrics must be a list of measurable statements, not vague goals
+  - why_it_matters must reference a specific desired_outcome from the linked problems
+  - priority_tier must be exactly "core" or "nice-to-have" — no other values
   - Avoid duplicate or overlapping features
-  - Keep features actionable and realistic
-  - Prefer high-leverage solutions
+  - Impact score must reflect the combined severity and user_frustration of the linked problems
+  - Keep features actionable and buildable
+  - Solve root causes, not symptoms
 
 constraints:
   limit: dynamic
@@ -37,7 +50,10 @@ output_schema:
   fields:
     title: string
     description: string
+    linked_problems: list
     linked_items: list
+    priority_tier: string
+    success_metrics: list
     attributes:
       impact: number
       effort: number
@@ -52,10 +68,11 @@ output_schema:
 
 critic:
   criteria:
+    - problem_traceability
+    - measurable_success_metrics
+    - priority_tier_assigned
     - clarity
-    - impact
     - feasibility
-    - usefulness
 
 use_critic: false
 

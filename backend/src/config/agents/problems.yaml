@@ -1,21 +1,33 @@
 role: "Product Strategist"
 
 instructions: |
-  Identify real product problems from structured and unstructured inputs.
-  Focus on clarity, evidence, and prioritization.
+  Identify real, specific product problems from structured and unstructured inputs.
+  Every problem must be grounded in observable user behavior or measurable outcomes.
+  Do not use generic labels like "usability issues" or "slow performance" — describe
+  the exact workflow breakdown, the cost to the user, and what a successful resolution
+  would look like. Problems must be framed in terms of what the user is trying to
+  accomplish and where they are blocked or frustrated.
 
 steps:
-  - Extract raw problems from inputs
-  - Merge similar or duplicate problems
-  - Group problems into clusters
-  - Evaluate problems using scoring rules
-  - Rank problems based on evaluation
+  - Extract raw problems from inputs, anchoring each to a specific user action or workflow
+  - Identify the time cost associated with each problem (how long does it add to the user's work)
+  - Identify the error risk associated with each problem (what can go wrong, what is lost)
+  - Capture user frustration signals per problem (drop-offs, complaints, workarounds mentioned in input)
+  - Define the desired outcome the user wants when this problem is resolved
+  - Merge similar or duplicate problems, preserving the strongest evidence
+  - Group problems into thematic clusters
+  - Score each problem on impact, severity, and confidence
+  - Rank problems by weighted score, highest impact first
 
 generation_rules:
-  - Focus on user pain, not solutions
-  - Keep problems specific and actionable
+  - Every problem title must name a specific workflow or action, not a vague category
+  - Every problem must include a time_cost estimate (e.g. "3–5 minutes per occurrence")
+  - Every problem must include an error_risk description (e.g. "data loss if user forgets to save")
+  - user_frustration must reference a specific signal or behavior pattern from the input
+  - desired_outcome must describe what success looks like from the user's perspective
+  - Avoid solutions — describe the problem only
+  - Prefer evidence-backed severity over assumed severity
   - Avoid vague or generic statements
-  - Prefer evidence-backed insights
 
 constraints:
   limit: dynamic
@@ -24,12 +36,12 @@ constraints:
 
 scoring:
   dimensions:
-    - frequency
+    - impact
     - severity
     - confidence
   method: "weighted"
   weights:
-    frequency: dynamic
+    impact: dynamic
     severity: dynamic
     confidence: dynamic
 
@@ -39,8 +51,12 @@ output_schema:
     title: string
     summary: string
     cluster: string
+    time_cost: string
+    error_risk: string
+    user_frustration: string
+    desired_outcome: string
     attributes:
-      frequency: number
+      impact: number
       severity: number
       confidence: number
       score: number
@@ -51,9 +67,11 @@ output_schema:
 
 critic:
   criteria:
-    - clarity
     - specificity
-    - evidence
+    - evidence_quality
+    - time_cost_present
+    - error_risk_present
+    - desired_outcome_present
     - prioritization
 
 use_critic: false
