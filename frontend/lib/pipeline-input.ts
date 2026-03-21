@@ -1,6 +1,6 @@
 // Building PipelineInput from localStorage (context, research, optional pending ingest)
 
-import type { PipelineInput } from "@/lib/api/pipeline";
+import type { PipelineInput } from "@/lib/pipeline-types";
 import {
   migrateGlobalToScopedOnce,
   readScopedRaw,

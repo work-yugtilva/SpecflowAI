@@ -1,4 +1,4 @@
-import type { PipelineInput } from "@/lib/api/pipeline";
+import type { PipelineInput } from "@/lib/pipeline-types";
 import { runSession } from "@/lib/api/session";
 import { getActiveSessionId } from "@/lib/pipeline-input";
 import type { PipelineStepId } from "@/lib/pipeline-session";

@@ -1,10 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
+import { getSupabaseClient } from '@/lib/supabase.js';
 import { ContextData, ContextScope, ContextBundle } from '@/types/index.js';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-);
 
 const CONTEXT_TABLE = 'context_entries';
 
@@ -55,6 +50,7 @@ export class ContextService {
     scope: ContextScope = 'global',
     sessionId?: string
   ): Promise<ContextData> {
+    const supabase = getSupabaseClient();
     const scopeKey = this.buildScopeKey(scope, sessionId);
 
     const { data, error } = await supabase
@@ -87,6 +83,7 @@ export class ContextService {
     scope: ContextScope = 'global',
     sessionId?: string
   ): Promise<ContextData | null> {
+    const supabase = getSupabaseClient();
     const scopeKey = this.buildScopeKey(scope, sessionId);
 
     const { data, error } = await supabase
@@ -136,6 +133,7 @@ export class ContextService {
     scope: ContextScope = 'global',
     sessionId?: string
   ): Promise<boolean> {
+    const supabase = getSupabaseClient();
     const scopeKey = this.buildScopeKey(scope, sessionId);
 
     const { error } = await supabase

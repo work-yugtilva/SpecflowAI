@@ -1,0 +1,12 @@
+{
+  "name": "specflowai",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -k -n frontend,backend -c blue,green \"npm run dev --prefix frontend\" \"npm run dev --prefix backend\"",
+    "dev:frontend": "npm run dev --prefix frontend",
+    "dev:backend": "npm run dev --prefix backend"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

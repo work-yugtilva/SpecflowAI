@@ -1,4 +1,4 @@
-import 'dotenv/config';
+import '@/lib/loadRootEnv.js';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 

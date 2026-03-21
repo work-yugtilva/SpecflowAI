@@ -9,8 +9,9 @@ RESTful API server for SpecFlow, built with Express.js and TypeScript.
    npm install
    ```
 
-2. **Create `.env` file:**
+2. **Create the shared repo-root `.env` file:**
    ```bash
+   cd ..
    cp .env.example .env
    ```
    Fill in your environment variables.
@@ -80,8 +81,15 @@ Services are structured to integrate with Supabase tables. Currently, they log o
 
 ## Environment Variables
 
-See `.env.example` for required variables:
-- `NEXT_PUBLIC_SUPABASE_URL` - Supabase project URL
+See the repo-root `.env.example` for required variables:
+- `SUPABASE_URL` - Supabase project URL
+- `SUPABASE_ANON_KEY` - Optional fallback key for auth-only server calls
 - `SUPABASE_SERVICE_ROLE_KEY` - Service role key (admin access)
+- `NEXT_PUBLIC_SUPABASE_URL` - Shared public Supabase URL for the frontend
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` - Shared public Supabase anon key for the frontend
+- `NEXT_PUBLIC_PIPELINE_URL` - Session/pipeline API base URL for the frontend
+- `NEXT_PUBLIC_BACKEND_URL` - Express API base URL for the frontend
 - `FRONTEND_URL` - Frontend origin for CORS
 - `PORT` - Server port (default: 3001)
+
+`frontend/.env.local` and `backend/.env` are no longer read.

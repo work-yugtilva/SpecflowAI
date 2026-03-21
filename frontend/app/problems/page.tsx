@@ -14,7 +14,7 @@ import {
 import { useActiveSession } from "@/lib/active-session-context";
 import { computeStepStatuses } from "@/lib/pipeline-session";
 import { runPipelineStepOrFull } from "@/lib/run-pipeline-client";
-import type { PipelineInput } from "@/lib/api/pipeline";
+import type { PipelineInput } from "@/lib/pipeline-types";
 import { TextShimmer } from "@/components/ui/text-shimmer";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -208,7 +208,7 @@ function emptyProblemsUserMessage(
     return "The model returned an empty list. Add more context and research for this session, then try again.";
   }
   if (p === undefined || p === null) {
-    return "No problems output was found in the API response. Confirm NEXT_PUBLIC_PIPELINE_URL matches your pipeline server and check its logs.";
+    return "No problems output was found in the API response. Confirm NEXT_PUBLIC_PIPELINE_URL matches the workflow API and check its logs.";
   }
   const keys =
     p && typeof p === "object" && !Array.isArray(p)

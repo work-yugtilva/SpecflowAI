@@ -5,6 +5,10 @@ import time
 import random
 from anthropic import Anthropic, APIStatusError, RateLimitError
 
+from services.config.load_env import load_root_env
+
+load_root_env()
+
 _client = None
 
 

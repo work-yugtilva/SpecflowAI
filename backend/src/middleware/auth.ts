@@ -1,10 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { createClient } from '@supabase/supabase-js';
-
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-);
+import { getSupabaseClient, isSupabaseConfigError } from '@/lib/supabase.js';
 
 export interface AuthRequest extends Request {
   user?: { id: string; email: string };
@@ -16,6 +11,7 @@ export async function verifyAuth(
   next: NextFunction
 ) {
   try {
+    const supabase = getSupabaseClient();
     const token = req.headers.authorization?.replace('Bearer ', '');
 
     if (!token) {
@@ -40,9 +36,12 @@ export async function verifyAuth(
     req.user = { id: user.id, email: user.email || '' };
     next();
   } catch (error) {
-    res.status(500).json({
+    const message = isSupabaseConfigError(error)
+      ? error.message
+      : 'Authentication check failed';
+    res.status(isSupabaseConfigError(error) ? 503 : 500).json({
       success: false,
-      error: 'Authentication check failed',
+      error: message,
     });
   }
 }
@@ -56,6 +55,7 @@ export function optionalAuth(
     const token = req.headers.authorization?.replace('Bearer ', '');
 
     if (token) {
+      const supabase = getSupabaseClient();
       supabase.auth.getUser(token).then(({ data: { user } }) => {
         if (user) {
           req.user = { id: user.id, email: user.email || '' };

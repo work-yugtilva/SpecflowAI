@@ -14,7 +14,7 @@ import {
 import { useActiveSession } from "@/lib/active-session-context";
 import { computeStepStatuses } from "@/lib/pipeline-session";
 import { runPipelineStepOrFull } from "@/lib/run-pipeline-client";
-import type { PipelineInput } from "@/lib/api/pipeline";
+import type { PipelineInput } from "@/lib/pipeline-types";
 import { TextShimmer } from "@/components/ui/text-shimmer";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -187,7 +187,7 @@ function emptyFeaturesMessage(
     return "The model returned an empty feature list. Run Problems for this session first, then try Features again.";
   }
   if (p === undefined || p === null) {
-    return "No features output was found in the API response. Confirm NEXT_PUBLIC_PIPELINE_URL matches your pipeline server.";
+    return "No features output was found in the API response. Confirm NEXT_PUBLIC_PIPELINE_URL matches the workflow API.";
   }
   const keys = isPlainObject(p) ? Object.keys(p).slice(0, 12).join(", ") : "";
   return keys
