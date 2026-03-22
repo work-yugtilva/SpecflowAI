@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import List, Optional
 
 from services.db.models.session import (
     Session,
@@ -34,6 +34,10 @@ class SessionManager:
             metadata=metadata or {},
         )
         return await self.repo.create_session(session)
+
+    async def list_sessions(self) -> List[Session]:
+        """Return all sessions ordered by created_at DESC."""
+        return await self.repo.list_sessions()
 
     async def load_session(self, session_id: str) -> Session:
         """

@@ -16,6 +16,8 @@ import { computeStepStatuses } from "@/lib/pipeline-session";
 import { runPipelineStepOrFull } from "@/lib/run-pipeline-client";
 import type { PipelineInput } from "@/lib/pipeline-types";
 import { TextShimmer } from "@/components/ui/text-shimmer";
+import { useOrphanedPipeline } from "@/lib/use-orphaned-pipeline";
+import { OrphanedPipelineModal } from "@/components/ui/orphaned-pipeline-modal";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -329,6 +331,12 @@ export default function ProblemsPage() {
   const [error, setError] = useState<string | null>(null);
   const [fromSession, setFromSession] = useState(false);
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
+  const {
+    showOrphanedModal,
+    orphanedOutput,
+    triggerOrphanedPrompt,
+    closeOrphanedModal,
+  } = useOrphanedPipeline();
 
   const selectedProblem = problems.find((p) => p.id === selectedId) ?? null;
   const stepStatuses = computeStepStatuses(sessionDetail);
@@ -381,12 +389,17 @@ export default function ProblemsPage() {
       const inputData: PipelineInput = buildPipelineInputFromStorage(
         activeSessionId ?? undefined
       );
-      const { data, mode, sessionState } = await runPipelineStepOrFull(
+      const result = await runPipelineStepOrFull(
         "problems",
         inputData,
         activeSessionId
       );
+      const { data, mode, sessionState } = result;
       setFromSession(mode === "session");
+      // If orphaned, trigger save prompt after processing results
+      if (mode === "orphaned" && result.orphanedOutput) {
+        triggerOrphanedPrompt(result.orphanedOutput);
+      }
       const rawProblems = coalesceProblemsRaw(data, sessionState);
       const merged =
         rawProblems !== undefined
@@ -998,6 +1011,11 @@ export default function ProblemsPage() {
           </div>
         )}
       </div>
+      <OrphanedPipelineModal
+        open={showOrphanedModal}
+        onClose={closeOrphanedModal}
+        pipelineOutput={orphanedOutput}
+      />
     </div>
   );
 }

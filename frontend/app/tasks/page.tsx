@@ -13,6 +13,8 @@ import {
 import { useActiveSession } from "@/lib/active-session-context";
 import { computeStepStatuses } from "@/lib/pipeline-session";
 import { runPipelineStepOrFull } from "@/lib/run-pipeline-client";
+import { useOrphanedPipeline } from "@/lib/use-orphaned-pipeline";
+import { OrphanedPipelineModal } from "@/components/ui/orphaned-pipeline-modal";
 import type { PipelineInput } from "@/lib/pipeline-types";
 import { TextShimmer } from "@/components/ui/text-shimmer";
 
@@ -284,6 +286,12 @@ export default function TasksPage() {
   const [generating, setGenerating] = useState(false);
   const [fromSession, setFromSession] = useState(false);
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
+  const {
+    showOrphanedModal,
+    orphanedOutput,
+    triggerOrphanedPrompt,
+    closeOrphanedModal,
+  } = useOrphanedPipeline();
 
   const [expandedGroups, setExpandedGroups] = useState<Set<TaskType>>(
     new Set<TaskType>(["Frontend", "Backend", "API", "Infrastructure"])
@@ -374,12 +382,16 @@ export default function TasksPage() {
       const inputData: PipelineInput = buildPipelineInputFromStorage(
         activeSessionId ?? undefined
       );
-      const { data, mode } = await runPipelineStepOrFull(
+      const result = await runPipelineStepOrFull(
         "tasks",
         inputData,
         activeSessionId
       );
+      const { data, mode } = result;
       setFromSession(mode === "session");
+      if (mode === "orphaned" && result.orphanedOutput) {
+        triggerOrphanedPrompt(result.orphanedOutput);
+      }
       const adapted = adaptTasks(data);
       setTasks(adapted);
       if (adapted.length > 0) setSelectedId(adapted[0].id);
@@ -1133,6 +1145,11 @@ export default function TasksPage() {
           </div>
         )}
       </div>
+      <OrphanedPipelineModal
+        open={showOrphanedModal}
+        onClose={closeOrphanedModal}
+        pipelineOutput={orphanedOutput}
+      />
     </div>
   );
 }

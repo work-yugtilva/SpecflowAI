@@ -14,6 +14,8 @@ import {
 import { useActiveSession } from "@/lib/active-session-context";
 import { computeStepStatuses } from "@/lib/pipeline-session";
 import { runPipelineStepOrFull } from "@/lib/run-pipeline-client";
+import { useOrphanedPipeline } from "@/lib/use-orphaned-pipeline";
+import { OrphanedPipelineModal } from "@/components/ui/orphaned-pipeline-modal";
 import type { PipelineInput } from "@/lib/pipeline-types";
 import { TextShimmer } from "@/components/ui/text-shimmer";
 
@@ -380,6 +382,12 @@ export default function FeaturesPage() {
   const [error, setError] = useState<string | null>(null);
   const [fromSession, setFromSession] = useState(false);
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
+  const {
+    showOrphanedModal,
+    orphanedOutput,
+    triggerOrphanedPrompt,
+    closeOrphanedModal,
+  } = useOrphanedPipeline();
 
   const { activeSessionId } = useActiveSession();
   const selectedFeature = features.find((f) => f.id === selectedId) ?? null;
@@ -431,12 +439,16 @@ export default function FeaturesPage() {
       const inputData: PipelineInput = buildPipelineInputFromStorage(
         activeSessionId ?? undefined
       );
-      const { data, mode, sessionState } = await runPipelineStepOrFull(
+      const result = await runPipelineStepOrFull(
         "features",
         inputData,
         activeSessionId
       );
+      const { data, mode, sessionState } = result;
       setFromSession(mode === "session");
+      if (mode === "orphaned" && result.orphanedOutput) {
+        triggerOrphanedPrompt(result.orphanedOutput);
+      }
       const rawCoalesced = coalesceFeaturesRaw(data, sessionState);
       const adapted = adaptFeatures(data, sessionState);
       if (adapted.length > 0) {
@@ -984,6 +996,11 @@ export default function FeaturesPage() {
           </div>
         )}
       </div>
+      <OrphanedPipelineModal
+        open={showOrphanedModal}
+        onClose={closeOrphanedModal}
+        pipelineOutput={orphanedOutput}
+      />
     </div>
   );
 }

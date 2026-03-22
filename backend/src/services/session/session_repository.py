@@ -43,6 +43,20 @@ class SessionRepository:
             return Session(**rows[0])
         return session
 
+    async def list_sessions(self) -> List[Session]:
+        """SELECT all sessions ordered by created_at DESC."""
+
+        def _select():
+            return (
+                self.client.table(SESSIONS_TABLE)
+                .select("*")
+                .order("created_at", desc=True)
+                .execute()
+            )
+
+        result = await run_sync(_select)
+        return [Session(**row) for row in rows_from_result(result)]
+
     async def get_session(self, session_id: str) -> Optional[Session]:
         """SELECT a session by id. Returns None if not found."""
 

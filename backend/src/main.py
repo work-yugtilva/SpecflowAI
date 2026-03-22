@@ -20,6 +20,8 @@ from typing import Any, Optional
 from services.pipeline import Pipeline
 from services.session.session_manager import SessionManager
 from services.db.models.session import SESSION_STATUS_COMPLETED
+from services.pipeline_repository import PipelineRepository
+from services.db.models.pipeline import PipelineRun, PIPELINE_STATUS_ORPHANED, PIPELINE_STATUS_COMPLETED
 
 
 # ---------------------------------------------------------------------------
@@ -75,9 +77,17 @@ class SessionRunRequest(BaseModel):
     step: Optional[str] = None      # agent name for interactive step-by-step mode
 
 
+class AttachPipelineRequest(BaseModel):
+    pipeline_id: str
+    session_id: str
+
+
 # ---------------------------------------------------------------------------
 # Routes — health + legacy /run (unchanged)
 # ---------------------------------------------------------------------------
+
+PIPELINE_PORT = int(os.environ.get("PIPELINE_PORT", "8001"))
+
 
 @app.get("/health")
 async def health():
@@ -104,6 +114,17 @@ async def run_pipeline(req: RunRequest):
 # IMPORTANT: /session/create must be declared BEFORE /session/{session_id}
 # so FastAPI does not treat the literal "create" as a session_id path param.
 # ---------------------------------------------------------------------------
+
+@app.get("/sessions")
+async def list_sessions():
+    """Return all sessions ordered by created_at DESC."""
+    try:
+        sm = SessionManager()
+        sessions = await sm.list_sessions()
+        return {"sessions": [s.model_dump() for s in sessions]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/session/create")
 async def create_session(req: CreateSessionRequest):
@@ -181,3 +202,50 @@ async def get_session(session_id: str):
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------------------------------------------------------------------
+# Routes — Pipeline Runs (orphaned pipeline support)
+# ---------------------------------------------------------------------------
+
+@app.get("/pipelines/orphaned")
+async def list_orphaned_pipelines():
+    """List pipeline runs not attached to any session."""
+    try:
+        repo = PipelineRepository()
+        runs = await repo.list_orphaned()
+        return {"pipelines": [r.model_dump() for r in runs]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/pipelines/attach")
+async def attach_pipeline_to_session(req: AttachPipelineRequest):
+    """Attach an orphaned pipeline run to a session."""
+    try:
+        repo = PipelineRepository()
+        run = await repo.get(req.pipeline_id)
+        if run is None:
+            raise HTTPException(status_code=404, detail="Pipeline run not found")
+        await repo.attach_to_session(req.pipeline_id, req.session_id)
+        return {"success": True, "pipeline_id": req.pipeline_id, "session_id": req.session_id}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/pipelines/{session_id}")
+async def list_session_pipelines(session_id: str):
+    """List all pipeline runs for a session."""
+    try:
+        repo = PipelineRepository()
+        runs = await repo.list_by_session(session_id)
+        return {"pipelines": [r.model_dump() for r in runs]}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=PIPELINE_PORT, reload=True)

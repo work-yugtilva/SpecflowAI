@@ -6,6 +6,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
 import { useActiveSessionOptional } from "@/lib/active-session-context";
+import { SessionSwitcher } from "@/components/ui/session-switcher";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -278,9 +279,6 @@ export function Sidebar() {
   const [panelCollapsed, setPanelCollapsed] = useState(false);
 
   const sessionsPathActive = pathnameItem === "sessions";
-  const activeSessionId = sessionCtx?.activeSessionId ?? null;
-  const showSessionChip =
-    !!activeSessionId && pathnameItem !== "sessions" && !!pathnameItem;
 
   const handleSelectSection = useCallback((id: string) => {
     setActiveSection(id);
@@ -449,16 +447,9 @@ export function Sidebar() {
           >
             Sessions
           </button>
-          {showSessionChip && (
-            <div
-              className="mt-1.5 px-3 font-mono text-[11px]"
-              style={{ color: "#9B9189", letterSpacing: "0.04em" }}
-              title={activeSessionId}
-            >
-              Active{" "}
-              <span style={{ color: "#E8561B", fontWeight: 600 }}>
-                {activeSessionId.slice(0, 8).toUpperCase()}
-              </span>
+          {!sessionsPathActive && (
+            <div className="mt-1.5 px-2">
+              <SessionSwitcher />
             </div>
           )}
         </div>

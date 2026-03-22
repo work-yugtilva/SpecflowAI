@@ -14,6 +14,8 @@ import {
 import { useActiveSession } from "@/lib/active-session-context";
 import { computeStepStatuses } from "@/lib/pipeline-session";
 import { runPipelineStepOrFull } from "@/lib/run-pipeline-client";
+import { useOrphanedPipeline } from "@/lib/use-orphaned-pipeline";
+import { OrphanedPipelineModal } from "@/components/ui/orphaned-pipeline-modal";
 import type { PipelineInput } from "@/lib/pipeline-types";
 import { TextShimmer } from "@/components/ui/text-shimmer";
 
@@ -239,6 +241,12 @@ export default function DecomposePage() {
   const [error, setError] = useState<string | null>(null);
   const [fromSession, setFromSession] = useState(false);
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
+  const {
+    showOrphanedModal,
+    orphanedOutput,
+    triggerOrphanedPrompt,
+    closeOrphanedModal,
+  } = useOrphanedPipeline();
 
   const stepStatuses = computeStepStatuses(sessionDetail);
 
@@ -283,12 +291,16 @@ export default function DecomposePage() {
       const inputData: PipelineInput = buildPipelineInputFromStorage(
         activeSessionId ?? undefined
       );
-      const { data, mode } = await runPipelineStepOrFull(
+      const result = await runPipelineStepOrFull(
         "decompose",
         inputData,
         activeSessionId
       );
+      const { data, mode } = result;
       setFromSession(mode === "session");
+      if (mode === "orphaned" && result.orphanedOutput) {
+        triggerOrphanedPrompt(result.orphanedOutput);
+      }
       setDecomposition(adaptPipelineResult(data));
       if (activeSessionId) {
         try {
@@ -998,6 +1010,11 @@ export default function DecomposePage() {
           </div>
         )}
       </div>
+      <OrphanedPipelineModal
+        open={showOrphanedModal}
+        onClose={closeOrphanedModal}
+        pipelineOutput={orphanedOutput}
+      />
     </div>
   );
 }
