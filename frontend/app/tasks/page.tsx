@@ -16,7 +16,10 @@ import { runPipelineStepOrFull } from "@/lib/run-pipeline-client";
 import { useOrphanedPipeline } from "@/lib/use-orphaned-pipeline";
 import { OrphanedPipelineModal } from "@/components/ui/orphaned-pipeline-modal";
 import type { PipelineInput } from "@/lib/pipeline-types";
-import { TextShimmer } from "@/components/ui/text-shimmer";
+import dynamic from "next/dynamic";
+const TextShimmer = dynamic(
+  () => import("@/components/ui/text-shimmer").then((m) => m.TextShimmer)
+);
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -429,14 +432,7 @@ export default function TasksPage() {
       <Sidebar />
 
       {/* Main */}
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          flex: 1,
-          overflow: "hidden",
-        }}
-      >
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <PipelineStepper
           currentStepId="tasks"
           stepStatuses={stepStatuses}

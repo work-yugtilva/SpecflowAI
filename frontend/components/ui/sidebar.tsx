@@ -1,7 +1,8 @@
 "use client";
 
-import { memo, useState, useCallback, ReactNode } from "react";
+import { memo, useState, useCallback, useEffect, ReactNode } from "react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
@@ -125,17 +126,15 @@ const NAV_SECTIONS: NavSection[] = [
 const SidebarItem = memo(function SidebarItem({
   item,
   isActive,
-  onSelect,
 }: {
   item: NavItem;
   isActive: boolean;
-  onSelect: (id: string) => void;
 }) {
   return (
-    <button
-      onClick={() => onSelect(item.id)}
+    <Link
+      href={`/${item.id}`}
       className={cn(
-        "w-full text-left flex items-center h-8 px-3 rounded-lg text-[13.5px] font-sans",
+        "flex h-8 w-full items-center rounded-lg px-3 text-left font-sans text-[13.5px] no-underline",
         "transition-colors duration-150",
         isActive
           ? "font-medium"
@@ -154,7 +153,7 @@ const SidebarItem = memo(function SidebarItem({
       }
     >
       {item.label}
-    </button>
+    </Link>
   );
 });
 
@@ -163,19 +162,18 @@ const SidebarSection = memo(function SidebarSection({
   isExpanded,
   activeItem,
   onToggle,
-  onSelectItem,
 }: {
   section: NavSection;
   isExpanded: boolean;
   activeItem: string | null;
   onToggle: (id: string) => void;
-  onSelectItem: (id: string) => void;
 }) {
   const hasItems = section.items.length > 0;
 
   return (
     <div className="mb-0.5">
       <button
+        type="button"
         onClick={() => hasItems && onToggle(section.id)}
         className={cn(
           "w-full flex items-center justify-between px-3 h-8 rounded-lg text-[12px] font-medium tracking-[0.04em] uppercase",
@@ -192,13 +190,14 @@ const SidebarSection = memo(function SidebarSection({
         )}
       </button>
 
-      {/* Expandable items */}
+      {/* Expandable items — opacity:0 still receives hits unless pointer-events is off */}
       {hasItems && (
         <div
           style={{
             overflow: "hidden",
             maxHeight: isExpanded ? `${section.items.length * 36}px` : "0px",
             opacity: isExpanded ? 1 : 0,
+            pointerEvents: isExpanded ? "auto" : "none",
             transition: "max-height 200ms ease, opacity 180ms ease",
           }}
         >
@@ -208,7 +207,6 @@ const SidebarSection = memo(function SidebarSection({
                 key={item.id}
                 item={item}
                 isActive={activeItem === item.id}
-                onSelect={onSelectItem}
               />
             ))}
           </div>
@@ -218,9 +216,9 @@ const SidebarSection = memo(function SidebarSection({
   );
 });
 
-// ─── Rail icon button ─────────────────────────────────────────────────────────
+// ─── Rail: dashboard uses Link; other sections toggle panel (button) ─────────
 
-const RailButton = memo(function RailButton({
+const RailNavButton = memo(function RailNavButton({
   section,
   isActive,
   onSelect,
@@ -229,11 +227,34 @@ const RailButton = memo(function RailButton({
   isActive: boolean;
   onSelect: (id: string) => void;
 }) {
+  if (section.id === "dashboard") {
+    return (
+      <Link
+        href="/dashboard"
+        title={section.title}
+        className="flex h-10 w-10 items-center justify-center rounded-[10px] transition-colors duration-150 no-underline"
+        style={{
+          background: isActive ? "#111111" : "transparent",
+          color: isActive ? "#ffffff" : "#6B6B6B",
+        }}
+        onMouseEnter={(e) => {
+          if (!isActive) e.currentTarget.style.background = "rgba(0,0,0,0.06)";
+        }}
+        onMouseLeave={(e) => {
+          if (!isActive) e.currentTarget.style.background = "transparent";
+        }}
+        aria-label={section.title}
+      >
+        {section.icon}
+      </Link>
+    );
+  }
   return (
     <button
+      type="button"
       onClick={() => onSelect(section.id)}
       title={section.title}
-      className="w-10 h-10 flex items-center justify-center rounded-[10px] transition-colors duration-150"
+      className="flex h-10 w-10 items-center justify-center rounded-[10px] transition-colors duration-150"
       style={{
         background: isActive ? "#111111" : "transparent",
         color: isActive ? "#ffffff" : "#6B6B6B",
@@ -253,9 +274,6 @@ const RailButton = memo(function RailButton({
 
 // ─── Main Sidebar ─────────────────────────────────────────────────────────────
 
-// Items that have dedicated pages
-const ROUTED_ITEMS = new Set(["problems", "features", "decompose", "tasks", "sessions", "context", "research"]);
-
 const PANEL_TITLE_BY_ROUTE: Record<string, string> = {
   sessions: "Sessions",
   problems: "Signals",
@@ -274,22 +292,52 @@ export function Sidebar() {
   const pathnameItem = pathname?.split("/")[1] ?? null;
 
   const [activeSection, setActiveSection] = useState("dashboard");
-  const [activeItem, setActiveItem] = useState<string | null>(pathnameItem);
   const [expandedSections, setExpandedSections] = useState<string[]>(["signals"]);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
 
   const sessionsPathActive = pathnameItem === "sessions";
+  const activeSessionId = sessionCtx?.activeSessionId ?? null;
 
-  const handleSelectSection = useCallback((id: string) => {
-    setActiveSection(id);
-    const section = NAV_SECTIONS.find((s) => s.id === id);
-    if (section && section.items.length > 0) {
-      setExpandedSections((prev) =>
-        prev.includes(id) ? prev : [...prev, id]
-      );
-      if (panelCollapsed) setPanelCollapsed(false);
+  // Keep rail + expanded groups in sync when navigating via <Link>
+  useEffect(() => {
+    if (!pathnameItem) return;
+    if (pathnameItem === "dashboard") {
+      setActiveSection("dashboard");
+      return;
     }
-  }, [panelCollapsed]);
+    if (pathnameItem === "sessions") return;
+    const signals = NAV_SECTIONS.find((s) => s.id === "signals");
+    if (signals?.items.some((i) => i.id === pathnameItem)) {
+      setActiveSection("signals");
+      setExpandedSections((prev) =>
+        prev.includes("signals") ? prev : [...prev, "signals"]
+      );
+      return;
+    }
+    const discovery = NAV_SECTIONS.find((s) => s.id === "discovery");
+    if (discovery?.items.some((i) => i.id === pathnameItem)) {
+      setActiveSection("discovery");
+      setExpandedSections((prev) =>
+        prev.includes("discovery") ? prev : [...prev, "discovery"]
+      );
+    }
+  }, [pathnameItem]);
+  const showSessionChip =
+    !!activeSessionId && pathnameItem !== "sessions" && !!pathnameItem;
+
+  const handleSelectSection = useCallback(
+    (id: string) => {
+      setActiveSection(id);
+      const section = NAV_SECTIONS.find((s) => s.id === id);
+      if (section && section.items.length > 0) {
+        setExpandedSections((prev) =>
+          prev.includes(id) ? prev : [...prev, id]
+        );
+        if (panelCollapsed) setPanelCollapsed(false);
+      }
+    },
+    [panelCollapsed]
+  );
 
   const handleToggleSection = useCallback((id: string) => {
     setExpandedSections((prev) =>
@@ -297,15 +345,7 @@ export function Sidebar() {
     );
   }, []);
 
-  const handleSelectItem = useCallback((id: string) => {
-    setActiveItem(id);
-    if (ROUTED_ITEMS.has(id)) {
-      router.push(`/${id}`);
-    }
-  }, [router]);
-
-  // Prefer pathname-derived active item so direct URL navigation highlights correctly
-  const effectiveActiveItem = pathnameItem || activeItem;
+  const effectiveActiveItem = pathnameItem;
 
   const currentSection = NAV_SECTIONS.find((s) => s.id === activeSection);
   const panelHeaderTitle =
@@ -313,16 +353,22 @@ export function Sidebar() {
       ? PANEL_TITLE_BY_ROUTE[pathnameItem]
       : currentSection?.title ?? "Dashboard";
 
-  const goSessions = useCallback(() => {
-    setActiveItem("sessions");
-    router.push("/sessions");
-  }, [router]);
+  /** Fixed width prevents flex/stacking from treating the sidebar as full-width (which steals clicks on main). */
+  const sidebarOuterWidthPx = panelCollapsed ? 60 : 300;
 
   return (
-    <div className="flex h-full flex-shrink-0" style={{ fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif" }}>
-      {/* ─── Left Rail ──────────────────────────────── */}
+    <div
+      className="relative flex h-full shrink-0"
+      style={{
+        width: sidebarOuterWidthPx,
+        minWidth: sidebarOuterWidthPx,
+        maxWidth: sidebarOuterWidthPx,
+        fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+      }}
+    >
+      {/* ─── Left Rail */}
       <div
-        className="flex flex-col items-center py-3 gap-1 flex-shrink-0"
+        className="flex flex-col items-center gap-1 flex-shrink-0 py-3"
         style={{
           width: 60,
           background: "#F0EAE1",
@@ -330,9 +376,9 @@ export function Sidebar() {
         }}
       >
         {/* Logo */}
-        <a
+        <Link
           href="/"
-          className="flex items-center justify-center mb-3 flex-shrink-0"
+          className="mb-3 flex flex-shrink-0 items-center justify-center no-underline"
           style={{ width: 40, height: 40 }}
         >
           <div className="relative overflow-hidden rounded-md" style={{ width: 28, height: 28 }}>
@@ -343,14 +389,13 @@ export function Sidebar() {
               className="object-cover"
             />
           </div>
-        </a>
+        </Link>
 
-        {/* Primary: Sessions — always visible */}
-        <button
-          type="button"
-          onClick={goSessions}
+        {/* Primary: Sessions — Link so navigation works even if overlays steal JS clicks */}
+        <Link
+          href="/sessions"
           title="Sessions"
-          className="w-10 h-10 flex items-center justify-center rounded-[10px] transition-colors duration-150 mb-0.5"
+          className="mb-0.5 flex h-10 w-10 items-center justify-center rounded-[10px] transition-colors duration-150 no-underline"
           style={{
             background: sessionsPathActive ? "#111111" : "transparent",
             color: sessionsPathActive ? "#ffffff" : "#6B6B6B",
@@ -366,12 +411,12 @@ export function Sidebar() {
           aria-label="Sessions"
         >
           <SessionsStackIcon />
-        </button>
+        </Link>
 
         {/* Nav icons */}
         <div className="flex flex-col gap-1 flex-1">
           {NAV_SECTIONS.map((section) => (
-            <RailButton
+            <RailNavButton
               key={section.id}
               section={section}
               isActive={activeSection === section.id && !sessionsPathActive}
@@ -381,12 +426,13 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* ─── Right Panel ────────────────────────────── */}
+      {/* ─── Right Panel */}
       <div
         style={{
           width: panelCollapsed ? 0 : 240,
           opacity: panelCollapsed ? 0 : 1,
           overflow: "hidden",
+          pointerEvents: panelCollapsed ? "none" : "auto",
           transition: "width 220ms ease, opacity 180ms ease",
           flexShrink: 0,
           background: "#FFFFFF",
@@ -407,6 +453,7 @@ export function Sidebar() {
             {panelHeaderTitle}
           </span>
           <button
+            type="button"
             onClick={() => setPanelCollapsed(true)}
             className="w-7 h-7 flex items-center justify-center rounded-md transition-colors duration-150"
             style={{ color: "#9a9085" }}
@@ -423,11 +470,10 @@ export function Sidebar() {
           className="flex-shrink-0 px-2 pt-2 pb-2"
           style={{ borderBottom: "1px solid #F0EDE9" }}
         >
-          <button
-            type="button"
-            onClick={goSessions}
+          <Link
+            href="/sessions"
             className={cn(
-              "w-full text-left flex items-center h-8 px-3 rounded-lg text-[13.5px] font-sans",
+              "flex h-8 w-full items-center rounded-lg px-3 text-left font-sans text-[13.5px] no-underline",
               "transition-colors duration-150",
               sessionsPathActive
                 ? "font-medium"
@@ -446,7 +492,19 @@ export function Sidebar() {
             }
           >
             Sessions
-          </button>
+          </Link>
+          {showSessionChip && (
+            <div
+              className="mt-1.5 px-3 font-mono text-[11px]"
+              style={{ color: "#9B9189", letterSpacing: "0.04em" }}
+              title={activeSessionId ?? undefined}
+            >
+              Active{" "}
+              <span style={{ color: "#E8561B", fontWeight: 600 }}>
+                {(activeSessionId ?? "").slice(0, 8).toUpperCase()}
+              </span>
+            </div>
+          )}
           {!sessionsPathActive && (
             <div className="mt-1.5 px-2">
               <SessionSwitcher />
@@ -463,14 +521,20 @@ export function Sidebar() {
               isExpanded={expandedSections.includes(section.id)}
               activeItem={effectiveActiveItem}
               onToggle={handleToggleSection}
-              onSelectItem={handleSelectItem}
             />
           ))}
         </div>
 
         {/* Sign out */}
-        <div style={{ padding: "8px 12px 10px", borderTop: "1px solid #F0EDE9", flexShrink: 0 }}>
+        <div
+          style={{
+            padding: "8px 12px 10px",
+            borderTop: "1px solid #F0EDE9",
+            flexShrink: 0,
+          }}
+        >
           <button
+            type="button"
             onClick={async () => {
               const supabase = createClient();
               await supabase.auth.signOut();
@@ -510,11 +574,12 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* Collapsed — expand button */}
+      {/* Collapsed — expand sits over the main column edge; z-50 so it stays clickable */}
       {panelCollapsed && (
         <button
+          type="button"
           onClick={() => setPanelCollapsed(false)}
-          className="absolute flex items-center justify-center rounded-md transition-colors duration-150"
+          className="absolute z-50 flex items-center justify-center rounded-md transition-colors duration-150"
           style={{
             left: 68,
             top: 14,
@@ -523,7 +588,6 @@ export function Sidebar() {
             background: "#FFFFFF",
             border: "1px solid #E4DDD4",
             color: "#6B6B6B",
-            zIndex: 10,
             boxShadow: "0 1px 6px rgba(0,0,0,0.08)",
           }}
           aria-label="Expand sidebar"

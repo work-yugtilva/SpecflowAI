@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
 
 // ─── Stat Card ───────────────────────────────────────────────────────────────
@@ -81,15 +82,43 @@ function ActivityItem({
 // ─── Dashboard Page ───────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
+  const router = useRouter();
+
+  const quickActions = [
+    {
+      label: "New Spec",
+      sub: "Start from a prompt",
+      color: "#E8561B",
+      onClick: () => router.push("/problems"),
+    },
+    {
+      label: "AI Review",
+      sub: "Submit a spec for review",
+      color: "#8B5CF6",
+      onClick: () => router.push("/features"),
+    },
+    {
+      label: "Add Task",
+      sub: "Create in active sprint",
+      color: "#F59E0B",
+      onClick: () => router.push("/tasks"),
+    },
+    {
+      label: "Invite Teammate",
+      sub: "Grow your workspace",
+      color: "#22C55E",
+      onClick: () => {
+        window.location.href = "mailto:hello@specflow.app?subject=Invite%20a%20teammate";
+      },
+    },
+  ];
+
   return (
     <div className="flex h-screen overflow-hidden" style={{ background: "#F8F4EF", fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif" }}>
-      {/* Sidebar */}
-      <div className="h-full relative flex-shrink-0">
-        <Sidebar />
-      </div>
+      <Sidebar />
 
       {/* Main area */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {/* Top bar */}
         <header
           className="flex items-center justify-between px-6 flex-shrink-0"
@@ -121,8 +150,10 @@ export default function DashboardPage() {
             </Link>
             {/* Search */}
             <button
+              type="button"
               className="w-8 h-8 flex items-center justify-center rounded-lg transition-colors duration-150"
               style={{ color: "#6B6B6B" }}
+              onClick={() => router.push("/research")}
               onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(0,0,0,0.05)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
               aria-label="Search"
@@ -135,8 +166,10 @@ export default function DashboardPage() {
 
             {/* Bell */}
             <button
+              type="button"
               className="w-8 h-8 flex items-center justify-center rounded-lg relative transition-colors duration-150"
               style={{ color: "#6B6B6B" }}
+              onClick={() => router.push("/sessions")}
               onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(0,0,0,0.05)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
               aria-label="Notifications"
@@ -156,7 +189,9 @@ export default function DashboardPage() {
 
             {/* User avatar */}
             <button
+              type="button"
               className="flex items-center gap-2 px-2 py-1 rounded-lg transition-colors duration-150"
+              onClick={() => router.push("/sessions")}
               onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(0,0,0,0.04)")}
               onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
             >
@@ -265,7 +300,12 @@ export default function DashboardPage() {
                 <h2 className="text-[14px] font-semibold" style={{ color: "#0D0D0D" }}>
                   Recent Activity
                 </h2>
-                <button className="text-[12px] font-medium" style={{ color: "#E8561B" }}>
+                <button
+                  type="button"
+                  className="text-[12px] font-medium"
+                  style={{ color: "#E8561B" }}
+                  onClick={() => router.push("/sessions")}
+                >
                   View all
                 </button>
               </div>
@@ -316,16 +356,13 @@ export default function DashboardPage() {
                 Quick Actions
               </h2>
 
-              {[
-                { label: "New Spec", sub: "Start from a prompt", color: "#E8561B" },
-                { label: "AI Review", sub: "Submit a spec for review", color: "#8B5CF6" },
-                { label: "Add Task", sub: "Create in active sprint", color: "#F59E0B" },
-                { label: "Invite Teammate", sub: "Grow your workspace", color: "#22C55E" },
-              ].map((action) => (
+              {quickActions.map((action) => (
                 <button
+                  type="button"
                   key={action.label}
                   className="flex items-center gap-3 p-3 rounded-xl text-left w-full transition-colors duration-150"
                   style={{ border: "1px solid #E4DDD4" }}
+                  onClick={action.onClick}
                   onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(0,0,0,0.03)")}
                   onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                 >

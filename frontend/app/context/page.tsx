@@ -206,6 +206,7 @@ export default function ContextPage() {
   }, [activeSessionId, scope]);
 
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [saveTimer, setSaveTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
 
   function update(field: keyof ContextForm, value: string) {
@@ -227,8 +228,9 @@ export default function ContextPage() {
     } catch {
       /* ignore */
     }
-    saveScopedContext(targetScope, form, activeSessionId ?? undefined).catch(() => {
-      // Local save already completed; backend sync is best-effort.
+    setSaveError(null);
+    saveScopedContext(targetScope, form, activeSessionId ?? undefined).catch((e: unknown) => {
+      setSaveError(String(e));
     });
     setSaved(true);
     if (saveTimer) clearTimeout(saveTimer);
@@ -266,14 +268,7 @@ export default function ContextPage() {
       <Sidebar />
 
       {/* Main */}
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          flex: 1,
-          overflow: "hidden",
-        }}
-      >
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {/* ── Top Bar ── */}
         <header
           style={{
@@ -393,6 +388,11 @@ export default function ContextPage() {
               Save Context
             </button>
           </div>
+          {saveError && (
+            <div style={{ padding: "4px 20px 0", fontSize: 11.5, color: "#DC2626" }}>
+              Sync failed: {saveError}
+            </div>
+          )}
         </header>
 
         {/* ── Two-Column Content ── */}

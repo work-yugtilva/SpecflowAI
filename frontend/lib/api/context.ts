@@ -17,6 +17,7 @@ interface ContextApiResponse<T> {
   success: boolean;
   data?: T;
   error?: string;
+  code?: string;
 }
 
 export interface MergedContextPayload {

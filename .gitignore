@@ -17,4 +17,7 @@ __pycache__/
 *.tsbuildinfo
 Screenshot*.png
 
+# Local artifacts / nested copies
+output/
+everything-claude-code/
 

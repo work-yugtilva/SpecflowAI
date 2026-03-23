@@ -41,14 +41,13 @@ export function RotatingHeroTitle({
     return () => window.clearTimeout(timeoutId);
   }, [titleNumber, titles, intervalMs, mounted]);
 
+  /** Longest word in DEFAULT_ROTATING_WORDS — keeps width stable when children are position:absolute */
+  const shellClass =
+    "relative inline-flex min-h-[1.2em] min-w-[11ch] max-w-full flex-col items-center justify-center overflow-hidden text-center align-baseline md:min-h-[1.25em] md:pb-4 md:pt-1";
+
   if (!mounted) {
     return (
-      <span
-        className={cn(
-          "relative flex min-h-[1.2em] w-full justify-center overflow-hidden text-center md:min-h-[1.25em] md:pb-4 md:pt-1",
-          className
-        )}
-      >
+      <span className={cn(shellClass, className)}>
         <span className="font-display font-semibold text-brand">
           {titles[0] ?? ""}
         </span>
@@ -57,16 +56,11 @@ export function RotatingHeroTitle({
   }
 
   return (
-    <span
-      className={cn(
-        "relative flex min-h-[1.2em] w-full justify-center overflow-hidden text-center md:min-h-[1.25em] md:pb-4 md:pt-1",
-        className
-      )}
-    >
+    <span className={cn(shellClass, className)}>
       {titles.map((title, index) => (
         <motion.span
           key={title}
-          className="absolute font-display font-semibold text-brand"
+          className="absolute inset-x-0 top-0 font-display font-semibold text-brand"
           initial={false}
           transition={{ type: "spring", stiffness: 50 }}
           animate={

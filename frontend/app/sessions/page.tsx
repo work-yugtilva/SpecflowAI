@@ -7,9 +7,13 @@ import {
   createSession,
   runSession,
   getSession,
+  getLastSessionMode,
 } from "@/lib/api/session";
 import type { SessionDetail, SessionEvent } from "@/lib/api/session";
-import { TextShimmer } from "@/components/ui/text-shimmer";
+import dynamic from "next/dynamic";
+const TextShimmer = dynamic(
+  () => import("@/components/ui/text-shimmer").then((m) => m.TextShimmer)
+);
 import {
   PIPELINE_STEPS,
   computeStepStatuses,
@@ -72,13 +76,6 @@ function formatTs(iso: string): string {
   }
 }
 
-function getOutputSummary(detail: SessionDetail | null): string[] {
-  if (!detail?.state?.state?.outputs) return [];
-  return Object.entries(detail.state.state.outputs).map(([key, val]) => {
-    const count = Array.isArray(val) ? val.length : typeof val === "object" && val ? Object.keys(val as object).length : 1;
-    return `${key}: ${count} item${count !== 1 ? "s" : ""}`;
-  });
-}
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
@@ -290,6 +287,53 @@ function EventLogRow({ event }: { event: SessionEvent }) {
   );
 }
 
+// ─── Output Inspector ──────────────────────────────────────────────────────────
+
+function OutputInspector({ outputs }: { outputs: Record<string, unknown> }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const steps = Object.entries(outputs);
+  if (steps.length === 0) return null;
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: "#9B9189", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 12 }}>
+        Outputs
+      </div>
+      {steps.map(([key, val]) => {
+        const count = Array.isArray(val) ? val.length : typeof val === "object" && val ? Object.keys(val as object).length : 1;
+        const isOpen = open === key;
+        return (
+          <div key={key} style={{ marginBottom: 8 }}>
+            <button
+              type="button"
+              onClick={() => setOpen(isOpen ? null : key)}
+              style={{
+                display: "flex", alignItems: "center", gap: 8,
+                padding: "5px 12px", background: "#F0FDF4",
+                border: "1px solid #BBF7D0", borderRadius: 20,
+                fontSize: 12, fontWeight: 500, color: "#15803D",
+                cursor: "pointer", width: "100%", textAlign: "left",
+              }}
+            >
+              <span>{key}: {count} item{count !== 1 ? "s" : ""}</span>
+              <span style={{ marginLeft: "auto", fontSize: 10 }}>{isOpen ? "▲ hide" : "▼ show"}</span>
+            </button>
+            {isOpen && (
+              <pre style={{
+                marginTop: 4, padding: "10px 14px",
+                background: "#F8F4EF", border: "1px solid #E4DDD4",
+                borderRadius: 10, fontSize: 11, overflowX: "auto",
+                maxHeight: 300, whiteSpace: "pre-wrap", wordBreak: "break-all",
+              }}>
+                {JSON.stringify(val, null, 2)}
+              </pre>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function SessionsPage() {
@@ -318,6 +362,12 @@ export default function SessionsPage() {
   const [bootstrapSessionId, setBootstrapSessionId] = useState<string | null>(null);
   const [isApplyingBootstrap, setIsApplyingBootstrap] = useState(false);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [sessionMode, setSessionMode] = useState<"remote" | "local" | null>(null);
+
+  const openCreateModal = useCallback(() => {
+    setIsCreating(true);
+    setCreateError(null);
+  }, []);
 
   // Load sessions from localStorage
   useEffect(() => {
@@ -377,6 +427,7 @@ export default function SessionsPage() {
     setIsCreatingSession(true);
     try {
       const result = await createSession(newSessionName.trim());
+      setSessionMode(getLastSessionMode());
       const stored: StoredSession = {
         session_id: result.session_id,
         session_name: result.session_name,
@@ -520,7 +571,6 @@ export default function SessionsPage() {
   const nextStep = getNextStep(stepStatuses);
   const isSessionDone = detail?.session.status === "completed";
   const isSessionFailed = detail?.session.status === "failed";
-  const outputSummary = getOutputSummary(detail);
   const researchCount = getResearchPayload(selectedId ?? undefined).length;
   const contextSaved = hasContextSaved(selectedId ?? undefined);
 
@@ -530,7 +580,7 @@ export default function SessionsPage() {
         <Sidebar />
 
         {/* Main content */}
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minWidth: 0 }}>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
 
           {/* Top bar */}
           <div
@@ -543,6 +593,8 @@ export default function SessionsPage() {
               padding: "0 20px",
               background: "#FFFFFF",
               flexShrink: 0,
+              position: "relative",
+              zIndex: 5,
             }}
           >
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -565,7 +617,12 @@ export default function SessionsPage() {
               </span>
             </div>
             <button
-              onClick={() => { setIsCreating(true); setCreateError(null); }}
+              type="button"
+              onPointerDown={openCreateModal}
+              onClick={openCreateModal}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") openCreateModal();
+              }}
               style={{
                 display: "flex",
                 alignItems: "center",
@@ -578,9 +635,13 @@ export default function SessionsPage() {
                 fontSize: 12.5,
                 fontWeight: 500,
                 cursor: "pointer",
-                transition: "all 0.18s ease",
+                transition: "background 0.18s ease, transform 0.18s ease",
                 letterSpacing: "0.01em",
+                position: "relative",
+                zIndex: 6,
+                pointerEvents: "auto",
               }}
+              aria-label="Open new session modal"
               onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "#2a2a2a"; (e.currentTarget as HTMLElement).style.transform = "translateY(-1px)"; }}
               onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "#0D0D0D"; (e.currentTarget as HTMLElement).style.transform = ""; }}
             >
@@ -591,6 +652,21 @@ export default function SessionsPage() {
               New Session
             </button>
           </div>
+
+          {/* Local Mode banner */}
+          {sessionMode === "local" && (
+            <div style={{
+              background: "#FFF7ED",
+              borderBottom: "1px solid #FED7AA",
+              padding: "6px 20px",
+              fontSize: 12,
+              color: "#C2410C",
+              fontWeight: 500,
+              flexShrink: 0,
+            }}>
+              Local Mode — backend unreachable. Outputs are generated locally, not from the pipeline.
+            </div>
+          )}
 
           {/* Body: two-panel layout */}
           <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
@@ -716,6 +792,24 @@ export default function SessionsPage() {
                     <div style={{ fontSize: 13.5, color: "#9B9189", lineHeight: 1.6 }}>
                       Choose from the list or create a new session<br />to run the pipeline step by step.
                     </div>
+                    <button
+                      type="button"
+                      onPointerDown={openCreateModal}
+                      onClick={openCreateModal}
+                      style={{
+                        marginTop: 14,
+                        padding: "8px 14px",
+                        borderRadius: 8,
+                        background: "#0D0D0D",
+                        color: "#FFFFFF",
+                        border: "none",
+                        fontSize: 12.5,
+                        fontWeight: 500,
+                        cursor: "pointer",
+                      }}
+                    >
+                      New Session
+                    </button>
                   </div>
                 </div>
               ) : isLoadingDetail ? (
@@ -1110,38 +1204,10 @@ export default function SessionsPage() {
                     )}
                   </div>
 
-                  {/* Outputs summary */}
-                  {outputSummary.length > 0 && (
-                    <div
-                      style={{
-                        background: "#FFFFFF",
-                        border: "1px solid #E4DDD4",
-                        borderRadius: 14,
-                        padding: "18px 22px",
-                        marginBottom: 18,
-                      }}
-                    >
-                      <div style={{ fontSize: 11, fontWeight: 600, color: "#9B9189", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 12 }}>
-                        Outputs
-                      </div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                        {outputSummary.map((line) => (
-                          <div
-                            key={line}
-                            style={{
-                              padding: "5px 12px",
-                              background: "#F0FDF4",
-                              border: "1px solid #BBF7D0",
-                              borderRadius: 20,
-                              fontSize: 12,
-                              fontWeight: 500,
-                              color: "#15803D",
-                            }}
-                          >
-                            {line}
-                          </div>
-                        ))}
-                      </div>
+                  {/* Outputs inspector */}
+                  {detail?.state?.state?.outputs && Object.keys(detail.state.state.outputs).length > 0 && (
+                    <div style={{ background: "#FFFFFF", border: "1px solid #E4DDD4", borderRadius: 14, padding: "18px 22px", marginBottom: 18 }}>
+                      <OutputInspector outputs={detail.state.state.outputs as Record<string, unknown>} />
                     </div>
                   )}
 

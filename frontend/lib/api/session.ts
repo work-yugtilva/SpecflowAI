@@ -1,7 +1,18 @@
 // lib/api/session.ts — Client for the session system API routes
 
+import {
+  createLocalSession,
+  getLocalSession,
+  runLocalSession,
+} from "@/lib/local-session-pipeline";
+
 const PIPELINE_URL =
   process.env.NEXT_PUBLIC_PIPELINE_URL ?? "http://localhost:8001";
+const FALLBACK_PIPELINE_URLS = [
+  PIPELINE_URL,
+  "http://localhost:8001",
+  "http://localhost:8000",
+].filter((url, index, arr) => arr.indexOf(url) === index);
 
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -9,6 +20,37 @@ async function handleResponse<T>(res: Response): Promise<T> {
     throw new Error(`Session API ${res.status}: ${text}`);
   }
   return res.json() as Promise<T>;
+}
+
+async function fetchWithFallback(
+  path: string,
+  init: RequestInit,
+  retryable: boolean
+): Promise<Response> {
+  let lastError: unknown = null;
+
+  for (const baseUrl of FALLBACK_PIPELINE_URLS) {
+    try {
+      const res = await fetch(`${baseUrl}${path}`, init);
+      return res;
+    } catch (error) {
+      lastError = error;
+      if (!retryable) break;
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Failed to reach the pipeline service.");
+}
+
+// ─── Session mode tracking ─────────────────────────────────────────────────
+type SessionMode = "remote" | "local";
+let _sessionMode: SessionMode = "local";
+
+/** Returns whether the last session API call used the remote backend or local fallback. */
+export function getLastSessionMode(): SessionMode {
+  return _sessionMode;
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -78,15 +120,22 @@ export async function createSession(
   sessionName: string,
   metadata?: Record<string, unknown>
 ): Promise<SessionCreated> {
-  const res = await fetch(`${PIPELINE_URL}/session/create`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      session_name: sessionName,
-      metadata: metadata ?? {},
-    }),
-  });
-  return handleResponse<SessionCreated>(res);
+  try {
+    const res = await fetchWithFallback("/session/create", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        session_name: sessionName,
+        metadata: metadata ?? {},
+      }),
+    }, true);
+    const result = await handleResponse<SessionCreated>(res);
+    _sessionMode = "remote";
+    return result;
+  } catch {
+    _sessionMode = "local";
+    return createLocalSession(sessionName, metadata);
+  }
 }
 
 export async function runSession(
@@ -97,17 +146,31 @@ export async function runSession(
   const body: Record<string, unknown> = { input_data: inputData };
   if (step) body.step = step;
 
-  const res = await fetch(`${PIPELINE_URL}/session/${sessionId}/run`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  return handleResponse<SessionRunResponse>(res);
+  try {
+    const res = await fetchWithFallback(`/session/${sessionId}/run`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }, true);
+    const result = await handleResponse<SessionRunResponse>(res);
+    _sessionMode = "remote";
+    return result;
+  } catch {
+    _sessionMode = "local";
+    return runLocalSession(sessionId, inputData, step);
+  }
 }
 
 export async function getSession(sessionId: string): Promise<SessionDetail> {
-  const res = await fetch(`${PIPELINE_URL}/session/${sessionId}`);
-  return handleResponse<SessionDetail>(res);
+  try {
+    const res = await fetchWithFallback(`/session/${sessionId}`, {}, true);
+    const result = await handleResponse<SessionDetail>(res);
+    _sessionMode = "remote";
+    return result;
+  } catch {
+    _sessionMode = "local";
+    return getLocalSession(sessionId);
+  }
 }
 
 // ─── Pipeline Run API ─────────────────────────────────────────────────────────

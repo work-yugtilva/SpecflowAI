@@ -9,11 +9,19 @@ import researchRoutes from '@/routes/research.js';
 const app = express();
 const PORT = process.env.PORT || 3001;
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
+const LOCAL_ORIGINS = [
+  'http://localhost',
+  'http://127.0.0.1',
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://localhost:3001',
+  'http://127.0.0.1:3001',
+];
 
 // Middleware
 app.use(
   cors({
-    origin: FRONTEND_URL,
+    origin: [FRONTEND_URL, ...LOCAL_ORIGINS],
     credentials: true,
   })
 );

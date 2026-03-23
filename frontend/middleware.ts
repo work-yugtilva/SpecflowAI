@@ -1,6 +1,10 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import {
+  resolveSupabaseAnonKey,
+  resolveSupabaseUrl,
+} from "@/lib/supabase/env";
 
 const PROTECTED_PATHS = [
   "/dashboard",
@@ -12,14 +16,15 @@ const PROTECTED_PATHS = [
   "/context",
   "/research",
   "/onboarding",
+  "/sessions",
 ];
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    resolveSupabaseUrl(),
+    resolveSupabaseAnonKey(),
     {
       cookies: {
         getAll() {
@@ -39,9 +44,14 @@ export async function middleware(request: NextRequest) {
   );
 
   // Refresh session — required for SSR auth to work
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user = null;
+  try {
+    const { data } = await supabase.auth.getUser();
+    user = data.user;
+  } catch {
+    // e.g. dev defaults but no `supabase start` — treat as signed out
+    user = null;
+  }
 
   const { pathname } = request.nextUrl;
 

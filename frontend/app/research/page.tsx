@@ -336,14 +336,7 @@ export default function ResearchPage() {
       <Sidebar />
 
       {/* Main */}
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          flex: 1,
-          overflow: "hidden",
-        }}
-      >
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         {/* ── Top Bar ── */}
         <header
           style={{

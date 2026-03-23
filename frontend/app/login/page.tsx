@@ -4,6 +4,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
+import { formatAuthErrorMessage } from "@/lib/supabase/auth-errors";
+import { isSupabaseEnvExplicitlySet } from "@/lib/supabase/env";
 
 // ─── ChipSVG (unchanged) ─────────────────────────────────────────────────────
 
@@ -105,6 +107,9 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
+  const showDevSupabaseHint =
+    process.env.NODE_ENV === "development" && !isSupabaseEnvExplicitlySet();
+
   function switchMode(next: "login" | "register") {
     setMode(next);
     setError(null);
@@ -136,56 +141,65 @@ export default function LoginPage() {
 
     setLoading(true);
 
-    if (mode === "login") {
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+    try {
+      if (mode === "login") {
+        const { error: authError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
 
-      if (authError) {
-        setError(authError.message);
-        setLoading(false);
-        return;
-      }
+        if (authError) {
+          setError(formatAuthErrorMessage(authError));
+          return;
+        }
 
-      router.push("/dashboard");
-      router.refresh();
-    } else {
-      const { error: authError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback?next=/onboarding`,
-        },
-      });
-
-      if (authError) {
-        setError(authError.message);
-        setLoading(false);
-        return;
-      }
-
-      // If email confirmation is disabled, user is immediately signed in
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session) {
-        router.push("/onboarding");
+        router.push("/dashboard");
         router.refresh();
       } else {
-        setSuccessMsg("Check your email to confirm your account, then log in.");
-        setLoading(false);
-        switchMode("login");
+        const { error: authError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: `${window.location.origin}/auth/callback?next=/onboarding`,
+          },
+        });
+
+        if (authError) {
+          setError(formatAuthErrorMessage(authError));
+          return;
+        }
+
+        // If email confirmation is disabled, user is immediately signed in
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (session) {
+          router.push("/onboarding");
+          router.refresh();
+        } else {
+          setSuccessMsg("Check your email to confirm your account, then log in.");
+          switchMode("login");
+        }
       }
+    } catch (e) {
+      setError(formatAuthErrorMessage(e));
+    } finally {
+      setLoading(false);
     }
   }
 
   async function handleGoogleLogin() {
-    const { error: authError } = await supabase.auth.signInWithOAuth({
-      provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
-    if (authError) setError(authError.message);
+    try {
+      const { error: authError } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+      if (authError) setError(formatAuthErrorMessage(authError));
+    } catch (e) {
+      setError(formatAuthErrorMessage(e));
+    }
   }
 
   return (
@@ -236,6 +250,23 @@ export default function LoginPage() {
               ? <>Simplify your workflow and ship specs faster with{" "}<span style={{ color: "#E8561B", fontWeight: 500 }}>SpecFlow AI</span>.</>
               : "Start for free. No credit card required."}
           </p>
+
+          {showDevSupabaseHint && (
+            <div
+              className="mb-4 px-4 py-3 rounded-lg font-sans text-[0.8125rem]"
+              style={{
+                background: "rgba(232,86,27,0.08)",
+                border: "1px solid rgba(232,86,27,0.22)",
+                color: "#9a3412",
+                lineHeight: 1.5,
+              }}
+            >
+              Dev mode: no <code style={{ fontSize: "0.8em" }}>NEXT_PUBLIC_SUPABASE_*</code> in env — using
+              local defaults (<code style={{ fontSize: "0.8em" }}>127.0.0.1:54321</code>). Run{" "}
+              <code style={{ fontSize: "0.8em" }}>supabase start</code> or add your project URL and anon key to{" "}
+              <code style={{ fontSize: "0.8em" }}>frontend/.env.local</code>.
+            </div>
+          )}
 
           {/* Error / success banner */}
           {error && (

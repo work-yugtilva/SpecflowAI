@@ -9,14 +9,14 @@ const router = Router();
 function resolveScope(req: AuthRequest): { scope: ContextScope; sessionId?: string } {
   const rawScope = String(req.query.scope ?? 'global').toLowerCase();
   if (rawScope !== 'global' && rawScope !== 'session') {
-    throw new AppError(400, 'scope must be either "global" or "session"');
+    throw new AppError(400, 'scope must be either "global" or "session"', 'VALIDATION_ERROR');
   }
   const scope = rawScope as ContextScope;
   const sessionId =
     typeof req.query.sessionId === 'string' ? req.query.sessionId.trim() : undefined;
 
   if (scope === 'session' && !sessionId) {
-    throw new AppError(400, 'sessionId query param is required when scope=session');
+    throw new AppError(400, 'sessionId query param is required when scope=session', 'MISSING_PARAM');
   }
 
   return { scope, sessionId };
@@ -26,7 +26,7 @@ function resolveScope(req: AuthRequest): { scope: ContextScope; sessionId?: stri
 router.get('/', verifyAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
-      throw new AppError(401, 'User not authenticated');
+      throw new AppError(401, 'User not authenticated', 'UNAUTHORIZED');
     }
 
     const { scope, sessionId } = resolveScope(req);
@@ -40,7 +40,7 @@ router.get('/', verifyAuth, async (req: AuthRequest, res) => {
     });
   } catch (error) {
     if (error instanceof AppError) throw error;
-    throw new AppError(500, 'Failed to fetch context');
+    throw new AppError(500, 'Failed to fetch context', 'INTERNAL_ERROR');
   }
 });
 
@@ -48,13 +48,13 @@ router.get('/', verifyAuth, async (req: AuthRequest, res) => {
 router.get('/merged', verifyAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
-      throw new AppError(401, 'User not authenticated');
+      throw new AppError(401, 'User not authenticated', 'UNAUTHORIZED');
     }
 
     const sessionId =
       typeof req.query.sessionId === 'string' ? req.query.sessionId.trim() : '';
     if (!sessionId) {
-      throw new AppError(400, 'sessionId query param is required');
+      throw new AppError(400, 'sessionId query param is required', 'MISSING_PARAM');
     }
 
     const bundle = await contextService.getMergedContext(req.user.id, sessionId);
@@ -65,7 +65,7 @@ router.get('/merged', verifyAuth, async (req: AuthRequest, res) => {
     });
   } catch (error) {
     if (error instanceof AppError) throw error;
-    throw new AppError(500, 'Failed to fetch merged context');
+    throw new AppError(500, 'Failed to fetch merged context', 'INTERNAL_ERROR');
   }
 });
 
@@ -73,7 +73,7 @@ router.get('/merged', verifyAuth, async (req: AuthRequest, res) => {
 router.post('/', verifyAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
-      throw new AppError(401, 'User not authenticated');
+      throw new AppError(401, 'User not authenticated', 'UNAUTHORIZED');
     }
 
     const { scope, sessionId } = resolveScope(req);
@@ -82,6 +82,7 @@ router.post('/', verifyAuth, async (req: AuthRequest, res) => {
       return res.status(400).json({
         success: false,
         error: 'Validation failed',
+        code: 'VALIDATION_ERROR',
         details: errors,
       });
     }
@@ -102,7 +103,7 @@ router.post('/', verifyAuth, async (req: AuthRequest, res) => {
     });
   } catch (error) {
     if (error instanceof AppError) throw error;
-    throw new AppError(500, 'Failed to save context');
+    throw new AppError(500, 'Failed to save context', 'INTERNAL_ERROR');
   }
 });
 
@@ -110,12 +111,12 @@ router.post('/', verifyAuth, async (req: AuthRequest, res) => {
 router.post('/import-global', verifyAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
-      throw new AppError(401, 'User not authenticated');
+      throw new AppError(401, 'User not authenticated', 'UNAUTHORIZED');
     }
 
     const sessionId = String(req.body?.sessionId ?? '').trim();
     if (!sessionId) {
-      throw new AppError(400, 'sessionId is required');
+      throw new AppError(400, 'sessionId is required', 'MISSING_PARAM');
     }
 
     const copied = await contextService.importGlobalToSession(req.user.id, sessionId);
@@ -128,7 +129,7 @@ router.post('/import-global', verifyAuth, async (req: AuthRequest, res) => {
     });
   } catch (error) {
     if (error instanceof AppError) throw error;
-    throw new AppError(500, 'Failed to import global context');
+    throw new AppError(500, 'Failed to import global context', 'INTERNAL_ERROR');
   }
 });
 
@@ -136,7 +137,7 @@ router.post('/import-global', verifyAuth, async (req: AuthRequest, res) => {
 router.delete('/', verifyAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
-      throw new AppError(401, 'User not authenticated');
+      throw new AppError(401, 'User not authenticated', 'UNAUTHORIZED');
     }
 
     const { scope, sessionId } = resolveScope(req);
@@ -150,7 +151,7 @@ router.delete('/', verifyAuth, async (req: AuthRequest, res) => {
     });
   } catch (error) {
     if (error instanceof AppError) throw error;
-    throw new AppError(500, 'Failed to delete context');
+    throw new AppError(500, 'Failed to delete context', 'INTERNAL_ERROR');
   }
 });
 

@@ -215,7 +215,7 @@ export default function Hero() {
           </Button>
         </div>
 
-        {/* Headline + rotating line */}
+        {/* Headline + rotating line — explicit rows + gap so text never runs together */}
         <h1
           className="fade-up-1 font-display mb-6 max-w-[780px] text-center"
           style={{
@@ -225,18 +225,19 @@ export default function Hero() {
             color: "#0D0D0D",
           }}
         >
-          <span className="font-semibold">Build specs that ship</span>
-          <RotatingHeroTitle
-            words={DEFAULT_ROTATING_WORDS}
-            intervalMs={2000}
-            className="my-1 text-[clamp(2.4rem,6vw,4.5rem)] leading-[1.12]"
-          />
-          <span
-            className="mt-1 block font-normal italic"
-            style={{ color: "#E8561B" }}
-          >
-            Your AI workflow.
-          </span>
+          <div className="flex flex-col items-center gap-2">
+            <div className="flex flex-wrap items-baseline justify-center gap-x-2 gap-y-1">
+              <span className="font-semibold">Build specs that ship</span>
+              <RotatingHeroTitle
+                words={DEFAULT_ROTATING_WORDS}
+                intervalMs={2000}
+                className="text-[clamp(2.4rem,6vw,4.5rem)] leading-[1.12]"
+              />
+            </div>
+            <span className="block font-normal italic" style={{ color: "#E8561B" }}>
+              Your AI workflow.
+            </span>
+          </div>
         </h1>
 
         {/* Subtitle */}
@@ -251,21 +252,21 @@ export default function Hero() {
           engineers and PMs to tackle key spec challenges — faster, together.
         </p>
 
-        {/* CTAs */}
-        <div className="fade-up-3 flex flex-row flex-wrap items-center justify-center gap-3">
+        {/* CTAs — shrink-0 + gap avoid icon overlap; inherit text so mailto isn’t browser-blue */}
+        <div className="fade-up-3 flex flex-row flex-wrap items-center justify-center gap-5">
           <Button
             size="lg"
             variant="outline"
-            className="gap-2 rounded-full border-[hsl(var(--border))] bg-background"
+            className="shrink-0 gap-2 rounded-full border-[hsl(var(--border))] bg-background text-foreground"
             asChild
           >
-            <a href="mailto:hello@specflow.app">
-              Book a demo <PhoneCall className="h-4 w-4" />
+            <a href="mailto:hello@specflow.app" className="no-underline">
+              Book a demo <PhoneCall className="h-4 w-4 shrink-0" aria-hidden />
             </a>
           </Button>
-          <Button size="lg" className="gap-2 rounded-full" asChild>
-            <Link href="/login">
-              Get started <MoveRight className="h-4 w-4" />
+          <Button size="lg" className="shrink-0 gap-2 rounded-full" asChild>
+            <Link href="/login" className="no-underline">
+              Get started <MoveRight className="h-4 w-4 shrink-0" aria-hidden />
             </Link>
           </Button>
         </div>

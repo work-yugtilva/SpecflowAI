@@ -9,7 +9,7 @@ const router = Router();
 router.get('/', verifyAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
-      throw new AppError(401, 'User not authenticated');
+      throw new AppError(401, 'User not authenticated', 'UNAUTHORIZED');
     }
 
     const page = parseInt(req.query.page as string) || 1;
@@ -20,7 +20,7 @@ router.get('/', verifyAuth, async (req: AuthRequest, res) => {
     res.json(result);
   } catch (error) {
     if (error instanceof AppError) throw error;
-    throw new AppError(500, 'Failed to fetch research entries');
+    throw new AppError(500, 'Failed to fetch research entries', 'INTERNAL_ERROR');
   }
 });
 
@@ -28,7 +28,7 @@ router.get('/', verifyAuth, async (req: AuthRequest, res) => {
 router.post('/', verifyAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
-      throw new AppError(401, 'User not authenticated');
+      throw new AppError(401, 'User not authenticated', 'UNAUTHORIZED');
     }
 
     const { valid, errors } = researchService.validateEntry(req.body);
@@ -36,6 +36,7 @@ router.post('/', verifyAuth, async (req: AuthRequest, res) => {
       return res.status(400).json({
         success: false,
         error: 'Validation failed',
+        code: 'VALIDATION_ERROR',
         details: errors,
       });
     }
@@ -49,7 +50,7 @@ router.post('/', verifyAuth, async (req: AuthRequest, res) => {
     });
   } catch (error) {
     if (error instanceof AppError) throw error;
-    throw new AppError(500, 'Failed to create research entry');
+    throw new AppError(500, 'Failed to create research entry', 'INTERNAL_ERROR');
   }
 });
 
@@ -57,7 +58,7 @@ router.post('/', verifyAuth, async (req: AuthRequest, res) => {
 router.get('/search', verifyAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
-      throw new AppError(401, 'User not authenticated');
+      throw new AppError(401, 'User not authenticated', 'UNAUTHORIZED');
     }
 
     const query = req.query.q as string;
@@ -65,6 +66,7 @@ router.get('/search', verifyAuth, async (req: AuthRequest, res) => {
       return res.status(400).json({
         success: false,
         error: 'Search query required',
+        code: 'MISSING_PARAM',
       });
     }
 
@@ -76,7 +78,7 @@ router.get('/search', verifyAuth, async (req: AuthRequest, res) => {
     });
   } catch (error) {
     if (error instanceof AppError) throw error;
-    throw new AppError(500, 'Failed to search research entries');
+    throw new AppError(500, 'Failed to search research entries', 'INTERNAL_ERROR');
   }
 });
 
@@ -84,13 +86,13 @@ router.get('/search', verifyAuth, async (req: AuthRequest, res) => {
 router.get('/:id', verifyAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
-      throw new AppError(401, 'User not authenticated');
+      throw new AppError(401, 'User not authenticated', 'UNAUTHORIZED');
     }
 
     const entry = await researchService.getEntry(req.user.id, req.params.id);
 
     if (!entry) {
-      throw new AppError(404, 'Research entry not found');
+      throw new AppError(404, 'Research entry not found', 'NOT_FOUND');
     }
 
     res.json({
@@ -99,7 +101,7 @@ router.get('/:id', verifyAuth, async (req: AuthRequest, res) => {
     });
   } catch (error) {
     if (error instanceof AppError) throw error;
-    throw new AppError(500, 'Failed to fetch research entry');
+    throw new AppError(500, 'Failed to fetch research entry', 'INTERNAL_ERROR');
   }
 });
 
@@ -107,7 +109,7 @@ router.get('/:id', verifyAuth, async (req: AuthRequest, res) => {
 router.put('/:id', verifyAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
-      throw new AppError(401, 'User not authenticated');
+      throw new AppError(401, 'User not authenticated', 'UNAUTHORIZED');
     }
 
     const { valid, errors } = researchService.validateEntry(req.body);
@@ -115,6 +117,7 @@ router.put('/:id', verifyAuth, async (req: AuthRequest, res) => {
       return res.status(400).json({
         success: false,
         error: 'Validation failed',
+        code: 'VALIDATION_ERROR',
         details: errors,
       });
     }
@@ -128,7 +131,7 @@ router.put('/:id', verifyAuth, async (req: AuthRequest, res) => {
     });
   } catch (error) {
     if (error instanceof AppError) throw error;
-    throw new AppError(500, 'Failed to update research entry');
+    throw new AppError(500, 'Failed to update research entry', 'INTERNAL_ERROR');
   }
 });
 
@@ -136,7 +139,7 @@ router.put('/:id', verifyAuth, async (req: AuthRequest, res) => {
 router.delete('/:id', verifyAuth, async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
-      throw new AppError(401, 'User not authenticated');
+      throw new AppError(401, 'User not authenticated', 'UNAUTHORIZED');
     }
 
     await researchService.deleteEntry(req.user.id, req.params.id);
@@ -147,7 +150,7 @@ router.delete('/:id', verifyAuth, async (req: AuthRequest, res) => {
     });
   } catch (error) {
     if (error instanceof AppError) throw error;
-    throw new AppError(500, 'Failed to delete research entry');
+    throw new AppError(500, 'Failed to delete research entry', 'INTERNAL_ERROR');
   }
 });
 
