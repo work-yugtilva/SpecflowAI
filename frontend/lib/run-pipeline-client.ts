@@ -26,7 +26,7 @@ export interface PipelineRunResult {
 }
 
 const PIPELINE_URL =
-  process.env.NEXT_PUBLIC_PIPELINE_URL ?? "http://localhost:8001";
+  process.env.NEXT_PUBLIC_PIPELINE_URL ?? "http://localhost:8000";
 
 export async function runPipelineStepOrFull(
   step: PipelineStepId,
