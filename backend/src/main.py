@@ -12,8 +12,9 @@ from services.config.load_env import load_root_env
 
 load_root_env()
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from typing import Any, Optional
 
@@ -67,6 +68,18 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(ValueError)
+async def value_error_handler(request: Request, exc: ValueError):
+    msg = str(exc)
+    if msg.startswith("INCOMPLETE_CONTEXT:"):
+        fields = msg.split(":", 1)[1].split(",")
+        return JSONResponse(
+            status_code=422,
+            content={"error": "INCOMPLETE_CONTEXT", "missing": fields}
+        )
+    return JSONResponse(status_code=422, content={"error": msg})
+
+
 # ---------------------------------------------------------------------------
 # Request / Response models
 # ---------------------------------------------------------------------------
@@ -111,6 +124,8 @@ async def run_pipeline(req: RunRequest):
         result = await pipeline.run(req.input_data, req.project_id)
         print(f"[pipeline] Run complete | keys={list(result.keys())}")
         return {"success": True, "data": result}
+    except ValueError as e:
+        raise
     except Exception as e:
         import traceback
         print(f"[pipeline] Error: {e}")
@@ -191,7 +206,10 @@ async def run_session(session_id: str, req: SessionRunRequest):
             "session_state": current_state,
         }
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        msg = str(e)
+        if msg.startswith("INCOMPLETE_CONTEXT:"):
+            raise
+        raise HTTPException(status_code=404, detail=msg)
     except HTTPException:
         raise
     except Exception as e:

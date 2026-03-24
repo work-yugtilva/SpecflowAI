@@ -196,6 +196,104 @@ def _coerce_features_output(value: Any) -> Any:
     return value
 
 
+def validate_output(agent_name: str, output: Any, output_schema: dict) -> dict:
+    """
+    Validate agent output against required fields from output_schema.
+    Returns: {"valid": bool, "issues": list[str], "flagged": list}
+
+    Rules (all derived from output_schema["fields"] — no hardcoded names):
+    - Every item must have all declared fields (non-None, non-empty)
+    - Fields whose type string contains " | " are enums: value must match one option
+    - "title": min 5 chars
+    - "description": min 50 chars
+    - "research_evidence": min 10 chars
+    - All other string fields: non-blank
+    Failing items get quality_flag + quality_issues added. Not dropped.
+    """
+    if not isinstance(output, list):
+        return {"valid": True, "issues": [], "flagged": output}
+
+    fields: dict = {}
+    if isinstance(output_schema, dict):
+        fields = output_schema.get("fields") or {}
+
+    if not fields:
+        return {"valid": True, "issues": [], "flagged": output}
+
+    # Detect enum fields: type string contains " | " (e.g. "high | medium | low")
+    enum_fields: dict = {}
+    for fname, ftype in fields.items():
+        if isinstance(ftype, str) and " | " in ftype:
+            enum_fields[fname] = [v.strip().lower() for v in ftype.split("|")]
+
+    # Min-length thresholds keyed by field name
+    MIN_LENGTHS: dict = {"title": 5, "description": 50, "research_evidence": 10}
+
+    all_issues: list = []
+    flagged_output: list = []
+
+    for i, item in enumerate(output):
+        if not isinstance(item, dict):
+            flagged_output.append(item)
+            continue
+
+        item_issues: list = []
+
+        for fname in fields:
+            value = item.get(fname)
+
+            if value is None or value == "":
+                item_issues.append(f"field '{fname}' is missing or empty")
+                continue
+
+            if fname in enum_fields:
+                if str(value).lower() not in enum_fields[fname]:
+                    item_issues.append(
+                        f"field '{fname}' value '{value}' not in {enum_fields[fname]}"
+                    )
+            elif fname in MIN_LENGTHS and isinstance(value, str):
+                if len(value) < MIN_LENGTHS[fname]:
+                    item_issues.append(
+                        f"field '{fname}' too short (len={len(value)}, min={MIN_LENGTHS[fname]})"
+                    )
+            elif isinstance(value, str) and not value.strip():
+                item_issues.append(f"field '{fname}' is blank")
+
+        if item_issues:
+            flagged_output.append({
+                **item,
+                "quality_flag": "low_confidence",
+                "quality_issues": item_issues,
+            })
+            all_issues.extend(f"item[{i}].{iss}" for iss in item_issues)
+        else:
+            flagged_output.append(item)
+
+    return {"valid": len(all_issues) == 0, "issues": all_issues, "flagged": flagged_output}
+
+
+def validate_pipeline_input(input_data: dict) -> None:
+    """
+    Raise ValueError with structured detail if required context fields or ingest are missing.
+    Called before the first pipeline step executes.
+    Error format: "INCOMPLETE_CONTEXT:field1,field2" — parsed by the API layer into HTTP 422.
+    """
+    context = input_data.get("context") or {}
+    missing = []
+
+    for field in ("companyName", "productName", "productDescription"):
+        val = context.get(field)
+        if not val or not str(val).strip():
+            missing.append(field)
+
+    ingest = input_data.get("ingest")
+    if not ingest or not isinstance(ingest, list) or len(ingest) == 0:
+        missing.append("ingest")
+
+    if missing:
+        raise ValueError(f"INCOMPLETE_CONTEXT:{','.join(missing)}")
+
+
 class Pipeline:
     def __init__(self, pipeline_config_path: str = None):
         import yaml
@@ -241,6 +339,10 @@ class Pipeline:
         )
 
         state = dict(input_data)
+
+        # Gate: reject immediately if required context fields or ingest are missing
+        validate_pipeline_input(input_data)
+
         memory_store = MemoryStore()
         memory_manager = MemoryManager(memory_store)
 
@@ -371,6 +473,21 @@ class Pipeline:
                     )
 
                 output = state[step_cfg["output_key"]]
+
+                # Validate output quality against agent's output_schema
+                _schema = agent.config.get("output_schema") or {}
+                _validation = validate_output(agent_name, output, _schema)
+                if not _validation["valid"]:
+                    _flagged_count = sum(
+                        1 for x in _validation["flagged"]
+                        if isinstance(x, dict) and x.get("quality_flag")
+                    )
+                    logger.warning(
+                        "[validate_output] %s: %d item(s) flagged — %s",
+                        agent_name, _flagged_count, _validation["issues"][:5],
+                    )
+                    output = _validation["flagged"]
+                    state[step_cfg["output_key"]] = output
 
                 # Write output to runtime memory store
                 await memory_manager.write_from_agent(

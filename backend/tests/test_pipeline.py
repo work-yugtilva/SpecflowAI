@@ -37,3 +37,35 @@ async def test_run_pipeline_error_returns_500(client):
     with patch("main.Pipeline", return_value=mock_pipeline):
         response = await client.post("/run", json={"input_data": {}})
     assert response.status_code == 500
+
+
+def test_validate_pipeline_input_missing_fields():
+    from services.pipeline import validate_pipeline_input
+
+    # Missing all fields
+    with pytest.raises(ValueError) as exc:
+        validate_pipeline_input({})
+    assert "INCOMPLETE_CONTEXT" in str(exc.value)
+    assert "companyName" in str(exc.value)
+    assert "ingest" in str(exc.value)
+
+    # Missing ingest only
+    with pytest.raises(ValueError) as exc:
+        validate_pipeline_input({
+            "context": {
+                "companyName": "Acme",
+                "productName": "Widget",
+                "productDescription": "A widget for users",
+            }
+        })
+    assert "ingest" in str(exc.value)
+
+    # All present — no exception
+    validate_pipeline_input({
+        "context": {
+            "companyName": "Acme",
+            "productName": "Widget",
+            "productDescription": "A widget for users",
+        },
+        "ingest": [{"content": "some interview"}],
+    })
