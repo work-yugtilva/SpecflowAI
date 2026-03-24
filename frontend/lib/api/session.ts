@@ -1,56 +1,17 @@
-// lib/api/session.ts — Client for the session system API routes
+// lib/api/session.ts — Client for the session system API routes (proxied via Next.js)
 
-import {
-  createLocalSession,
-  getLocalSession,
-  runLocalSession,
-} from "@/lib/local-session-pipeline";
-
-const PIPELINE_URL =
-  process.env.NEXT_PUBLIC_PIPELINE_URL ?? "http://localhost:8001";
-const FALLBACK_PIPELINE_URLS = [
-  PIPELINE_URL,
-  "http://localhost:8001",
-  "http://localhost:8000",
-].filter((url, index, arr) => arr.indexOf(url) === index);
+const API_BASE = "/api/sessions";
 
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText);
-    throw new Error(`Session API ${res.status}: ${text}`);
+    let text = res.statusText;
+    try {
+      const body = await res.json();
+      text = body.error ?? text;
+    } catch {}
+    throw new Error(text);
   }
   return res.json() as Promise<T>;
-}
-
-async function fetchWithFallback(
-  path: string,
-  init: RequestInit,
-  retryable: boolean
-): Promise<Response> {
-  let lastError: unknown = null;
-
-  for (const baseUrl of FALLBACK_PIPELINE_URLS) {
-    try {
-      const res = await fetch(`${baseUrl}${path}`, init);
-      return res;
-    } catch (error) {
-      lastError = error;
-      if (!retryable) break;
-    }
-  }
-
-  throw lastError instanceof Error
-    ? lastError
-    : new Error("Failed to reach the pipeline service.");
-}
-
-// ─── Session mode tracking ─────────────────────────────────────────────────
-type SessionMode = "remote" | "local";
-let _sessionMode: SessionMode = "local";
-
-/** Returns whether the last session API call used the remote backend or local fallback. */
-export function getLastSessionMode(): SessionMode {
-  return _sessionMode;
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -99,8 +60,6 @@ export interface SessionDetail {
   events: SessionEvent[];
 }
 
-// ─── API Functions ─────────────────────────────────────────────────────────────
-
 export interface SessionSummary {
   id: string;
   session_name: string;
@@ -109,95 +68,6 @@ export interface SessionSummary {
   created_at: string | null;
   updated_at: string | null;
 }
-
-export async function listSessions(): Promise<SessionSummary[]> {
-  const res = await fetch(`${PIPELINE_URL}/sessions`);
-  const body = await handleResponse<{ sessions: SessionSummary[] }>(res);
-  return body.sessions;
-}
-
-export async function createSession(
-  sessionName: string,
-  metadata?: Record<string, unknown>
-): Promise<SessionCreated> {
-  try {
-    const res = await fetchWithFallback("/session/create", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        session_name: sessionName,
-        metadata: metadata ?? {},
-      }),
-    }, true);
-    const result = await handleResponse<SessionCreated>(res);
-    _sessionMode = "remote";
-    return result;
-  } catch {
-    _sessionMode = "local";
-    return createLocalSession(sessionName, metadata);
-  }
-}
-
-async function runViaApiRoute(
-  inputData: Record<string, unknown>,
-  step?: string
-): Promise<SessionRunResponse> {
-  const res = await fetch("/api/pipeline/run", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ step: step ?? "problems", inputData }),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: "API route failed" }));
-    throw new Error((err as Record<string, unknown>).error as string ?? "API route failed");
-  }
-  const data = (await res.json()) as { outputs: Record<string, unknown> };
-  // Return in the same shape as a real backend SessionRunResponse
-  return { outputs: data.outputs } as unknown as SessionRunResponse;
-}
-
-export async function runSession(
-  sessionId: string,
-  inputData: Record<string, unknown>,
-  step?: string
-): Promise<SessionRunResponse> {
-  const body: Record<string, unknown> = { input_data: inputData };
-  if (step) body.step = step;
-
-  try {
-    const res = await fetchWithFallback(`/session/${sessionId}/run`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    }, true);
-    const result = await handleResponse<SessionRunResponse>(res);
-    _sessionMode = "remote";
-    return result;
-  } catch {
-    try {
-      const result = await runViaApiRoute(inputData, step);
-      _sessionMode = "remote";
-      return result;
-    } catch {
-      _sessionMode = "local";
-      return runLocalSession(sessionId, inputData, step);
-    }
-  }
-}
-
-export async function getSession(sessionId: string): Promise<SessionDetail> {
-  try {
-    const res = await fetchWithFallback(`/session/${sessionId}`, {}, true);
-    const result = await handleResponse<SessionDetail>(res);
-    _sessionMode = "remote";
-    return result;
-  } catch {
-    _sessionMode = "local";
-    return getLocalSession(sessionId);
-  }
-}
-
-// ─── Pipeline Run API ─────────────────────────────────────────────────────────
 
 export interface PipelineRunSummary {
   id: string;
@@ -211,28 +81,53 @@ export interface PipelineRunSummary {
   updated_at: string | null;
 }
 
-export async function listOrphanedPipelines(): Promise<PipelineRunSummary[]> {
-  const res = await fetch(`${PIPELINE_URL}/pipelines/orphaned`);
-  const body = await handleResponse<{ pipelines: PipelineRunSummary[] }>(res);
-  return body.pipelines;
+// ─── Session Mode (always "remote" — local fallback removed) ──────────────────
+
+/** Always returns "remote". Local fallback has been removed. */
+export function getLastSessionMode(): "remote" | "local" {
+  return "remote";
 }
 
-export async function attachPipelineToSession(
-  pipelineId: string,
-  sessionId: string
-): Promise<void> {
-  const res = await fetch(`${PIPELINE_URL}/pipelines/attach`, {
+// ─── Session API Functions ────────────────────────────────────────────────────
+
+export async function listSessions(): Promise<SessionSummary[]> {
+  const res = await fetch(`${API_BASE}`);
+  const body = await handleResponse<{ sessions: SessionSummary[] }>(res);
+  return body.sessions;
+}
+
+export async function createSession(
+  sessionName: string,
+  metadata?: Record<string, unknown>
+): Promise<SessionCreated> {
+  const res = await fetch(`${API_BASE}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ pipeline_id: pipelineId, session_id: sessionId }),
+    body: JSON.stringify({ session_name: sessionName, metadata: metadata ?? {} }),
   });
-  await handleResponse<{ success: boolean }>(res);
+  return handleResponse<SessionCreated>(res);
 }
 
-export async function listSessionPipelines(
-  sessionId: string
-): Promise<PipelineRunSummary[]> {
-  const res = await fetch(`${PIPELINE_URL}/pipelines/${sessionId}`);
-  const body = await handleResponse<{ pipelines: PipelineRunSummary[] }>(res);
-  return body.pipelines;
+export async function getSession(sessionId: string): Promise<SessionDetail> {
+  const res = await fetch(`${API_BASE}/${sessionId}`);
+  return handleResponse<SessionDetail>(res);
 }
+
+export async function runSession(
+  sessionId: string,
+  inputData: Record<string, unknown>,
+  step?: string
+): Promise<SessionRunResponse> {
+  const body: Record<string, unknown> = { input_data: inputData };
+  if (step) body.step = step;
+  const res = await fetch(`${API_BASE}/${sessionId}/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return handleResponse<SessionRunResponse>(res);
+}
+
+// Note: listOrphanedPipelines, attachPipelineToSession, listSessionPipelines are
+// intentionally omitted — pipeline management UI is out of scope. No
+// Next.js proxy routes exist for /api/pipelines/* in this plan.
