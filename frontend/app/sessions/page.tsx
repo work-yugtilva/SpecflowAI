@@ -384,6 +384,7 @@ export default function SessionsPage() {
   const [isApplyingBootstrap, setIsApplyingBootstrap] = useState(false);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [sessionMode, setSessionMode] = useState<"remote" | "local" | null>(null);
+  const [backendOffline, setBackendOffline] = useState(false);
 
   const openCreateModal = useCallback(() => {
     setIsCreating(true);
@@ -422,6 +423,9 @@ export default function SessionsPage() {
         return updated;
       });
     } catch (e) {
+      if (e instanceof Error && (e.message.includes("offline") || e.message.includes("503") || e.message.includes("Failed to fetch"))) {
+        setBackendOffline(true);
+      }
       setDetail(null);
     } finally {
       setIsLoadingDetail(false);
@@ -482,6 +486,9 @@ export default function SessionsPage() {
       setBootstrapError(null);
       setShowContextBootstrap(true);
     } catch (e) {
+      if (e instanceof Error && (e.message.includes("offline") || e.message.includes("503") || e.message.includes("Failed to fetch"))) {
+        setBackendOffline(true);
+      }
       setCreateError(String(e));
     } finally {
       setIsCreatingSession(false);
@@ -595,6 +602,9 @@ export default function SessionsPage() {
         await runSession(selectedId, inputData, step);
         await loadDetail(selectedId);
       } catch (e) {
+        if (e instanceof Error && (e.message.includes("offline") || e.message.includes("503") || e.message.includes("Failed to fetch"))) {
+          setBackendOffline(true);
+        }
         setRunError(String(e));
         await loadDetail(selectedId);
       } finally {
@@ -689,6 +699,28 @@ export default function SessionsPage() {
               New Session
             </button>
           </div>
+
+          {backendOffline && (
+            <div style={{
+              background: "#FFF7ED",
+              borderBottom: "1px solid #E8561B",
+              color: "#9A3412",
+              padding: "12px 24px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              fontFamily: "Outfit, sans-serif",
+              fontSize: 14,
+            }}>
+              <span>Backend service is offline. Please start the backend server.</span>
+              <button
+                onClick={() => setBackendOffline(false)}
+                style={{ background: "none", border: "none", cursor: "pointer", color: "#9A3412", fontWeight: 600 }}
+              >
+                ✕
+              </button>
+            </div>
+          )}
 
           {/* Local Mode banner */}
           {sessionMode === "local" && (
