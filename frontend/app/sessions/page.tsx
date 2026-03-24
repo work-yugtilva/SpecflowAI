@@ -35,9 +35,24 @@ import {
   writeScopedRaw,
 } from "@/lib/session-scoped-storage";
 import { importGlobalContextToSession } from "@/lib/api/context";
+import type { MergedContextPayload } from "@/lib/api/context";
 
 const LS_KEY = "specflow_sessions";
 const INGEST_GLOBAL_KEY = "ingest_entries";
+
+const CONTEXT_PREVIEW_CONFIG = {
+  sectionTitle: "Context Preview",
+  fields: [
+    { key: "companyName" as keyof MergedContextPayload["merged"], label: "Company" },
+    { key: "productName" as keyof MergedContextPayload["merged"], label: "Product" },
+    { key: "targetUsers" as keyof MergedContextPayload["merged"], label: "Target Users" },
+    { key: "goals"       as keyof MergedContextPayload["merged"], label: "Goals" },
+  ],
+  readyMessage:    "Pipeline will use this context",
+  notReadyMessage: "Complete your context before running",
+  editLabel:       "Edit Context",
+  memoryLabel:     "Already generated",
+} as const;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -346,6 +361,12 @@ export default function SessionsPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
+  const [contextPreview, setContextPreview] = useState<{
+    context: MergedContextPayload;
+    memory_keys: string[];
+    ready: boolean;
+  } | null>(null);
+  const [contextPreviewLoading, setContextPreviewLoading] = useState(false);
 
   // Ingest form state
   const [activeTab, setActiveTab] = useState<"interview" | "product_data">("interview");
@@ -417,6 +438,22 @@ export default function SessionsPage() {
     [loadDetail, selectSession]
   );
 
+  // Fetch context preview when a session is selected
+  useEffect(() => {
+    if (!selectedId) {
+      setContextPreview(null);
+      return;
+    }
+    let cancelled = false;
+    setContextPreviewLoading(true);
+    fetch(`/api/sessions/${encodeURIComponent(selectedId)}/context-preview`)
+      .then((r) => r.json())
+      .then((data) => { if (!cancelled) setContextPreview(data); })
+      .catch(() => { if (!cancelled) setContextPreview(null); })
+      .finally(() => { if (!cancelled) setContextPreviewLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedId]);
+
   // Create session
   const handleCreate = useCallback(async () => {
     if (!newSessionName.trim()) {
@@ -470,7 +507,7 @@ export default function SessionsPage() {
         }
         setShowContextBootstrap(false);
         setBootstrapSessionId(null);
-        router.push("/context");
+        // Context editing is handled inline on the Sessions page
       } catch (e) {
         setBootstrapError(String(e));
       } finally {
@@ -1064,6 +1101,129 @@ export default function SessionsPage() {
                     <StepTracker statuses={stepStatuses} running={isRunning} />
                   </div>
 
+                  {/* Context preview panel */}
+                  {selectedId && (
+                    <div
+                      style={{
+                        background: "#FFFFFF",
+                        border: `1px solid ${
+                          contextPreviewLoading
+                            ? "#E4DDD4"
+                            : contextPreview?.ready === false
+                            ? "#FED7AA"
+                            : "#BBF7D0"
+                        }`,
+                        borderRadius: 14,
+                        padding: "16px 20px",
+                        marginBottom: 18,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          marginBottom: contextPreviewLoading ? 0 : 12,
+                        }}
+                      >
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: "#9B9189",
+                            letterSpacing: "0.06em",
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          {CONTEXT_PREVIEW_CONFIG.sectionTitle}
+                        </span>
+                        <a
+                          href={`/context?sessionId=${selectedId}`}
+                          style={{
+                            fontSize: 12,
+                            color: "#E8561B",
+                            textDecoration: "none",
+                            fontWeight: 500,
+                          }}
+                        >
+                          {CONTEXT_PREVIEW_CONFIG.editLabel}
+                        </a>
+                      </div>
+
+                      {contextPreviewLoading ? (
+                        <div style={{ height: 14, background: "#F8F4EF", borderRadius: 4, width: "55%" }} />
+                      ) : contextPreview ? (
+                        <>
+                          <div
+                            style={{
+                              fontSize: 12.5,
+                              fontWeight: 500,
+                              color: contextPreview.ready ? "#15803D" : "#C2410C",
+                              marginBottom: 10,
+                            }}
+                          >
+                            {contextPreview.ready
+                              ? "✓ " + CONTEXT_PREVIEW_CONFIG.readyMessage
+                              : "⚠ " + CONTEXT_PREVIEW_CONFIG.notReadyMessage}
+                          </div>
+
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            {CONTEXT_PREVIEW_CONFIG.fields.map(({ key, label }) => {
+                              const value = contextPreview.context.merged?.[key];
+                              return (
+                                <div key={key} style={{ display: "flex", gap: 8, fontSize: 12.5 }}>
+                                  <span style={{ color: "#9B9189", minWidth: 88, flexShrink: 0 }}>
+                                    {label}
+                                  </span>
+                                  <span
+                                    style={{
+                                      color: value ? "#0D0D0D" : "#C2410C",
+                                      fontStyle: value ? "normal" : "italic",
+                                    }}
+                                  >
+                                    {value ? String(value) : "missing"}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {contextPreview.memory_keys.length > 0 && (
+                            <div style={{ marginTop: 10, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
+                              <span
+                                style={{
+                                  fontSize: 11,
+                                  color: "#9B9189",
+                                  fontWeight: 600,
+                                  letterSpacing: "0.04em",
+                                  textTransform: "uppercase",
+                                }}
+                              >
+                                {CONTEXT_PREVIEW_CONFIG.memoryLabel}
+                              </span>
+                              {contextPreview.memory_keys.map((k) => (
+                                <span
+                                  key={k}
+                                  style={{
+                                    fontSize: 11,
+                                    fontWeight: 500,
+                                    padding: "2px 8px",
+                                    borderRadius: 20,
+                                    background: "#F0FDF4",
+                                    border: "1px solid #BBF7D0",
+                                    color: "#15803D",
+                                  }}
+                                >
+                                  {k}
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      ) : null}
+                    </div>
+                  )}
+
                   {/* Run controls */}
                   <div
                     style={{
@@ -1091,7 +1251,7 @@ export default function SessionsPage() {
                         {/* Run All */}
                         <button
                           onClick={() => handleRun()}
-                          disabled={isRunning || isSessionDone}
+                          disabled={isRunning || isSessionDone || contextPreview?.ready === false}
                           style={{
                             display: "flex",
                             alignItems: "center",
