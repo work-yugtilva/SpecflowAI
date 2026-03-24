@@ -78,3 +78,44 @@ def test_validate_pipeline_input_happy_path():
         },
         "ingest": [{"content": "some interview"}],
     })
+
+
+def test_validate_pipeline_input_whitespace_context():
+    from services.pipeline import validate_pipeline_input
+    import pytest
+
+    with pytest.raises(ValueError) as exc:
+        validate_pipeline_input({
+            "context": {
+                "companyName": "   ",  # whitespace only
+                "productName": "Widget",
+                "productDescription": "A widget for users",
+            },
+            "ingest": [{"content": "interview"}],
+        })
+    assert "companyName" in str(exc.value)
+
+
+def test_validate_pipeline_input_empty_ingest_list():
+    from services.pipeline import validate_pipeline_input
+    import pytest
+
+    with pytest.raises(ValueError) as exc:
+        validate_pipeline_input({
+            "context": {
+                "companyName": "Acme",
+                "productName": "Widget",
+                "productDescription": "A widget for users",
+            },
+            "ingest": [],  # empty list
+        })
+    assert "ingest" in str(exc.value)
+
+
+def test_validate_pipeline_input_none_context():
+    from services.pipeline import validate_pipeline_input
+    import pytest
+
+    with pytest.raises(ValueError) as exc:
+        validate_pipeline_input({"context": None, "ingest": [{"content": "interview"}]})
+    assert "INCOMPLETE_CONTEXT" in str(exc.value)

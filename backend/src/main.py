@@ -68,6 +68,9 @@ app.add_middleware(
 )
 
 
+# NOTE: This handler catches all unguarded ValueErrors across the application.
+# Any route that needs a different status code for ValueError (e.g., 404)
+# must catch the exception locally before it reaches this handler.
 @app.exception_handler(ValueError)
 async def value_error_handler(request: Request, exc: ValueError):
     msg = str(exc)
@@ -77,7 +80,10 @@ async def value_error_handler(request: Request, exc: ValueError):
             status_code=422,
             content={"error": "INCOMPLETE_CONTEXT", "missing": fields}
         )
-    return JSONResponse(status_code=422, content={"error": msg})
+    # All other ValueErrors: log internally, return generic error to client
+    import logging
+    logging.getLogger(__name__).error("Unhandled ValueError: %s", msg)
+    return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
 
 # ---------------------------------------------------------------------------
