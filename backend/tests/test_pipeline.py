@@ -39,17 +39,22 @@ async def test_run_pipeline_error_returns_500(client):
     assert response.status_code == 500
 
 
-def test_validate_pipeline_input_missing_fields():
+def test_validate_pipeline_input_all_missing():
     from services.pipeline import validate_pipeline_input
 
-    # Missing all fields
     with pytest.raises(ValueError) as exc:
         validate_pipeline_input({})
-    assert "INCOMPLETE_CONTEXT" in str(exc.value)
-    assert "companyName" in str(exc.value)
-    assert "ingest" in str(exc.value)
+    error_str = str(exc.value)
+    assert "INCOMPLETE_CONTEXT" in error_str
+    assert "companyName" in error_str
+    assert "productName" in error_str
+    assert "productDescription" in error_str
+    assert "ingest" in error_str
 
-    # Missing ingest only
+
+def test_validate_pipeline_input_ingest_only_missing():
+    from services.pipeline import validate_pipeline_input
+
     with pytest.raises(ValueError) as exc:
         validate_pipeline_input({
             "context": {
@@ -60,7 +65,11 @@ def test_validate_pipeline_input_missing_fields():
         })
     assert "ingest" in str(exc.value)
 
-    # All present — no exception
+
+def test_validate_pipeline_input_happy_path():
+    from services.pipeline import validate_pipeline_input
+
+    # Should not raise
     validate_pipeline_input({
         "context": {
             "companyName": "Acme",
