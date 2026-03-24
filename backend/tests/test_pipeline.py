@@ -119,3 +119,30 @@ def test_validate_pipeline_input_none_context():
     with pytest.raises(ValueError) as exc:
         validate_pipeline_input({"context": None, "ingest": [{"content": "interview"}]})
     assert "INCOMPLETE_CONTEXT" in str(exc.value)
+
+
+def test_normalize_title_strips_uuid():
+    from services.pipeline import normalize_title
+    result = normalize_title("bebc4a35-1234-5678-abcd-ef0123456789 Interview Notes")
+    assert "bebc4a35" not in result
+    assert "Interview Notes" in result
+
+
+def test_normalize_title_strips_iso_timestamp():
+    from services.pipeline import normalize_title
+    result = normalize_title("2024-03-15T10:30:00Z Session Data")
+    assert "2024-03-15" not in result
+    assert "Session Data" in result
+
+
+def test_normalize_title_trims_to_10_words():
+    from services.pipeline import normalize_title
+    long = "one two three four five six seven eight nine ten eleven"
+    result = normalize_title(long)
+    assert len(result.split()) == 10
+
+
+def test_normalize_title_returns_empty_for_uuid_only():
+    from services.pipeline import normalize_title
+    result = normalize_title("bebc4a35-1234-5678-abcd-ef0123456789")
+    assert result == ""

@@ -196,6 +196,32 @@ def _coerce_features_output(value: Any) -> Any:
     return value
 
 
+import re as _re
+
+_UUID_PATTERN = _re.compile(
+    r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}", _re.IGNORECASE
+)
+_ISO_TIMESTAMP_PATTERN = _re.compile(
+    r"\d{4}-\d{2}-\d{2}T[\d:.]+Z?"
+)
+
+
+def normalize_title(text: str) -> str:
+    """
+    Strip UUIDs and ISO timestamps from a title string, then trim to 10 words.
+    Returns empty string if nothing meaningful remains.
+    """
+    if not isinstance(text, str):
+        return ""
+    cleaned = _UUID_PATTERN.sub("", text)
+    cleaned = _ISO_TIMESTAMP_PATTERN.sub("", cleaned)
+    # Collapse whitespace
+    cleaned = " ".join(cleaned.split())
+    # Trim to 10 words
+    words = cleaned.split()[:10]
+    return " ".join(words).strip()
+
+
 def validate_output(agent_name: str, output: Any, output_schema: dict) -> dict:
     """
     Validate agent output against required fields from output_schema.
@@ -241,6 +267,14 @@ def validate_output(agent_name: str, output: Any, output_schema: dict) -> dict:
 
         for fname in fields:
             value = item.get(fname)
+
+            if fname == "title" and isinstance(value, str):
+                value = normalize_title(value)
+                if not value:
+                    # Title became empty after normalization — exclude this item entirely
+                    item_issues.append("title is empty after normalization (contained only UUIDs/timestamps)")
+                    break
+                item[fname] = value  # write normalized title back
 
             if value is None or value == "":
                 item_issues.append(f"field '{fname}' is missing or empty")
