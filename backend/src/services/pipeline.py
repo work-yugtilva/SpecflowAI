@@ -197,6 +197,145 @@ def _coerce_features_output(value: Any) -> Any:
     return value
 
 
+def _score_features(items: list) -> None:
+    """
+    Compute score and confidence in-place on each feature dict.
+    Reads impact, effort, confidence from the item.
+    Weights: impact=0.5, effort=0.3, confidence=0.2
+    effort is inverted: low effort = better score.
+    """
+    _IMPACT_MAP = {"high": 90, "medium": 60, "low": 30}
+    _EFFORT_MAP = {"low": 90, "medium": 60, "high": 30}
+    _W_IMPACT, _W_EFFORT, _W_CONF = 0.5, 0.3, 0.2
+    _DEFAULT_CONF = 75
+
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        impact_raw = str(item.get("impact", "")).strip().lower()
+        effort_raw = str(item.get("effort", "")).strip().lower()
+        conf_raw = item.get("confidence", _DEFAULT_CONF)
+        conf = float(conf_raw) if conf_raw is not None else _DEFAULT_CONF
+
+        impact_score = _IMPACT_MAP.get(impact_raw, _IMPACT_MAP["medium"])
+        effort_score = _EFFORT_MAP.get(effort_raw, _EFFORT_MAP["medium"])
+
+        item["score"] = round(_W_IMPACT * impact_score + _W_EFFORT * effort_score + _W_CONF * conf)
+        item["confidence"] = round(conf)
+
+
+def _is_single_decomposition_dict(d: dict) -> bool:
+    """Model returned one decomposition object instead of a JSON array."""
+    if "error" in d:
+        return False
+    title = d.get("title") or d.get("name")
+    if not isinstance(title, str) or not str(title).strip():
+        return False
+    schema_keys = (
+        "layer",
+        "component_name",
+        "component_id",
+        "description",
+        "user_problem_it_solves",
+        "priority",
+        "acceptance_criteria",
+        "research_evidence",
+    )
+    return any(k in d for k in schema_keys)
+
+
+def _coerce_decompositions_output(value: Any) -> Any:
+    """
+    Decompose agent should return a JSON array; normalize wrapped / single-object shapes.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        try:
+            return _coerce_decompositions_output(json.loads(value))
+        except Exception:
+            return value
+    if isinstance(value, dict) and "error" in value:
+        return value
+    if isinstance(value, list):
+        if not value:
+            return value
+        if all(isinstance(x, dict) for x in value):
+            return value
+        dict_rows = [x for x in value if isinstance(x, dict) and "error" not in x]
+        if dict_rows:
+            return dict_rows
+        return value
+    if isinstance(value, dict):
+        if _is_single_decomposition_dict(value):
+            return [value]
+        for k in ("decompositions", "components", "items", "data", "results", "value"):
+            inner = value.get(k)
+            if isinstance(inner, list) and inner:
+                coerced = _coerce_decompositions_output(inner)
+                if isinstance(coerced, list):
+                    return coerced
+        discovered = _discover_longest_dict_list(value)
+        if discovered:
+            return discovered
+    return value
+
+
+def _is_single_task_dict(d: dict) -> bool:
+    """Model returned one task object instead of a JSON array."""
+    if "error" in d:
+        return False
+    title = d.get("title") or d.get("name")
+    if not isinstance(title, str) or not str(title).strip():
+        return False
+    schema_keys = (
+        "layer",
+        "description",
+        "user_problem_it_solves",
+        "priority",
+        "acceptance_criteria",
+        "research_evidence",
+    )
+    return any(k in d for k in schema_keys)
+
+
+def _coerce_tasks_output(value: Any) -> Any:
+    """
+    Tasks agent should return a JSON array; normalize wrapped / single-object shapes.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        try:
+            return _coerce_tasks_output(json.loads(value))
+        except Exception:
+            return value
+    if isinstance(value, dict) and "error" in value:
+        return value
+    if isinstance(value, list):
+        if not value:
+            return value
+        if all(isinstance(x, dict) for x in value):
+            return value
+        dict_rows = [x for x in value if isinstance(x, dict) and "error" not in x]
+        if dict_rows:
+            return dict_rows
+        return value
+    if isinstance(value, dict):
+        if _is_single_task_dict(value):
+            return [value]
+        for k in ("tasks", "items", "data", "results", "value"):
+            inner = value.get(k)
+            if isinstance(inner, list) and inner:
+                coerced = _coerce_tasks_output(inner)
+                if isinstance(coerced, list):
+                    return coerced
+        discovered = _discover_longest_dict_list(value)
+        if discovered:
+            return discovered
+    return value
+
+
 _UUID_PATTERN = re.compile(
     r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}", re.IGNORECASE
 )
@@ -422,7 +561,10 @@ class Pipeline:
             # Load session-scoped memory into the runtime store
             entries = await self.memory_repo.get_by_session(session_id)
             for entry in entries:
-                await memory_store.set(entry.memory_key, entry.content)
+                await memory_store.set(
+                    entry.memory_key,
+                    self._unwrap_persisted_content(entry.content),
+                )
 
             # Determine which steps are already done
             if resumable:
@@ -476,6 +618,18 @@ class Pipeline:
 
             memory_slice = await memory_manager.read_for_agent(agent_memory_config)
 
+            # Log raw memory values and unwrap any {"data": value} that may have
+            # survived from persisted memory before the agent sees the slice.
+            for _mk, _mv in memory_slice.items():
+                logger.debug(
+                    "[memory_slice] agent=%s key=%s type=%s value=%r",
+                    agent_name, _mk, type(_mv).__name__, _mv,
+                )
+            memory_slice = {
+                k: self._unwrap_persisted_content(v)
+                for k, v in memory_slice.items()
+            }
+
             # Session context passed to agents (for logging only — not in AI prompt)
             agent_session = (
                 {"id": session_id, "state": {}} if session_id else None
@@ -506,8 +660,17 @@ class Pipeline:
                         state[out_key] = _coerce_problems_output(result)
                     elif out_key == "features":
                         state[out_key] = _coerce_features_output(result)
+                    elif out_key == "decompositions":
+                        state[out_key] = _coerce_decompositions_output(result)
+                    elif out_key == "tasks":
+                        state[out_key] = _coerce_tasks_output(result)
                     else:
                         state[out_key] = result
+
+                # Score features immediately after coercion
+                _out_key = step_cfg.get("output_key", agent_name)
+                if _out_key == "features" and isinstance(state.get(_out_key), list):
+                    _score_features(state[_out_key])
 
                 # Optional: compress output before passing forward
                 if "compression" in step_cfg:
@@ -657,7 +820,7 @@ class Pipeline:
         """Load all prior project-scoped memory entries into the runtime store."""
         entries = await self.memory_repo.get_by_project(project_id)
         for entry in entries:
-            await store.set(entry.memory_key, entry.content)
+            await store.set(entry.memory_key, self._unwrap_persisted_content(entry.content))
 
     async def _persist_step_memory(
         self,
@@ -686,3 +849,14 @@ class Pipeline:
                 content=content if isinstance(content, dict) else {"data": content},
             )
             await self.memory_repo.save(entry)
+
+    @staticmethod
+    def _unwrap_persisted_content(content: Any) -> Any:
+        """
+        Reverse the wrapping applied by _persist_step_memory.
+        {"data": value} → value  (only when "data" is the sole key)
+        Everything else passes through unchanged.
+        """
+        if isinstance(content, dict) and list(content.keys()) == ["data"]:
+            return content["data"]
+        return content

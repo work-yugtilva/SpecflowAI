@@ -16,6 +16,9 @@ output_schema:
     description: string
     user_problem_it_solves: string
     priority: "high | medium | low"
+    impact: "high | medium | low"
+    effort: "high | medium | low"
+    confidence: number
     acceptance_criteria: string
     research_evidence: string
     linked_problems: list

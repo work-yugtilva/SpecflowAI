@@ -19,20 +19,8 @@ steps:
 
   - agent: "decompose"
     task: "Decompose the product features into between 6 and 12 concrete technical components. Each component must map to a specific layer (ui, backend, or system) and directly address a user problem. Every component must reference evidence from the research."
-    mode: "parallel"
-    input_key: "features"
     output_key: "decompositions"
-    compression:
-      strategy: "top_k"
-      params:
-        k: 3
 
   - agent: "tasks"
     task: "Generate between 8 and 15 implementation tasks derived from the decomposed components. Each task title must start with an imperative verb. Every task must reference evidence from the research and have verifiable acceptance criteria written in past tense."
-    mode: "parallel"
-    input_key: "decompositions"
     output_key: "tasks"
-    compression:
-      strategy: "top_k"
-      params:
-        k: 3

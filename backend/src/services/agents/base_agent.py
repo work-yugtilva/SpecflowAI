@@ -272,6 +272,10 @@ class BaseAgent:
         # 2. Build Prompt
         prompt = self.build_prompt(task, context, memory=memory)
 
+        if self.name == "features":
+            messages = [{"role": "user", "content": prompt}]
+            logger.info(f"FEATURES_PROMPT_DEBUG: {json.dumps(messages, indent=2)}")
+
         # 3. Apply token budget
         from services.token.token_manager import estimate_tokens, allocate_budget, trim_to_budget
         budget = allocate_budget(self.name, self.config)

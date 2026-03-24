@@ -26,7 +26,7 @@ def run_ai(prompt: str, max_tokens: int = None, retries: int = None, model: str 
     client = get_client()
     
     # Dynamic defaults from env or fallbacks
-    model = model or os.environ.get("AI_MODEL", "claude-haiku-4-5-20251001")
+    model = model or os.environ.get("AI_MODEL", "claude-sonnet-4-6")
     max_tokens = max_tokens or int(os.environ.get("AI_MAX_TOKENS", 2048))
     retries = retries if retries is not None else int(os.environ.get("AI_RETRIES", 3))
     
