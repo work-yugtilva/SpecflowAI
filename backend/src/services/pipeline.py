@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import re
 from typing import Any, Optional
 from services.agent_factory import AgentFactory
 from services.config.config_manager import ConfigManager
@@ -196,12 +197,10 @@ def _coerce_features_output(value: Any) -> Any:
     return value
 
 
-import re as _re
-
-_UUID_PATTERN = _re.compile(
-    r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}", _re.IGNORECASE
+_UUID_PATTERN = re.compile(
+    r"[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}", re.IGNORECASE
 )
-_ISO_TIMESTAMP_PATTERN = _re.compile(
+_ISO_TIMESTAMP_PATTERN = re.compile(
     r"\d{4}-\d{2}-\d{2}T[\d:.]+Z?"
 )
 
@@ -264,6 +263,7 @@ def validate_output(agent_name: str, output: Any, output_schema: dict) -> dict:
             continue
 
         item_issues: list = []
+        skip_item = False
 
         for fname in fields:
             value = item.get(fname)
@@ -271,8 +271,7 @@ def validate_output(agent_name: str, output: Any, output_schema: dict) -> dict:
             if fname == "title" and isinstance(value, str):
                 value = normalize_title(value)
                 if not value:
-                    # Title became empty after normalization — exclude this item entirely
-                    item_issues.append("title is empty after normalization (contained only UUIDs/timestamps)")
+                    skip_item = True
                     break
                 item[fname] = value  # write normalized title back
 
@@ -292,6 +291,9 @@ def validate_output(agent_name: str, output: Any, output_schema: dict) -> dict:
                     )
             elif isinstance(value, str) and not value.strip():
                 item_issues.append(f"field '{fname}' is blank")
+
+        if skip_item:
+            continue  # exclude this item from output entirely
 
         if item_issues:
             flagged_output.append({

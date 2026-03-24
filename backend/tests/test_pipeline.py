@@ -146,3 +146,18 @@ def test_normalize_title_returns_empty_for_uuid_only():
     from services.pipeline import normalize_title
     result = normalize_title("bebc4a35-1234-5678-abcd-ef0123456789")
     assert result == ""
+
+
+def test_validate_output_excludes_uuid_only_title():
+    from services.pipeline import validate_output
+    items = [
+        {"id": "1", "title": "bebc4a35-1234-5678-abcd-ef0123456789", "description": "test"},
+        {"id": "2", "title": "Real User Problem", "description": "test"},
+    ]
+    result = validate_output("test_agent", items, {"fields": {"title": "str", "description": "str"}})
+    # Item with UUID-only title should be excluded
+    titles = [item.get("title") for item in result["flagged"]]
+    assert "Real User Problem" in titles
+    # The UUID-only item should not appear in output
+    for item in result["flagged"]:
+        assert "bebc4a35" not in (item.get("title") or "")
