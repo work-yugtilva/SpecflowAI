@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 
 
-ROOT_ENV_PATH = Path(__file__).resolve().parents[4] / ".env"
+ROOT_ENV_PATH = Path(__file__).resolve().parents[3] / ".env"
 
 
 def load_root_env() -> Path:

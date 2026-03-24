@@ -1,13 +1,22 @@
 "use client";
 
+import React from "react";
 import Link from "next/link";
 import { MoveRight, PhoneCall } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  DEFAULT_ROTATING_WORDS,
-  RotatingHeroTitle,
-} from "@/components/ui/animated-hero";
+
+const HERO_COPY = {
+  badge: "Introducing SpecFlow AI — Now in Beta",
+  headline1: "Ship your first PRD in",
+  headline2: "20 minutes.",
+  headline3: "No interviews required.",
+  subtitle:
+    "SpecFlow turns raw user research into problems, features, and tasks — automatically.",
+  ctaPrimary: "Start Free",
+  ctaSecondary: "Book a demo",
+  pipeline: ["Research", "Problems", "Features", "Tasks", "PRD"],
+};
 
 const floatingLabelsLeft = [
   { label: "Requirements", top: "12%", left: "4%" },
@@ -30,7 +39,6 @@ function ChipSVG() {
       xmlns="http://www.w3.org/2000/svg"
       className="w-full h-full"
     >
-      {/* Glow filter */}
       <defs>
         <radialGradient id="bgGlow" cx="50%" cy="50%" r="50%">
           <stop offset="0%" stopColor="#E8561B" stopOpacity="0.3" />
@@ -66,10 +74,8 @@ function ChipSVG() {
         </linearGradient>
       </defs>
 
-      {/* Outer glow circle */}
       <circle cx="200" cy="200" r="180" fill="url(#bgGlow)" />
 
-      {/* Circuit traces — horizontal */}
       <line x1="20" y1="140" x2="120" y2="140" stroke="url(#traceGrad)" strokeWidth="1.5" />
       <line x1="20" y1="175" x2="120" y2="175" stroke="#E8561B" strokeWidth="1" strokeOpacity="0.4" />
       <line x1="20" y1="225" x2="120" y2="225" stroke="#E8561B" strokeWidth="1" strokeOpacity="0.3" />
@@ -79,7 +85,6 @@ function ChipSVG() {
       <line x1="280" y1="225" x2="380" y2="225" stroke="url(#traceGrad)" strokeWidth="1.5" />
       <line x1="280" y1="260" x2="380" y2="260" stroke="#E8561B" strokeWidth="1" strokeOpacity="0.4" />
 
-      {/* Circuit traces — vertical */}
       <line x1="140" y1="20" x2="140" y2="120" stroke="url(#traceGrad2)" strokeWidth="1.5" />
       <line x1="175" y1="20" x2="175" y2="120" stroke="#E8561B" strokeWidth="1" strokeOpacity="0.35" />
       <line x1="225" y1="20" x2="225" y2="120" stroke="#E8561B" strokeWidth="1" strokeOpacity="0.5" />
@@ -89,7 +94,6 @@ function ChipSVG() {
       <line x1="225" y1="280" x2="225" y2="380" stroke="#E8561B" strokeWidth="1" strokeOpacity="0.4" />
       <line x1="260" y1="280" x2="260" y2="380" stroke="#E8561B" strokeWidth="1" strokeOpacity="0.3" />
 
-      {/* Connector dots on traces */}
       {[140, 175, 225, 260].map((x, i) => (
         <circle key={`dt${i}`} cx={x} cy="120" r="2.5" fill="#E8561B" fillOpacity="0.8" />
       ))}
@@ -103,14 +107,10 @@ function ChipSVG() {
         <circle key={`dr${i}`} cx="280" cy={y} r="2.5" fill="#E8561B" fillOpacity="0.5" />
       ))}
 
-      {/* Main chip body */}
       <rect x="120" y="120" width="160" height="160" rx="16" fill="url(#chipGrad)" />
       <rect x="120" y="120" width="160" height="160" rx="16" fill="none" stroke="#E8561B" strokeWidth="1.5" strokeOpacity="0.6" />
-
-      {/* Inner chip highlight */}
       <rect x="130" y="130" width="140" height="140" rx="12" fill="none" stroke="#E8561B" strokeWidth="0.5" strokeOpacity="0.3" />
 
-      {/* Chip grid pattern */}
       {[155, 175, 195, 215, 235].map((x) =>
         [155, 175, 195, 215, 235].map((y) => (
           <rect
@@ -129,39 +129,19 @@ function ChipSVG() {
         ))
       )}
 
-      {/* Center AI label */}
       <rect x="162" y="175" width="76" height="50" rx="8" fill="#E8561B" fillOpacity="0.15" stroke="#E8561B" strokeWidth="1" strokeOpacity="0.5" />
-      <text
-        x="200"
-        y="197"
-        textAnchor="middle"
-        fill="#E8561B"
-        fontSize="11"
-        fontWeight="700"
-        fontFamily="monospace"
-        filter="url(#glow)"
-      >
+      <text x="200" y="197" textAnchor="middle" fill="#E8561B" fontSize="11" fontWeight="700" fontFamily="monospace" filter="url(#glow)">
         AI
       </text>
-      <text
-        x="200"
-        y="215"
-        textAnchor="middle"
-        fill="#E8561B"
-        fontSize="7"
-        fontFamily="monospace"
-        fillOpacity="0.8"
-      >
+      <text x="200" y="215" textAnchor="middle" fill="#E8561B" fontSize="7" fontFamily="monospace" fillOpacity="0.8">
         SPECFLOW
       </text>
 
-      {/* Corner notches */}
       <circle cx="136" cy="136" r="4" fill="#E8561B" fillOpacity="0.5" filter="url(#glow)" />
       <circle cx="264" cy="136" r="4" fill="#E8561B" fillOpacity="0.5" filter="url(#glow)" />
       <circle cx="136" cy="264" r="4" fill="#E8561B" fillOpacity="0.5" filter="url(#glow)" />
       <circle cx="264" cy="264" r="4" fill="#E8561B" fillOpacity="0.5" filter="url(#glow)" />
 
-      {/* Animated glow dot */}
       <circle cx="200" cy="200" r="6" fill="#FF7B3B" filter="url(#softGlow)" fillOpacity="0.9">
         <animate attributeName="fillOpacity" values="0.4;1;0.4" dur="2s" repeatCount="indefinite" />
         <animate attributeName="r" values="5;8;5" dur="2s" repeatCount="indefinite" />
@@ -192,7 +172,7 @@ export default function Hero() {
       />
 
       <div className="relative max-w-6xl mx-auto px-6 pt-16 pb-12 flex flex-col items-center text-center">
-        {/* Intro + launch link */}
+        {/* Intro badge + launch link */}
         <div className="fade-up mb-6 flex flex-col items-center gap-5">
           <div
             className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium"
@@ -202,11 +182,8 @@ export default function Hero() {
               color: "#E8561B",
             }}
           >
-            <span
-              className="h-1.5 w-1.5 rounded-full"
-              style={{ background: "#E8561B" }}
-            />
-            Introducing SpecFlow AI — Now in Beta
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: "#E8561B" }} />
+            {HERO_COPY.badge}
           </div>
           <Button variant="secondary" size="sm" className="gap-2 rounded-full" asChild>
             <Link href="/features">
@@ -215,7 +192,7 @@ export default function Hero() {
           </Button>
         </div>
 
-        {/* Headline + rotating line — explicit rows + gap so text never runs together */}
+        {/* Headline */}
         <h1
           className="fade-up-1 font-display mb-6 max-w-[780px] text-center"
           style={{
@@ -225,17 +202,13 @@ export default function Hero() {
             color: "#0D0D0D",
           }}
         >
-          <div className="flex flex-col items-center gap-2">
-            <div className="flex flex-wrap items-baseline justify-center gap-x-2 gap-y-1">
-              <span className="font-semibold">Build specs that ship</span>
-              <RotatingHeroTitle
-                words={DEFAULT_ROTATING_WORDS}
-                intervalMs={2000}
-                className="text-[clamp(2.4rem,6vw,4.5rem)] leading-[1.12]"
-              />
-            </div>
-            <span className="block font-normal italic" style={{ color: "#E8561B" }}>
-              Your AI workflow.
+          <div className="flex flex-col items-center gap-1">
+            <span className="font-semibold">
+              {HERO_COPY.headline1}{" "}
+              <span style={{ color: "#E8561B" }}>{HERO_COPY.headline2}</span>
+            </span>
+            <span className="block font-normal" style={{ color: "#6B6B6B" }}>
+              {HERO_COPY.headline3}
             </span>
           </div>
         </h1>
@@ -243,16 +216,12 @@ export default function Hero() {
         {/* Subtitle */}
         <p
           className="fade-up-2 font-sans mb-10 max-w-lg text-center text-muted-foreground"
-          style={{
-            fontSize: "1.0625rem",
-            lineHeight: 1.7,
-          }}
+          style={{ fontSize: "1.0625rem", lineHeight: 1.7 }}
         >
-          SpecFlow connects AI tools with your development workflow, uniting
-          engineers and PMs to tackle key spec challenges — faster, together.
+          {HERO_COPY.subtitle}
         </p>
 
-        {/* CTAs — shrink-0 + gap avoid icon overlap; inherit text so mailto isn’t browser-blue */}
+        {/* CTAs */}
         <div className="fade-up-3 flex flex-row flex-wrap items-center justify-center gap-5">
           <Button
             size="lg"
@@ -261,19 +230,19 @@ export default function Hero() {
             asChild
           >
             <a href="mailto:hello@specflow.app" className="no-underline">
-              Book a demo <PhoneCall className="h-4 w-4 shrink-0" aria-hidden />
+              {HERO_COPY.ctaSecondary} <PhoneCall className="h-4 w-4 shrink-0" aria-hidden />
             </a>
           </Button>
           <Button size="lg" className="shrink-0 gap-2 rounded-full" asChild>
             <Link href="/login" className="no-underline">
-              Get started <MoveRight className="h-4 w-4 shrink-0" aria-hidden />
+              {HERO_COPY.ctaPrimary} <MoveRight className="h-4 w-4 shrink-0" aria-hidden />
             </Link>
           </Button>
         </div>
 
         {/* Hero visual area */}
         <div
-          className="relative w-full mt-12 flex items-center justify-center"
+          className="relative w-full mt-12 flex flex-col items-center justify-center"
           style={{ minHeight: 480 }}
         >
           {/* Outer ambient glow */}
@@ -282,8 +251,7 @@ export default function Hero() {
             style={{
               width: 520,
               height: 520,
-              background:
-                "radial-gradient(circle, rgba(232,86,27,0.18) 0%, transparent 65%)",
+              background: "radial-gradient(circle, rgba(232,86,27,0.18) 0%, transparent 65%)",
               borderRadius: "50%",
               top: "50%",
               left: "50%",
@@ -297,8 +265,7 @@ export default function Hero() {
             style={{
               width: 380,
               height: 380,
-              background:
-                "radial-gradient(circle, rgba(232,86,27,0.32) 0%, transparent 70%)",
+              background: "radial-gradient(circle, rgba(232,86,27,0.32) 0%, transparent 70%)",
               borderRadius: "50%",
               top: "50%",
               left: "50%",
@@ -308,10 +275,7 @@ export default function Hero() {
           />
 
           {/* Chip SVG */}
-          <div
-            className="relative chip-container"
-            style={{ width: 380, height: 380, zIndex: 2 }}
-          >
+          <div className="relative chip-container" style={{ width: 380, height: 380, zIndex: 2 }}>
             <ChipSVG />
           </div>
 
@@ -326,10 +290,7 @@ export default function Hero() {
                 animation: `floatY ${3 + i * 0.4}s ease-in-out ${i * 0.3}s infinite`,
               }}
             >
-              <span
-                className="w-1.5 h-1.5 rounded-full inline-block mr-1.5"
-                style={{ background: "#E8561B", verticalAlign: "middle" }}
-              />
+              <span className="w-1.5 h-1.5 rounded-full inline-block mr-1.5" style={{ background: "#E8561B", verticalAlign: "middle" }} />
               {item.label}
             </div>
           ))}
@@ -342,18 +303,78 @@ export default function Hero() {
               style={{
                 top: item.top,
                 right: item.right,
-                animation: `floatY ${3.2 + i * 0.35}s ease-in-out ${
-                  0.5 + i * 0.3
-                }s infinite`,
+                animation: `floatY ${3.2 + i * 0.35}s ease-in-out ${0.5 + i * 0.3}s infinite`,
               }}
             >
               {item.label}
-              <span
-                className="w-1.5 h-1.5 rounded-full inline-block ml-1.5"
-                style={{ background: "#E8561B", verticalAlign: "middle" }}
-              />
+              <span className="w-1.5 h-1.5 rounded-full inline-block ml-1.5" style={{ background: "#E8561B", verticalAlign: "middle" }} />
             </div>
           ))}
+
+          {/* Pipeline flow animation */}
+          <div
+            style={{
+              position: "relative",
+              zIndex: 3,
+              marginTop: 28,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 0,
+              flexWrap: "wrap",
+              rowGap: 8,
+            }}
+          >
+            {HERO_COPY.pipeline.map((node, i) => (
+              <React.Fragment key={node}>
+                <span
+                  style={{
+                    padding: "4px 14px",
+                    borderRadius: 20,
+                    border: "1px solid rgba(232,86,27,0.35)",
+                    background: "rgba(232,86,27,0.06)",
+                    color: "#E8561B",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    letterSpacing: "0.04em",
+                    fontFamily: "var(--font-sans, sans-serif)",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {node}
+                </span>
+                {i < HERO_COPY.pipeline.length - 1 && (
+                  <svg
+                    width="32"
+                    height="10"
+                    viewBox="0 0 32 10"
+                    style={{ flexShrink: 0 }}
+                    aria-hidden
+                  >
+                    <line
+                      x1="0"
+                      y1="5"
+                      x2="28"
+                      y2="5"
+                      stroke="#E8561B"
+                      strokeWidth="1.5"
+                      strokeDasharray="4 3"
+                      strokeOpacity="0.6"
+                    >
+                      <animate
+                        attributeName="stroke-dashoffset"
+                        from="0"
+                        to="-14"
+                        dur="1.2s"
+                        repeatCount="indefinite"
+                      />
+                    </line>
+                    <polygon points="26,2 32,5 26,8" fill="#E8561B" fillOpacity="0.6" />
+                  </svg>
+                )}
+              </React.Fragment>
+            ))}
+          </div>
         </div>
       </div>
     </section>

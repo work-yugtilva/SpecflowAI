@@ -1,34 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { createSession, runSession, getLastSessionMode } from "../api/session";
 
-// ─── Mock local pipeline ────────────────────────────────────────────────────
-
-vi.mock("@/lib/local-session-pipeline", () => ({
-  createLocalSession: vi.fn().mockResolvedValue({
-    session_id: "local-session-123",
-    session_name: "test",
-    status: "active",
-    created_at: "2026-01-01T00:00:00Z",
-  }),
-  runLocalSession: vi.fn().mockResolvedValue({
-    success: true,
-    data: { problems: [] },
-    session_state: null,
-  }),
-  getLocalSession: vi.fn().mockResolvedValue({
-    session: {
-      id: "local-session-123",
-      session_name: "test",
-      status: "active",
-      metadata: {},
-      created_at: "",
-      updated_at: "",
-    },
-    state: null,
-    events: [],
-  }),
-}));
-
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function mockFetchOk(data: unknown) {
@@ -38,16 +10,12 @@ function mockFetchOk(data: unknown) {
   });
 }
 
-function mockFetchNetworkError() {
-  return vi.fn().mockRejectedValue(new Error("ERR_CONNECTION_REFUSED"));
-}
-
-function mockFetchNonOk(status = 503) {
+function mockFetchNonOk(status = 503, body?: Record<string, unknown>) {
   return vi.fn().mockResolvedValue({
     ok: false,
     status,
-    text: () => Promise.resolve("Service Unavailable"),
     statusText: "Service Unavailable",
+    json: () => Promise.resolve(body ?? {}),
   });
 }
 
@@ -59,7 +27,7 @@ describe("createSession", () => {
     vi.unstubAllGlobals();
   });
 
-  it("returns remote result and sets mode to 'remote' when backend responds", async () => {
+  it("returns remote result when backend responds", async () => {
     vi.stubGlobal("fetch", mockFetchOk({
       session_id: "remote-session-456",
       session_name: "test",
@@ -73,22 +41,10 @@ describe("createSession", () => {
     expect(getLastSessionMode()).toBe("remote");
   });
 
-  it("falls back to local and sets mode to 'local' when backend is unreachable", async () => {
-    vi.stubGlobal("fetch", mockFetchNetworkError());
+  it("throws when backend returns non-ok status", async () => {
+    vi.stubGlobal("fetch", mockFetchNonOk(503, { detail: "Service Unavailable" }));
 
-    const result = await createSession("test");
-
-    expect(result.session_id).toBe("local-session-123");
-    expect(getLastSessionMode()).toBe("local");
-  });
-
-  it("falls back to local when backend returns non-ok status", async () => {
-    vi.stubGlobal("fetch", mockFetchNonOk(503));
-
-    const result = await createSession("test");
-
-    expect(result.session_id).toBe("local-session-123");
-    expect(getLastSessionMode()).toBe("local");
+    await expect(createSession("test")).rejects.toThrow("Service Unavailable");
   });
 });
 
@@ -100,7 +56,7 @@ describe("runSession", () => {
     vi.unstubAllGlobals();
   });
 
-  it("passes step parameter to backend in request body", async () => {
+  it("calls Next.js proxy URL and passes step in request body", async () => {
     const mockFetch = mockFetchOk({
       success: true,
       data: {},
@@ -111,7 +67,7 @@ describe("runSession", () => {
     await runSession("session-123", { context: {}, research: [], ingest: [] }, "problems");
 
     const calledUrl = mockFetch.mock.calls[0][0] as string;
-    expect(calledUrl).toContain("/session/session-123/run");
+    expect(calledUrl).toContain("/api/sessions/session-123/run");
 
     const body = JSON.parse(mockFetch.mock.calls[0][1].body as string);
     expect(body.step).toBe("problems");
@@ -125,12 +81,21 @@ describe("runSession", () => {
     expect(getLastSessionMode()).toBe("remote");
   });
 
-  it("falls back to local on network error", async () => {
-    vi.stubGlobal("fetch", mockFetchNetworkError());
+  it("surfaces FastAPI detail field on non-ok response", async () => {
+    vi.stubGlobal("fetch", mockFetchNonOk(404, { detail: "Session not found" }));
 
-    const result = await runSession("local-session-123", {}, "problems");
+    await expect(runSession("bad-id", {}, "problems")).rejects.toThrow("Session not found");
+  });
 
-    expect(result.success).toBe(true);
-    expect(getLastSessionMode()).toBe("local");
+  it("surfaces custom error field on non-ok response", async () => {
+    vi.stubGlobal("fetch", mockFetchNonOk(422, { error: "INCOMPLETE_CONTEXT", missing: ["ingest"] }));
+
+    await expect(runSession("sess-1", {}, "problems")).rejects.toThrow("INCOMPLETE_CONTEXT");
+  });
+
+  it("falls back to statusText when body has no error or detail", async () => {
+    vi.stubGlobal("fetch", mockFetchNonOk(500, {}));
+
+    await expect(runSession("sess-1", {}, "problems")).rejects.toThrow("Service Unavailable");
   });
 });

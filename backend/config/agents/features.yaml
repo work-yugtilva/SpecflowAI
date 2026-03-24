@@ -4,6 +4,7 @@ instructions: |
   Generate between 4 and 8 product features that directly address the problems identified.
   Each feature must solve a specific user problem and be grounded in the research context.
   Every feature must reference evidence from the research.
+  Every feature must include a linked_problems list with the exact titles of the problems it solves.
 
   Return ONLY a JSON array of feature objects. No preamble, no markdown, no explanation.
 
@@ -14,11 +15,32 @@ output_schema:
     title: string
     description: string
     user_problem_it_solves: string
-    priority: string
+    priority: "high | medium | low"
     acceptance_criteria: string
     research_evidence: string
+    linked_problems: list
   sections: null
   groups: null
 
+critic:
+  criteria:
+    - problem_traceability
+    - measurable_success_metrics
+    - priority_tier_assigned
+    - clarity
+    - feasibility
+    - research_evidence_non_empty
+    - linked_problems_exist_in_memory
+
+use_critic: true
+validate_evidence_chain: true
 max_retries: 2
-use_critic: false
+
+memory:
+  read:
+    strategy: top_k
+    keys:
+      problems: 5
+  write:
+    key: features
+    mode: overwrite

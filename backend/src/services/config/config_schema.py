@@ -4,20 +4,20 @@ from services.memory.memory_schemas import MemoryConfig
 
 
 class ScoringConfig(BaseModel):
-    dimensions: Optional[List[str]]
-    method: Optional[str]
-    weights: Optional[Dict[str, Any]]
+    dimensions: Optional[List[str]] = None
+    method: Optional[str] = None
+    weights: Optional[Dict[str, Any]] = None
 
 
 class CriticConfig(BaseModel):
-    criteria: List[str]
+    criteria: List[str] = []
 
 
 class OutputSchema(BaseModel):
     type: str
-    fields: Optional[Dict[str, Any]]
-    sections: Optional[Dict[str, Any]]
-    groups: Optional[Dict[str, Any]]
+    fields: Optional[Dict[str, Any]] = None
+    sections: Optional[Dict[str, Any]] = None
+    groups: Optional[Dict[str, Any]] = None
 
 
 class TokenControl(BaseModel):
@@ -59,11 +59,12 @@ class AgentConfig(BaseModel):
     generation_rules: Optional[List[str]] = []
     constraints: Optional[Dict[str, Any]] = {}
 
-    scoring: Optional[ScoringConfig]
-    output_schema: Optional[OutputSchema]
+    scoring: Optional[ScoringConfig] = None
+    output_schema: Optional[OutputSchema] = None
 
-    critic: Optional[CriticConfig]
+    critic: Optional[CriticConfig] = None
     use_critic: Optional[bool] = False
+    validate_evidence_chain: Optional[bool] = False
     
     token_control: Optional[TokenControl] = Field(default_factory=TokenControl)
     compression: Optional[CompressionConfig] = Field(default_factory=lambda: CompressionConfig(strategy="none"))

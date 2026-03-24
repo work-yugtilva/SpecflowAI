@@ -1,5 +1,14 @@
 "use client";
 
+const CTA_COPY = {
+  headline1: "The PM tool",
+  headline2: "that does the work.",
+  subhead: "Start free. Get your first PRD in 20 minutes. No credit card required.",
+  ctaPrimary: "Get started free",
+  ctaSecondary: "See a demo",
+  badges: ["· Solo PMs", "· Series A–B teams", "· No credit card"],
+};
+
 export default function CTASection() {
   return (
     <section
@@ -54,9 +63,9 @@ export default function CTASection() {
             color: "white",
           }}
         >
-          Build your dream{" "}
+          {CTA_COPY.headline1}{" "}
           <span style={{ fontStyle: "italic", opacity: 0.9 }}>
-            spec workflow!
+            {CTA_COPY.headline2}
           </span>
         </h2>
 
@@ -69,13 +78,12 @@ export default function CTASection() {
             maxWidth: "420px",
           }}
         >
-          Join 500+ teams shipping better software with SpecFlow AI. Start free,
-          no credit card required.
+          {CTA_COPY.subhead}
         </p>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
           <a href="#" className="btn-white">
-            Get started free
+            {CTA_COPY.ctaPrimary}
           </a>
           <a
             href="#"
@@ -88,31 +96,37 @@ export default function CTASection() {
               gap: "0.35rem",
               transition: "color 0.15s ease",
             }}
-            onMouseEnter={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "white")}
-            onMouseLeave={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "rgba(255,255,255,0.85)")}
+            onMouseEnter={(e) =>
+              ((e.currentTarget as HTMLAnchorElement).style.color = "white")
+            }
+            onMouseLeave={(e) =>
+              ((e.currentTarget as HTMLAnchorElement).style.color = "rgba(255,255,255,0.85)")
+            }
           >
-            See a demo
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+            {CTA_COPY.ctaSecondary}
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+            >
               <path d="M5 12h14M12 5l7 7-7 7" />
             </svg>
           </a>
         </div>
 
-        {/* Trust badges */}
+        {/* Trust badges — plain text, no emojis */}
         <div className="flex items-center justify-center gap-6 mt-10 flex-wrap">
-          {[
-            { icon: "🔒", label: "SOC 2 compliant" },
-            { icon: "⚡", label: "99.9% uptime" },
-            { icon: "🌍", label: "GDPR ready" },
-          ].map((badge) => (
-            <div
-              key={badge.label}
-              className="flex items-center gap-1.5 font-sans text-xs"
+          {CTA_COPY.badges.map((badge) => (
+            <span
+              key={badge}
+              className="font-sans text-xs"
               style={{ color: "rgba(255,255,255,0.75)", fontWeight: 500 }}
             >
-              <span>{badge.icon}</span>
-              {badge.label}
-            </div>
+              {badge}
+            </span>
           ))}
         </div>
       </div>

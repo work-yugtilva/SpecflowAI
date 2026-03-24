@@ -52,24 +52,23 @@ def test_validate_pipeline_input_all_missing():
     assert "ingest" in error_str
 
 
-def test_validate_pipeline_input_ingest_only_missing():
+def test_validate_pipeline_input_context_only_no_ingest():
     from services.pipeline import validate_pipeline_input
 
-    with pytest.raises(ValueError) as exc:
-        validate_pipeline_input({
-            "context": {
-                "companyName": "Acme",
-                "productName": "Widget",
-                "productDescription": "A widget for users",
-            }
-        })
-    assert "ingest" in str(exc.value)
+    # Complete product context without ingest should pass
+    validate_pipeline_input({
+        "context": {
+            "companyName": "Acme",
+            "productName": "Widget",
+            "productDescription": "A widget for users",
+        }
+    })
 
 
 def test_validate_pipeline_input_happy_path():
     from services.pipeline import validate_pipeline_input
 
-    # Should not raise
+    # Both context and ingest — should not raise
     validate_pipeline_input({
         "context": {
             "companyName": "Acme",
@@ -80,44 +79,64 @@ def test_validate_pipeline_input_happy_path():
     })
 
 
-def test_validate_pipeline_input_whitespace_context():
+def test_validate_pipeline_input_ingest_only_no_context():
+    from services.pipeline import validate_pipeline_input
+
+    # Ingest alone (no context) should pass
+    validate_pipeline_input({
+        "ingest": [{"content": "some interview notes"}],
+    })
+
+
+def test_validate_pipeline_input_ingest_only_none_context():
+    from services.pipeline import validate_pipeline_input
+
+    # None context + ingest should pass
+    validate_pipeline_input({"context": None, "ingest": [{"content": "interview"}]})
+
+
+def test_validate_pipeline_input_context_only_empty_ingest():
+    from services.pipeline import validate_pipeline_input
+
+    # Complete context + empty ingest list should pass (context is enough)
+    validate_pipeline_input({
+        "context": {
+            "companyName": "Acme",
+            "productName": "Widget",
+            "productDescription": "A widget for users",
+        },
+        "ingest": [],
+    })
+
+
+def test_validate_pipeline_input_whitespace_context_with_ingest():
+    from services.pipeline import validate_pipeline_input
+
+    # Whitespace context but valid ingest — ingest is enough, should pass
+    validate_pipeline_input({
+        "context": {
+            "companyName": "   ",
+            "productName": "Widget",
+            "productDescription": "A widget for users",
+        },
+        "ingest": [{"content": "interview"}],
+    })
+
+
+def test_validate_pipeline_input_neither_source():
     from services.pipeline import validate_pipeline_input
     import pytest
 
+    # No context and no ingest — should raise
     with pytest.raises(ValueError) as exc:
         validate_pipeline_input({
             "context": {
                 "companyName": "   ",  # whitespace only
-                "productName": "Widget",
-                "productDescription": "A widget for users",
+                "productName": "",
+                "productDescription": "",
             },
-            "ingest": [{"content": "interview"}],
+            "ingest": [],
         })
-    assert "companyName" in str(exc.value)
-
-
-def test_validate_pipeline_input_empty_ingest_list():
-    from services.pipeline import validate_pipeline_input
-    import pytest
-
-    with pytest.raises(ValueError) as exc:
-        validate_pipeline_input({
-            "context": {
-                "companyName": "Acme",
-                "productName": "Widget",
-                "productDescription": "A widget for users",
-            },
-            "ingest": [],  # empty list
-        })
-    assert "ingest" in str(exc.value)
-
-
-def test_validate_pipeline_input_none_context():
-    from services.pipeline import validate_pipeline_input
-    import pytest
-
-    with pytest.raises(ValueError) as exc:
-        validate_pipeline_input({"context": None, "ingest": [{"content": "interview"}]})
     assert "INCOMPLETE_CONTEXT" in str(exc.value)
 
 

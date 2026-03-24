@@ -310,24 +310,34 @@ def validate_output(agent_name: str, output: Any, output_schema: dict) -> dict:
 
 def validate_pipeline_input(input_data: dict) -> None:
     """
-    Raise ValueError with structured detail if required context fields or ingest are missing.
+    Raise ValueError with structured detail if neither context fields nor ingest are provided.
     Called before the first pipeline step executes.
     Error format: "INCOMPLETE_CONTEXT:field1,field2" — parsed by the API layer into HTTP 422.
+
+    Passes if at least one input source is present:
+    - Product context: companyName + productName + productDescription all non-empty, OR
+    - Interview ingest: at least one ingest item in the list.
     """
     context = input_data.get("context") or {}
-    missing = []
-
-    for field in ("companyName", "productName", "productDescription"):
-        val = context.get(field)
-        if not val or not str(val).strip():
-            missing.append(field)
-
     ingest = input_data.get("ingest")
-    if not ingest or not isinstance(ingest, list) or len(ingest) == 0:
-        missing.append("ingest")
 
-    if missing:
-        raise ValueError(f"INCOMPLETE_CONTEXT:{','.join(missing)}")
+    context_fields = ("companyName", "productName", "productDescription")
+    has_context = all(
+        context.get(f) and str(context.get(f)).strip()
+        for f in context_fields
+    )
+    has_ingest = isinstance(ingest, list) and len(ingest) > 0
+
+    if has_context or has_ingest:
+        return
+
+    # Neither source is present — report all missing fields
+    missing = [
+        f for f in context_fields
+        if not (context.get(f) and str(context.get(f)).strip())
+    ]
+    missing.append("ingest")
+    raise ValueError(f"INCOMPLETE_CONTEXT:{','.join(missing)}")
 
 
 class Pipeline:
@@ -658,14 +668,21 @@ class Pipeline:
         session_id: str = None,
     ) -> None:
         """Persist a single step's output to the database."""
-        entry = MemoryEntry(
-            project_id=project_id,
-            session_id=session_id,
-            agent_name=agent_name,
-            memory_key=memory_key,
-            content=content if isinstance(content, dict) else {"data": content},
-        )
         if session_id:
+            # Session-scoped memory: do NOT set project_id to avoid constraint conflicts
+            entry = MemoryEntry(
+                session_id=session_id,
+                agent_name=agent_name,
+                memory_key=memory_key,
+                content=content if isinstance(content, dict) else {"data": content},
+            )
             await self.memory_repo.save_for_session(entry)
         else:
+            # Project-scoped memory
+            entry = MemoryEntry(
+                project_id=project_id,
+                agent_name=agent_name,
+                memory_key=memory_key,
+                content=content if isinstance(content, dict) else {"data": content},
+            )
             await self.memory_repo.save(entry)

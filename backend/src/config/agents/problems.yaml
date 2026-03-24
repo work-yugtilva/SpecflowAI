@@ -64,7 +64,7 @@ critic:
     - desired_outcome_present
     - prioritization
 
-use_critic: false
+use_critic: true
 
 token_control:
   max_tokens: 8000

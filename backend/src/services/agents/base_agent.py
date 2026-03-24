@@ -150,22 +150,19 @@ class BaseAgent:
         if not critic_config:
             return output
 
-        prompt = f"""
-Evaluate and improve this output:
-
-{json.dumps(output, indent=2)}
-
-Evaluation Criteria:
-{json.dumps(critic_config.get("criteria", []))}
-
-Improve weak areas.
-
-Return JSON:
-{{
-  "scores": [...],
-  "improved": [...]
-}}
-"""
+        prompt = (
+            f"ROLE: {self.role}\n\n"
+            f"You are reviewing AI-generated output for quality.\n\n"
+            f"ORIGINAL OUTPUT:\n{json.dumps(output, indent=2)}\n\n"
+            f"EVALUATION CRITERIA:\n{json.dumps(critic_config.get('criteria', []))}\n\n"
+            f"OUTPUT SCHEMA (every item must conform to this):\n"
+            f"{json.dumps(self.config.get('output_schema', {}), indent=2)}\n\n"
+            f"For each item that fails a criterion or violates the schema:\n"
+            f"- Rewrite it to fix the issue\n"
+            f"- Ensure research_evidence is non-empty and references specific input data\n"
+            f"- Ensure all required fields are present and non-vague\n\n"
+            f"Return ONLY a JSON array of the improved items. No preamble. No markdown."
+        )
 
         # Output token control for critic
         token_ctrl = self.config.get("token_control", {})
@@ -175,10 +172,78 @@ Return JSON:
         response = run_ai(prompt, max_tokens=max_output_tokens, retries=retries)
         parsed = self.parse_json(response)
 
-        if isinstance(parsed, dict):
-            return parsed.get("improved", output)
-        
+        if isinstance(parsed, list):
+            return parsed
+
         return output
+
+    def validate_evidence_chain(self, output: Any, memory: dict) -> Any:
+        """
+        Cross-reference check: validates that each feature item's research_evidence
+        is non-empty and that every entry in linked_problems matches a known problem
+        title in memory["problems"] (case-insensitive).
+
+        Only runs if memory contains a "problems" key with a non-empty list.
+        Never throws — returns output unchanged if memory is missing or malformed.
+        Appends to existing quality_issues list if the item was already flagged.
+        """
+        if not isinstance(output, list):
+            return output
+
+        try:
+            problems_raw = memory.get("problems") if isinstance(memory, dict) else None
+        except Exception:
+            return output
+
+        if not isinstance(problems_raw, list) or not problems_raw:
+            return output
+
+        # Build case-insensitive set of known problem titles
+        known_titles: set = set()
+        for p in problems_raw:
+            if isinstance(p, dict):
+                title = p.get("title")
+                if isinstance(title, str) and title.strip():
+                    known_titles.add(title.strip().lower())
+
+        result: list = []
+        for item in output:
+            if not isinstance(item, dict):
+                result.append(item)
+                continue
+
+            issues: list = list(item.get("quality_issues", []))
+
+            # Check research_evidence length
+            evidence = item.get("research_evidence", "")
+            if not isinstance(evidence, str) or len(evidence.strip()) <= 10:
+                issues.append(
+                    "research_evidence is missing or too short (must be > 10 chars)"
+                )
+
+            # Check linked_problems exists and is a non-empty list
+            linked = item.get("linked_problems")
+            if not linked or not isinstance(linked, list):
+                issues.append("linked_problems is missing or empty")
+            else:
+                for lp in linked:
+                    if not isinstance(lp, str):
+                        continue
+                    if lp.strip().lower() not in known_titles:
+                        issues.append(
+                            f"linked_problem '{lp}' not found in memory problems"
+                        )
+
+            if issues:
+                result.append({
+                    **item,
+                    "quality_flag": "low_confidence",
+                    "quality_issues": issues,
+                })
+            else:
+                result.append(item)
+
+        return result
 
     # -------------------------
     # EXECUTE
@@ -234,6 +299,9 @@ Return JSON:
 
                 if self.use_critic:
                     parsed = self.run_critic(parsed)
+
+                if self.config.get("validate_evidence_chain") and memory:
+                    parsed = self.validate_evidence_chain(parsed, memory)
 
                 return parsed
 

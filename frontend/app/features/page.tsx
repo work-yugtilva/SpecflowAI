@@ -261,13 +261,15 @@ function adaptFeatures(
 
     const impactRaw = attrs.impact ?? item.impact ?? item.priority ?? 50;
     const effortRaw = attrs.effort ?? item.effort ?? 50;
+    const normalizeLevel = (s: string): string =>
+      s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
     const impact: Feature["impact"] =
       typeof impactRaw === "string"
-        ? (impactRaw as Feature["impact"])
+        ? (normalizeLevel(impactRaw) as Feature["impact"])
         : numericToImpact(Number(impactRaw));
     const effort: Feature["effort"] =
       typeof effortRaw === "string"
-        ? (effortRaw as Feature["effort"])
+        ? (normalizeLevel(effortRaw) as Feature["effort"])
         : numericToEffort(Number(effortRaw));
 
     return {

@@ -149,22 +149,31 @@ async def run_pipeline(req: RunRequest):
 async def list_sessions():
     """Return all sessions ordered by created_at DESC."""
     try:
+        print(f"[session] Listing sessions")
         sm = SessionManager()
+        print(f"[session] SessionManager instantiated")
         sessions = await sm.list_sessions()
+        print(f"[session] Found {len(sessions)} sessions")
         return {"sessions": [s.model_dump() for s in sessions]}
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        import traceback
+        print(f"[session] Error listing sessions: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/session/create")
 async def create_session(req: CreateSessionRequest):
     """Create a new session. Returns session_id to use in subsequent /session/{id}/run calls."""
     try:
+        print(f"[session] Creating session: {req.session_name}")
         sm = SessionManager()
+        print(f"[session] SessionManager instantiated")
         session = await sm.create_session(
             session_name=req.session_name,
             metadata=req.metadata,
         )
+        print(f"[session] Session created: {session.id}")
         return {
             "session_id": session.id,
             "session_name": session.session_name,
@@ -172,7 +181,10 @@ async def create_session(req: CreateSessionRequest):
             "created_at": session.created_at.isoformat() if session.created_at else None,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal server error")
+        import traceback
+        print(f"[session] Error creating session: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/session/{session_id}/run")

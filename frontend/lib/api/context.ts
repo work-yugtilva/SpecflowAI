@@ -1,5 +1,19 @@
-const BACKEND_URL =
-  process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
+import { createClient } from "@/lib/supabase/client";
+import { getExpressApiBase } from "@/lib/api/express-base";
+
+async function withAuth(init: RequestInit = {}): Promise<RequestInit> {
+  const headers = new Headers(init.headers);
+  if (typeof window !== "undefined") {
+    const supabase = createClient();
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      headers.set("Authorization", `Bearer ${session.access_token}`);
+    }
+  }
+  return { ...init, headers };
+}
 
 export interface ContextFormData {
   companyName: string;
@@ -50,7 +64,10 @@ export async function fetchScopedContext(
   scope: ContextScope,
   sessionId?: string
 ): Promise<ContextFormData | null> {
-  const res = await fetch(`${BACKEND_URL}/api/context?${scopeQuery(scope, sessionId)}`);
+  const res = await fetch(
+    `${getExpressApiBase()}/api/context?${scopeQuery(scope, sessionId)}`,
+    await withAuth()
+  );
   return handleResponse<ContextFormData | null>(res);
 }
 
@@ -59,11 +76,14 @@ export async function saveScopedContext(
   data: ContextFormData,
   sessionId?: string
 ): Promise<ContextFormData> {
-  const res = await fetch(`${BACKEND_URL}/api/context?${scopeQuery(scope, sessionId)}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
-  });
+  const res = await fetch(
+    `${getExpressApiBase()}/api/context?${scopeQuery(scope, sessionId)}`,
+    await withAuth({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    })
+  );
   return handleResponse<ContextFormData>(res);
 }
 
@@ -71,7 +91,8 @@ export async function fetchMergedContext(
   sessionId: string
 ): Promise<MergedContextPayload> {
   const res = await fetch(
-    `${BACKEND_URL}/api/context/merged?sessionId=${encodeURIComponent(sessionId)}`
+    `${getExpressApiBase()}/api/context/merged?sessionId=${encodeURIComponent(sessionId)}`,
+    await withAuth()
   );
   return handleResponse<MergedContextPayload>(res);
 }
@@ -79,10 +100,13 @@ export async function fetchMergedContext(
 export async function importGlobalContextToSession(
   sessionId: string
 ): Promise<ContextFormData | null> {
-  const res = await fetch(`${BACKEND_URL}/api/context/import-global`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ sessionId }),
-  });
+  const res = await fetch(
+    `${getExpressApiBase()}/api/context/import-global`,
+    await withAuth({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionId }),
+    })
+  );
   return handleResponse<ContextFormData | null>(res);
 }

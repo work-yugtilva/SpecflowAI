@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getExpressApiBase } from "@/lib/api/express-base";
 
-const BACKEND_URL =
-  process.env.NEXT_PUBLIC_BACKEND_URL ?? "http://localhost:3001";
 const PIPELINE_URL =
-  process.env.NEXT_PUBLIC_PIPELINE_URL ?? "http://localhost:8000";  // fixed: was 8001
+  process.env.NEXT_PUBLIC_PIPELINE_URL ?? "http://localhost:8001";
 
 export async function GET(
   req: NextRequest,
@@ -25,7 +24,7 @@ export async function GET(
   } = { global: null, session: null, merged: {} };
   try {
     const res = await fetch(
-      `${BACKEND_URL}/api/context/merged?sessionId=${encodeURIComponent(sessionId)}`,
+      `${getExpressApiBase()}/api/context/merged?sessionId=${encodeURIComponent(sessionId)}`,
       { headers: fwdHeaders }
     );
     if (res.ok) {
@@ -48,13 +47,15 @@ export async function GET(
     }
   } catch {}
 
-  // 3. Readiness: all 4 gate conditions must be met
+  // 3. Readiness: required context fields (stored in Supabase via /api/context).
+  // Ingest is supplied at run time from the Sessions ingest UI / localStorage — not in merged.
   const merged = context.merged ?? {};
   const ready = !!(
-    merged.companyName && String(merged.companyName).trim() &&
-    merged.productName && String(merged.productName).trim() &&
-    merged.productDescription && String(merged.productDescription).trim() &&
-    merged.ingest && Array.isArray(merged.ingest) && (merged.ingest as unknown[]).length > 0
+    String(merged.companyName ?? "").trim() &&
+    String(merged.productName ?? "").trim() &&
+    String(merged.productDescription ?? "").trim() &&
+    String(merged.targetUsers ?? "").trim() &&
+    String(merged.goals ?? "").trim()
   );
 
   return NextResponse.json({ context, memory_keys, ready });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
 import {
@@ -36,6 +36,7 @@ import {
 } from "@/lib/session-scoped-storage";
 import { importGlobalContextToSession } from "@/lib/api/context";
 import type { MergedContextPayload } from "@/lib/api/context";
+import { createClient } from "@/lib/supabase/client";
 import { StepInspector } from "@/components/StepInspector";
 
 const LS_KEY = "specflow_sessions";
@@ -46,8 +47,12 @@ const CONTEXT_PREVIEW_CONFIG = {
   fields: [
     { key: "companyName" as keyof MergedContextPayload["merged"], label: "Company" },
     { key: "productName" as keyof MergedContextPayload["merged"], label: "Product" },
+    {
+      key: "productDescription" as keyof MergedContextPayload["merged"],
+      label: "Product description",
+    },
     { key: "targetUsers" as keyof MergedContextPayload["merged"], label: "Target Users" },
-    { key: "goals"       as keyof MergedContextPayload["merged"], label: "Goals" },
+    { key: "goals" as keyof MergedContextPayload["merged"], label: "Goals" },
   ],
   readyMessage:    "Pipeline will use this context",
   notReadyMessage: "Complete your context before running",
@@ -90,6 +95,26 @@ function formatTs(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+/** Merge API merged context with session-scoped localStorage (same source as pipeline input). */
+function mergedContextForSession(
+  apiMerged: MergedContextPayload["merged"] | undefined,
+  sessionId: string | null
+): Record<string, unknown> {
+  const local = getContextObject(sessionId) as Record<string, unknown>;
+  const remote = (apiMerged ?? {}) as Record<string, unknown>;
+  return { ...local, ...remote };
+}
+
+function isContextGateComplete(m: Record<string, unknown>): boolean {
+  return !!(
+    String(m.companyName ?? "").trim() &&
+    String(m.productName ?? "").trim() &&
+    String(m.productDescription ?? "").trim() &&
+    String(m.targetUsers ?? "").trim() &&
+    String(m.goals ?? "").trim()
+  );
 }
 
 
@@ -322,6 +347,16 @@ export default function SessionsPage() {
   } | null>(null);
   const [contextPreviewLoading, setContextPreviewLoading] = useState(false);
 
+  const mergedForContextPanel = useMemo(
+    () => mergedContextForSession(contextPreview?.context?.merged, selectedId),
+    [contextPreview, selectedId]
+  );
+
+  const contextGateReady = useMemo(
+    () => isContextGateComplete(mergedForContextPanel),
+    [mergedForContextPanel]
+  );
+
   // Ingest form state
   const [activeTab, setActiveTab] = useState<"interview" | "product_data">("interview");
   const [interviewContent, setInterviewContent] = useState("");
@@ -396,20 +431,83 @@ export default function SessionsPage() {
     [loadDetail, selectSession]
   );
 
-  // Fetch context preview when a session is selected
+  // Fetch context preview when a session is selected (Bearer required — Express /api/context/merged uses verifyAuth)
   useEffect(() => {
     if (!selectedId) {
       setContextPreview(null);
       return;
     }
+    const ac = new AbortController();
     let cancelled = false;
-    setContextPreviewLoading(true);
-    fetch(`/api/sessions/${encodeURIComponent(selectedId)}/context-preview`)
-      .then((r) => r.json())
-      .then((data) => { if (!cancelled) setContextPreview(data); })
-      .catch(() => { if (!cancelled) setContextPreview(null); })
-      .finally(() => { if (!cancelled) setContextPreviewLoading(false); });
-    return () => { cancelled = true; };
+
+    (async () => {
+      setContextPreviewLoading(true);
+      try {
+        const headers: Record<string, string> = {};
+        const supabase = createClient();
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          headers.Authorization = `Bearer ${session.access_token}`;
+        }
+        const r = await fetch(
+          `/api/sessions/${encodeURIComponent(selectedId)}/context-preview`,
+          { headers, signal: ac.signal }
+        );
+        const data = (await r.json()) as {
+          context: MergedContextPayload;
+          memory_keys: string[];
+          ready: boolean;
+        };
+        if (!cancelled) setContextPreview(data);
+      } catch (e) {
+        if (!cancelled && (e as Error).name !== "AbortError") {
+          setContextPreview(null);
+        }
+      } finally {
+        if (!cancelled) setContextPreviewLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      ac.abort();
+    };
+  }, [selectedId]);
+
+  // Refetch when returning from /context (same tab — storage does not fire)
+  useEffect(() => {
+    if (!selectedId) return;
+    const onVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      void (async () => {
+        try {
+          const headers: Record<string, string> = {};
+          const supabase = createClient();
+          const {
+            data: { session },
+          } = await supabase.auth.getSession();
+          if (session?.access_token) {
+            headers.Authorization = `Bearer ${session.access_token}`;
+          }
+          const r = await fetch(
+            `/api/sessions/${encodeURIComponent(selectedId)}/context-preview`,
+            { headers }
+          );
+          const data = (await r.json()) as {
+            context: MergedContextPayload;
+            memory_keys: string[];
+            ready: boolean;
+          };
+          setContextPreview(data);
+        } catch {
+          /* keep prior preview */
+        }
+      })();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
   }, [selectedId]);
 
   // Create session
@@ -1096,9 +1194,9 @@ export default function SessionsPage() {
                         border: `1px solid ${
                           contextPreviewLoading
                             ? "#E4DDD4"
-                            : contextPreview?.ready === false
-                            ? "#FED7AA"
-                            : "#BBF7D0"
+                            : contextGateReady
+                            ? "#BBF7D0"
+                            : "#FED7AA"
                         }`,
                         borderRadius: 14,
                         padding: "16px 20px",
@@ -1139,24 +1237,24 @@ export default function SessionsPage() {
 
                       {contextPreviewLoading ? (
                         <div style={{ height: 14, background: "#F8F4EF", borderRadius: 4, width: "55%" }} />
-                      ) : contextPreview ? (
+                      ) : (
                         <>
                           <div
                             style={{
                               fontSize: 12.5,
                               fontWeight: 500,
-                              color: contextPreview.ready ? "#15803D" : "#C2410C",
+                              color: contextGateReady ? "#15803D" : "#C2410C",
                               marginBottom: 10,
                             }}
                           >
-                            {contextPreview.ready
+                            {contextGateReady
                               ? "✓ " + CONTEXT_PREVIEW_CONFIG.readyMessage
                               : "⚠ " + CONTEXT_PREVIEW_CONFIG.notReadyMessage}
                           </div>
 
                           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                             {CONTEXT_PREVIEW_CONFIG.fields.map(({ key, label }) => {
-                              const value = contextPreview.context.merged?.[key];
+                              const value = mergedForContextPanel[key];
                               return (
                                 <div key={key} style={{ display: "flex", gap: 8, fontSize: 12.5 }}>
                                   <span style={{ color: "#9B9189", minWidth: 88, flexShrink: 0 }}>
@@ -1175,7 +1273,7 @@ export default function SessionsPage() {
                             })}
                           </div>
 
-                          {contextPreview.memory_keys.length > 0 && (
+                          {(contextPreview?.memory_keys?.length ?? 0) > 0 && (
                             <div style={{ marginTop: 10, display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6 }}>
                               <span
                                 style={{
@@ -1188,7 +1286,7 @@ export default function SessionsPage() {
                               >
                                 {CONTEXT_PREVIEW_CONFIG.memoryLabel}
                               </span>
-                              {contextPreview.memory_keys.map((k) => (
+                              {(contextPreview?.memory_keys ?? []).map((k) => (
                                 <span
                                   key={k}
                                   style={{
@@ -1207,7 +1305,7 @@ export default function SessionsPage() {
                             </div>
                           )}
                         </>
-                      ) : null}
+                      )}
                     </div>
                   )}
 
@@ -1238,7 +1336,7 @@ export default function SessionsPage() {
                         {/* Run All */}
                         <button
                           onClick={() => handleRun()}
-                          disabled={isRunning || isSessionDone || contextPreview?.ready === false}
+                          disabled={isRunning || isSessionDone || !contextGateReady}
                           style={{
                             display: "flex",
                             alignItems: "center",

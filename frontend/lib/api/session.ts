@@ -7,7 +7,8 @@ async function handleResponse<T>(res: Response): Promise<T> {
     let text = res.statusText;
     try {
       const body = await res.json();
-      text = body.error ?? text;
+      // FastAPI uses `detail` for HTTPException; custom errors use `error`
+      text = body.error ?? body.detail ?? text;
     } catch {}
     throw new Error(text);
   }

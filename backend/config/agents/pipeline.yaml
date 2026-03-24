@@ -8,12 +8,31 @@ settings:
 steps:
   - name: problems
     agent: problems
+    task: |
+      Analyze the research context and identify specific, actionable user problems.
+      Return a JSON array of problem objects with title, description, and evidence.
+    output_key: problems
+
   - name: features
     agent: features
+    task: |
+      Based on the identified problems, propose focused features that directly address them.
+      Return a JSON array of feature objects with title, description, and linked problems.
+    output_key: features
+
   - name: decompose
     agent: decompose
+    task: |
+      Decompose each feature into architectural components and layers (frontend, API, backend).
+      Return a structured decomposition showing surface, API, and persistence layers.
+    output_key: decompositions
+
   - name: tasks
     agent: tasks
+    task: |
+      Break down the decomposed features into concrete implementation tasks.
+      Return a JSON array of tasks with title, description, layer, and dependencies.
+    output_key: tasks
 
 session:
   persistence: true
