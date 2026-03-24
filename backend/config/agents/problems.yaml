@@ -6,6 +6,7 @@ instructions: |
   Every problem must reference evidence from the research context.
 
   Return ONLY a JSON array of problem objects. No preamble, no markdown, no explanation.
+  Every problem title must be 10 words or fewer and must not contain IDs, timestamps, or technical identifiers.
 
 output_schema:
   type: list
@@ -21,4 +22,4 @@ output_schema:
   groups: null
 
 max_retries: 2
-use_critic: false
+use_critic: true
