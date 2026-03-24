@@ -22,4 +22,13 @@ output_schema:
   groups: null
 
 max_retries: 2
-use_critic: false
+use_critic: true
+
+memory:
+  read:
+    strategy: top_k
+    keys:
+      decompose: 5
+  write:
+    key: tasks
+    mode: overwrite
