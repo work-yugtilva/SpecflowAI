@@ -36,6 +36,7 @@ import {
 } from "@/lib/session-scoped-storage";
 import { importGlobalContextToSession } from "@/lib/api/context";
 import type { MergedContextPayload } from "@/lib/api/context";
+import { StepInspector } from "@/components/StepInspector";
 
 const LS_KEY = "specflow_sessions";
 const INGEST_GLOBAL_KEY = "ingest_entries";
@@ -1397,10 +1398,27 @@ export default function SessionsPage() {
                     )}
                   </div>
 
-                  {/* Outputs inspector */}
+                  {/* Outputs inspector — per-step structured view */}
                   {detail?.state?.state?.outputs && Object.keys(detail.state.state.outputs).length > 0 && (
                     <div style={{ background: "#FFFFFF", border: "1px solid #E4DDD4", borderRadius: 14, padding: "18px 22px", marginBottom: 18 }}>
-                      <OutputInspector outputs={detail.state.state.outputs as Record<string, unknown>} />
+                      <div style={{ fontSize: 11, fontWeight: 600, color: "#9B9189", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 12 }}>
+                        Outputs
+                      </div>
+                      {(["problems", "features", "decompose", "tasks"] as const).map((stepKey) => {
+                        const items = detail.state?.state?.outputs?.[stepKey];
+                        if (!Array.isArray(items) || items.length === 0) return null;
+                        return (
+                          <div key={stepKey} style={{ marginBottom: 12 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600, color: "#0D0D0D", marginBottom: 4, textTransform: "capitalize" }}>
+                              {stepKey}
+                            </div>
+                            <StepInspector
+                              step={stepKey}
+                              items={items as Record<string, unknown>[]}
+                            />
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
 
