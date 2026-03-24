@@ -715,6 +715,7 @@ export default function SessionsPage() {
               <span>Backend service is offline. Please start the backend server.</span>
               <button
                 onClick={() => setBackendOffline(false)}
+                aria-label="Dismiss offline warning"
                 style={{ background: "none", border: "none", cursor: "pointer", color: "#9A3412", fontWeight: 600 }}
               >
                 ✕
