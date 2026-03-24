@@ -1,6 +1,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { NextRequest, NextResponse } from "next/server";
 
+const USE_LOCAL = process.env.NEXT_PUBLIC_USE_LOCAL_PIPELINE === "true";
+
 const ROLE = "senior product manager with 10 years of B2B SaaS experience";
 
 const TASKS: Record<string, string> = {
@@ -63,14 +65,22 @@ const SCHEMAS: Record<string, object[]> = {
   ],
 };
 
+// Key names must match what pipeline.py uses (agent name as fallback key)
 const OUTPUT_KEYS: Record<string, string> = {
   problems: "problems",
   features: "features",
-  decompose: "decompositions",
+  decompose: "decompose",   // was "decompositions" — fixed to match backend key
   tasks: "tasks",
 };
 
 export async function POST(req: NextRequest) {
+  if (!USE_LOCAL) {
+    return NextResponse.json(
+      { error: "Backend service is offline. Please start the backend server." },
+      { status: 503 }
+    );
+  }
+
   try {
     const { step, inputData } = (await req.json()) as {
       step: string;
@@ -106,8 +116,6 @@ export async function POST(req: NextRequest) {
 
     const raw =
       message.content[0].type === "text" ? message.content[0].text.trim() : "[]";
-
-    // Strip markdown code fences if present
     const cleaned = raw.replace(/^```(?:json)?\n?/i, "").replace(/\n?```$/i, "").trim();
     const parsed: unknown[] = JSON.parse(cleaned);
 
