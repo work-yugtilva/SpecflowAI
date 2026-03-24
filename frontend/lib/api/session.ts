@@ -138,6 +138,24 @@ export async function createSession(
   }
 }
 
+async function runViaApiRoute(
+  inputData: Record<string, unknown>,
+  step?: string
+): Promise<SessionRunResponse> {
+  const res = await fetch("/api/pipeline/run", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ step: step ?? "problems", inputData }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: "API route failed" }));
+    throw new Error((err as Record<string, unknown>).error as string ?? "API route failed");
+  }
+  const data = (await res.json()) as { outputs: Record<string, unknown> };
+  // Return in the same shape as a real backend SessionRunResponse
+  return { outputs: data.outputs } as unknown as SessionRunResponse;
+}
+
 export async function runSession(
   sessionId: string,
   inputData: Record<string, unknown>,
@@ -156,8 +174,14 @@ export async function runSession(
     _sessionMode = "remote";
     return result;
   } catch {
-    _sessionMode = "local";
-    return runLocalSession(sessionId, inputData, step);
+    try {
+      const result = await runViaApiRoute(inputData, step);
+      _sessionMode = "remote";
+      return result;
+    } catch {
+      _sessionMode = "local";
+      return runLocalSession(sessionId, inputData, step);
+    }
   }
 }
 

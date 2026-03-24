@@ -1,0 +1,25 @@
+role: senior product manager with 10 years of B2B SaaS experience
+
+instructions: |
+  Generate between 8 and 15 implementation tasks derived from the decomposed components.
+  Each task title must start with an imperative verb.
+  Every task must reference evidence from the research and have verifiable acceptance criteria written in past tense.
+
+  Return ONLY a JSON array of task objects. No preamble, no markdown, no explanation.
+
+output_schema:
+  type: list
+  fields:
+    id: string
+    title: string
+    description: string
+    layer: string
+    user_problem_it_solves: string
+    priority: string
+    acceptance_criteria: string
+    research_evidence: string
+  sections: null
+  groups: null
+
+max_retries: 2
+use_critic: false

@@ -1,4 +1,4 @@
-role: "Product Manager"
+role: "senior product manager with 10 years of B2B SaaS experience"
 
 instructions: |
   Generate product features that directly solve validated problems identified in the
@@ -47,25 +47,13 @@ scoring:
     confidence: dynamic
 
 output_schema:
-  type: list
-  fields:
-    title: string
-    description: string
-    linked_problems: list
-    linked_items: list
-    priority_tier: string
-    success_metrics: list
-    attributes:
-      impact: number
-      effort: number
-      confidence: number
-      score: number
-    reasoning:
-      why_it_matters: string
-      tradeoffs: list
-    metadata: object
-  sections: {}
-  groups: {}
+  - id: "string"
+    title: "string (max 10 words)"
+    description: "string (2-3 sentences, specific and grounded in research)"
+    user_problem_it_solves: "string"
+    priority: "high | medium | low"
+    acceptance_criteria: "string (measurable, not vague)"
+    research_evidence: "string (direct reference from input research)"
 
 critic:
   criteria:

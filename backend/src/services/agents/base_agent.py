@@ -23,50 +23,18 @@ class BaseAgent:
     # -------------------------
     # PROMPT BUILDER
     # -------------------------
-    def build_prompt(self, task: str, context: dict = None, memory: dict = None):
-        memory_section = ""
-        if memory:
-            memory_section = f"""
-Previous Analysis (from prior pipeline steps):
-{json.dumps(memory, indent=2)}
-"""
-        schema = self.config.get("output_schema", {})
-        schema_hint = self._build_schema_hint(schema)
+    def build_prompt(self, task: str, context: dict = None, memory: dict = None) -> str:
+        output_schema = self.config.get("output_schema", {})
+        schema_hint = json.dumps(output_schema, indent=2) if output_schema else "JSON"
+        context_str = json.dumps(context or {}, indent=2)
 
-        steps = self._format_list(self.config.get("steps", []))
-        rules = self._format_list(self.config.get("generation_rules", []))
-        constraints = self._format_dict(self.config.get("constraints", {}))
-        scoring = self._format_dict(self.config.get("scoring", {}))
-
-        return f"""
-You are a {self.role}.
-
-Instructions:
-{self.instructions}
-
-Steps:
-{steps}
-
-Rules:
-{rules}
-
-Constraints:
-{constraints}
-
-Scoring:
-{scoring}
-
-Context:
-{json.dumps(context or {}, indent=2)}
-{memory_section}
-Task:
-{task}
-
-Output Format (return a JSON value that exactly matches this structure):
-{schema_hint}
-
-Return ONLY valid JSON matching the format above. No markdown, no explanation.
-"""
+        return (
+            f"ROLE: {self.role}\n\n"
+            f"CONTEXT:\n{context_str}\n\n"
+            f"TASK: {task}\n\n"
+            f"OUTPUT FORMAT: Return ONLY a JSON array. No preamble. No markdown. No explanation.\n"
+            f"{schema_hint}"
+        )
 
     def _format_list(self, items):
         if not items:

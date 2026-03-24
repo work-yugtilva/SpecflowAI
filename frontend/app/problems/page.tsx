@@ -254,7 +254,7 @@ function adaptPipelineProblems(data: Record<string, unknown>): Problem[] {
     title: p.title ?? p.name ?? `Problem ${idx + 1}`,
     summary: p.summary ?? p.description ?? "",
     confidence: Math.round(normalizeScore(p.attributes?.confidence ?? p.confidence) * 100),
-    impact: toImpact(p.attributes?.impact ?? p.impact),
+    impact: toImpact(p.attributes?.impact ?? p.impact ?? p.severity),
     frequency: Math.round(normalizeScore(p.attributes?.frequency ?? p.frequency) * 100),
     tags: Array.isArray(p.tags) ? p.tags : p.cluster ? [p.cluster] : [],
     signals: Array.isArray(p.sources) ? p.sources.length : 0,
@@ -450,6 +450,8 @@ export default function ProblemsPage() {
           currentStepId="problems"
           stepStatuses={stepStatuses}
           sessionIdShort={activeSessionId ? activeSessionId.slice(0, 8).toUpperCase() : null}
+          generating={generating}
+          generatingStep="problems"
         />
         {/* Top bar */}
         <header

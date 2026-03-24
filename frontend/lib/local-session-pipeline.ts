@@ -131,8 +131,11 @@ function extractIngestText(item: unknown): string {
 }
 
 function collectContextSnippets(inputData: PipelineInput): string[] {
-  const contextParts = Object.entries(inputData.context ?? {}).map(
-    ([key, value]) => `${slugToLabel(key, key)} ${stringifyValue(value)}`
+  const contextParts = Object.entries(inputData.context ?? {}).flatMap(
+    ([_key, value]) => {
+      const str = stringifyValue(value).trim();
+      return str.length > 40 ? [str] : [];
+    }
   );
   const researchParts = (inputData.research ?? []).map((item) => stringifyValue(item));
   const ingestParts = (inputData.ingest ?? []).map((item) => extractIngestText(item));
@@ -142,15 +145,19 @@ function collectContextSnippets(inputData: PipelineInput): string[] {
   return Array.from(new Set(merged));
 }
 
+const PROBLEM_SIGNAL =
+  /\b(issue|problem|challenge|difficult|hard|friction|gap|missing|lack|need|struggle|delay|manual|broken|confus|inconsist|can't|cannot|doesn't|fails|failing|slow|tedious|unclear|lost)\b/i;
+
 function buildProblemSeeds(inputData: PipelineInput): string[] {
   const snippets = collectContextSnippets(inputData).filter(
-    (s) => s.length > 20 && !/^[a-f0-9-]{8,}$/i.test(s)
+    (s) => s.length > 30 && !/^[a-f0-9-]{8,}$/i.test(s) && PROBLEM_SIGNAL.test(s)
   );
   if (snippets.length > 0) return snippets.slice(0, 4);
   return [
     "handoffs across the workflow feel fragmented and hard to follow",
     "teams rely on manual tracking instead of a reliable spec workflow",
     "important context gets lost between discovery and delivery",
+    "decisions are made without grounding in validated user signals",
   ];
 }
 
@@ -162,20 +169,27 @@ function ensureProblems(
     return outputs.problems as Array<Record<string, unknown>>;
   }
 
-  return buildProblemSeeds(inputData).map((seed, index) => ({
-    id: `p${index + 1}`,
-    title: slugToLabel(seed, `Problem ${index + 1}`),
-    summary: `Teams are running into ${seed}.`,
-    confidence: 0.82 - index * 0.08,
-    impact: index === 0 ? "High" : index === 1 ? "Medium" : "Low",
-    frequency: 0.76 - index * 0.07,
-    tags: ["workflow", "specflow", index % 2 === 0 ? "delivery" : "discovery"],
-    sources: [seed],
-    rootCause: {
-      primary: `The current process does not make ${seed} visible early enough.`,
-      secondary: "Signals, context, and execution are not consistently connected.",
-    },
-  }));
+  const seeds = buildProblemSeeds(inputData);
+  const evidencePool = collectContextSnippets(inputData);
+  return seeds.map((seed, index) => {
+    const evidence = evidencePool[index % Math.max(evidencePool.length, 1)] ?? seed;
+    const capitalized = seed.charAt(0).toUpperCase() + seed.slice(1);
+    return {
+      id: `p${index + 1}`,
+      title: slugToLabel(seed, `Problem ${index + 1}`),
+      summary: capitalized.endsWith(".") ? capitalized : `${capitalized}.`,
+      confidence: 0.82 - index * 0.08,
+      impact: index === 0 ? "High" : index === 1 ? "Medium" : "Low",
+      frequency: 0.76 - index * 0.07,
+      tags: ["workflow", "specflow", index % 2 === 0 ? "delivery" : "discovery"],
+      sources: [evidence],
+      research_evidence: evidence,
+      rootCause: {
+        primary: "Teams affected by this experience slower delivery and increased coordination overhead.",
+        secondary: "This problem surfaces when workflow tooling and team handoffs are not tightly integrated.",
+      },
+    };
+  });
 }
 
 function ensureFeatures(

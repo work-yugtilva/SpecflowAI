@@ -1,4 +1,4 @@
-role: "Tech Lead"
+role: "senior product manager with 10 years of B2B SaaS experience"
 
 instructions: |
   Convert a system decomposition into a complete, prioritized list of executable
@@ -48,43 +48,14 @@ scoring:
     dependency_weight: 1
 
 output_schema:
-  type: object
-  fields: {}
-  groups:
-    "Frontend Tasks":
-      tasks:
-        - title: string
-          description: string
-          layer: string
-          deliverable: string
-          dependencies: list
-          attributes:
-            priority: number
-            complexity: number
-          metadata: object
-    "Backend Tasks":
-      tasks:
-        - title: string
-          description: string
-          layer: string
-          deliverable: string
-          dependencies: list
-          attributes:
-            priority: number
-            complexity: number
-          metadata: object
-    "System Tasks":
-      tasks:
-        - title: string
-          description: string
-          layer: string
-          deliverable: string
-          dependencies: list
-          attributes:
-            priority: number
-            complexity: number
-          metadata: object
-  sections: {}
+  - id: "string"
+    title: "string (imperative verb, max 10 words)"
+    description: "string (2-3 sentences, specific and grounded in research)"
+    layer: "frontend | backend | system"
+    user_problem_it_solves: "string"
+    priority: "high | medium | low"
+    acceptance_criteria: "string (past tense, verifiable)"
+    research_evidence: "string (direct reference from input research)"
 
 critic:
   criteria:

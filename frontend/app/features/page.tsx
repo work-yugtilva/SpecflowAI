@@ -259,7 +259,7 @@ function adaptFeatures(
     if (!linkedProblem?.title && problems[idx]) linkedProblem = problems[idx];
     if (!linkedProblem?.title && problems[0]) linkedProblem = problems[0];
 
-    const impactRaw = attrs.impact ?? item.impact ?? 50;
+    const impactRaw = attrs.impact ?? item.impact ?? item.priority ?? 50;
     const effortRaw = attrs.effort ?? item.effort ?? 50;
     const impact: Feature["impact"] =
       typeof impactRaw === "string"
@@ -294,6 +294,7 @@ function adaptFeatures(
           ? reasoning
           : reasoning.why_it_matters ??
             reasoning.summary ??
+            item.user_problem_it_solves ??
             item.reasoning ??
             "",
       successMetrics: Array.isArray(item.success_metrics)
@@ -498,6 +499,8 @@ export default function FeaturesPage() {
           currentStepId="features"
           stepStatuses={stepStatuses}
           sessionIdShort={activeSessionId ? activeSessionId.slice(0, 8).toUpperCase() : null}
+          generating={generating}
+          generatingStep="features"
         />
         {/* Top bar */}
         <header

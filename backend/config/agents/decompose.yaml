@@ -1,0 +1,25 @@
+role: senior product manager with 10 years of B2B SaaS experience
+
+instructions: |
+  Decompose the product features into between 6 and 12 concrete technical components.
+  Each component must map to a specific layer (ui, backend, or system) and directly address a user problem.
+  Every component must reference evidence from the research.
+
+  Return ONLY a JSON array of decomposition objects. No preamble, no markdown, no explanation.
+
+output_schema:
+  type: list
+  fields:
+    id: string
+    title: string
+    description: string
+    layer: string
+    user_problem_it_solves: string
+    priority: string
+    acceptance_criteria: string
+    research_evidence: string
+  sections: null
+  groups: null
+
+max_retries: 2
+use_critic: false

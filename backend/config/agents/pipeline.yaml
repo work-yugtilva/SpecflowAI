@@ -1,0 +1,23 @@
+# Pipeline configuration for SpecFlow AI product analysis
+# Defines the sequence of agents that run to generate problems, features, decompositions, and tasks
+
+settings:
+  debug: false
+  log_level: info
+
+steps:
+  - name: problems
+    agent: problems
+  - name: features
+    agent: features
+  - name: decompose
+    agent: decompose
+  - name: tasks
+    agent: tasks
+
+session:
+  persistence: true
+  event_tracking: true
+
+execution:
+  resumable: true

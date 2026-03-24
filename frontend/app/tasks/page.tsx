@@ -437,6 +437,8 @@ export default function TasksPage() {
           currentStepId="tasks"
           stepStatuses={stepStatuses}
           sessionIdShort={activeSessionId ? activeSessionId.slice(0, 8).toUpperCase() : null}
+          generating={generating}
+          generatingStep="tasks"
         />
         {/* Top bar */}
         <header

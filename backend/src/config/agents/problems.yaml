@@ -1,4 +1,4 @@
-role: "Product Strategist"
+role: "senior product manager with 10 years of B2B SaaS experience"
 
 instructions: |
   Identify real, specific product problems from structured and unstructured inputs.
@@ -47,24 +47,13 @@ scoring:
     confidence: dynamic
 
 output_schema:
-  type: list
-  fields:
-    title: string
-    summary: string
-    cluster: string
-    time_cost: string
-    error_risk: string
-    user_frustration: string
-    desired_outcome: string
-    attributes:
-      impact: number
-      severity: number
-      confidence: number
-      score: number
-    sources: list
-    metadata: object
-  sections: {}
-  groups: {}
+  - id: "string"
+    title: "string (max 10 words)"
+    description: "string (2-3 sentences, specific and grounded in research)"
+    user_problem_it_solves: "string"
+    severity: "high | medium | low"
+    acceptance_criteria: "string (measurable, not vague)"
+    research_evidence: "string (direct reference from input research)"
 
 critic:
   criteria:

@@ -1,4 +1,4 @@
-role: "Software Architect"
+role: "senior product manager with 10 years of B2B SaaS experience"
 
 instructions: |
   Decompose a product feature into a complete, three-layer system architecture.
@@ -50,27 +50,14 @@ scoring:
     feasibility: 1
 
 output_schema:
-  type: object
-  fields: {}
-  sections:
-    ui_layer:
-      components: list
-      interactions: list
-    backend_layer:
-      apis: list
-      services: list
-      business_logic: list
-    system_layer:
-      async_jobs: list
-      data_flow: list
-      permissions: list
-      failure_handling: list
-    data_models:
-      entities:
-        - name: string
-          fields: list
-    metadata: object
-  groups: {}
+  - id: "string"
+    title: "string (max 10 words)"
+    description: "string (2-3 sentences, specific and grounded in research)"
+    layer: "ui | backend | system"
+    user_problem_it_solves: "string"
+    priority: "high | medium | low"
+    acceptance_criteria: "string (measurable, not vague)"
+    research_evidence: "string (direct reference from input research)"
 
 critic:
   criteria:

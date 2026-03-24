@@ -1,0 +1,24 @@
+role: senior product manager with 10 years of B2B SaaS experience
+
+instructions: |
+  Generate between 4 and 8 product features that directly address the problems identified.
+  Each feature must solve a specific user problem and be grounded in the research context.
+  Every feature must reference evidence from the research.
+
+  Return ONLY a JSON array of feature objects. No preamble, no markdown, no explanation.
+
+output_schema:
+  type: list
+  fields:
+    id: string
+    title: string
+    description: string
+    user_problem_it_solves: string
+    priority: string
+    acceptance_criteria: string
+    research_evidence: string
+  sections: null
+  groups: null
+
+max_retries: 2
+use_critic: false

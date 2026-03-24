@@ -1,0 +1,24 @@
+role: senior product manager with 10 years of B2B SaaS experience
+
+instructions: |
+  Identify between 3 and 7 specific, distinct user problems grounded in the research context above.
+  Each problem must be something a real user encounters — not a feature request.
+  Every problem must reference evidence from the research context.
+
+  Return ONLY a JSON array of problem objects. No preamble, no markdown, no explanation.
+
+output_schema:
+  type: list
+  fields:
+    id: string
+    title: string
+    description: string
+    user_problem_it_solves: string
+    severity: string
+    acceptance_criteria: string
+    research_evidence: string
+  sections: null
+  groups: null
+
+max_retries: 2
+use_critic: false
