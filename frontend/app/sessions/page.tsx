@@ -303,53 +303,6 @@ function EventLogRow({ event }: { event: SessionEvent }) {
   );
 }
 
-// ─── Output Inspector ──────────────────────────────────────────────────────────
-
-function OutputInspector({ outputs }: { outputs: Record<string, unknown> }) {
-  const [open, setOpen] = useState<string | null>(null);
-  const steps = Object.entries(outputs);
-  if (steps.length === 0) return null;
-  return (
-    <div style={{ marginBottom: 18 }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: "#9B9189", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 12 }}>
-        Outputs
-      </div>
-      {steps.map(([key, val]) => {
-        const count = Array.isArray(val) ? val.length : typeof val === "object" && val ? Object.keys(val as object).length : 1;
-        const isOpen = open === key;
-        return (
-          <div key={key} style={{ marginBottom: 8 }}>
-            <button
-              type="button"
-              onClick={() => setOpen(isOpen ? null : key)}
-              style={{
-                display: "flex", alignItems: "center", gap: 8,
-                padding: "5px 12px", background: "#F0FDF4",
-                border: "1px solid #BBF7D0", borderRadius: 20,
-                fontSize: 12, fontWeight: 500, color: "#15803D",
-                cursor: "pointer", width: "100%", textAlign: "left",
-              }}
-            >
-              <span>{key}: {count} item{count !== 1 ? "s" : ""}</span>
-              <span style={{ marginLeft: "auto", fontSize: 10 }}>{isOpen ? "▲ hide" : "▼ show"}</span>
-            </button>
-            {isOpen && (
-              <pre style={{
-                marginTop: 4, padding: "10px 14px",
-                background: "#F8F4EF", border: "1px solid #E4DDD4",
-                borderRadius: 10, fontSize: 11, overflowX: "auto",
-                maxHeight: 300, whiteSpace: "pre-wrap", wordBreak: "break-all",
-              }}>
-                {JSON.stringify(val, null, 2)}
-              </pre>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function SessionsPage() {

@@ -136,7 +136,7 @@ async def run_pipeline(req: RunRequest):
         import traceback
         print(f"[pipeline] Error: {e}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ---------------------------------------------------------------------------
@@ -153,7 +153,7 @@ async def list_sessions():
         sessions = await sm.list_sessions()
         return {"sessions": [s.model_dump() for s in sessions]}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post("/session/create")
@@ -172,7 +172,7 @@ async def create_session(req: CreateSessionRequest):
             "created_at": session.created_at.isoformat() if session.created_at else None,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post("/session/{session_id}/run")
@@ -221,7 +221,7 @@ async def run_session(session_id: str, req: SessionRunRequest):
     except Exception as e:
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/session/{session_id}")
@@ -234,7 +234,7 @@ async def get_session(session_id: str):
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 # ---------------------------------------------------------------------------
@@ -249,7 +249,7 @@ async def list_orphaned_pipelines():
         runs = await repo.list_orphaned()
         return {"pipelines": [r.model_dump() for r in runs]}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post("/pipelines/attach")
@@ -265,7 +265,7 @@ async def attach_pipeline_to_session(req: AttachPipelineRequest):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/pipelines/{session_id}")
@@ -276,7 +276,7 @@ async def list_session_pipelines(session_id: str):
         runs = await repo.list_by_session(session_id)
         return {"pipelines": [r.model_dump() for r in runs]}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 if __name__ == "__main__":
