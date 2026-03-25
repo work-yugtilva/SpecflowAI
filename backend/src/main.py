@@ -202,7 +202,10 @@ async def run_session(session_id: str, req: SessionRunRequest):
         sm = SessionManager()
         session = await sm.load_session(session_id)
 
-        if session.status == SESSION_STATUS_COMPLETED:
+        # Only block full-pipeline re-runs on completed sessions.
+        # Single-step re-runs (req.step is set) are always allowed so users
+        # can regenerate individual steps after the pipeline finishes.
+        if session.status == SESSION_STATUS_COMPLETED and req.step is None:
             raise HTTPException(
                 status_code=400,
                 detail=f"Session {session_id} is already completed.",

@@ -24,6 +24,10 @@ output_schema:
 max_retries: 2
 use_critic: true
 
+token_control:
+  max_output_tokens: 4096
+  retries: 2
+
 memory:
   read:
     strategy: top_k

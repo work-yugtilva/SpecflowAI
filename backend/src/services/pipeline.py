@@ -337,17 +337,33 @@ def _coerce_tasks_output(value: Any) -> Any:
             return dict_rows
         return value
     if isinstance(value, dict):
-        if _is_single_task_dict(value):
-            return [value]
+        # 1. Well-known wrapper keys
         for k in ("tasks", "items", "data", "results", "value"):
             inner = value.get(k)
             if isinstance(inner, list) and inner:
                 coerced = _coerce_tasks_output(inner)
                 if isinstance(coerced, list):
                     return coerced
+        # 2. Bucket pattern: {"frontend": [...], "backend": [...], ...} → flatten
+        bucket_lists = {k: v for k, v in value.items()
+                        if isinstance(v, list) and v and all(isinstance(x, dict) for x in v)}
+        if len(bucket_lists) >= 2:
+            flat = []
+            for lst in bucket_lists.values():
+                flat.extend(lst)
+            if flat:
+                return flat
+        # 3. Dict of dicts: {"task1": {title, ...}, "task2": {...}} → extract values
+        non_meta = {k: v for k, v in value.items() if isinstance(v, dict) and k != "error"}
+        if len(non_meta) >= 2 and all(_is_single_task_dict(v) for v in non_meta.values()):
+            return list(non_meta.values())
+        # 4. Discover longest embedded list
         discovered = _discover_longest_dict_list(value)
         if discovered:
             return discovered
+        # 5. Single task object (last resort)
+        if _is_single_task_dict(value):
+            return [value]
     return value
 
 
