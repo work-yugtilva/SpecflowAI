@@ -267,17 +267,32 @@ def _coerce_decompositions_output(value: Any) -> Any:
             return dict_rows
         return value
     if isinstance(value, dict):
-        if _is_single_decomposition_dict(value):
-            return [value]
+        # 1. Well-known wrapper keys
         for k in ("decompositions", "components", "items", "data", "results", "value"):
             inner = value.get(k)
             if isinstance(inner, list) and inner:
                 coerced = _coerce_decompositions_output(inner)
                 if isinstance(coerced, list):
                     return coerced
+        # 2. Dict of dicts: {"comp1": {title, layer, ...}, "comp2": {...}} → extract values
+        non_meta = {k: v for k, v in value.items() if isinstance(v, dict) and k != "error"}
+        if len(non_meta) >= 2 and all(_is_single_decomposition_dict(v) for v in non_meta.values()):
+            return list(non_meta.values())
+        # 3. Grouped lists: {"ui": [{...}], "backend": [{...}]} → flatten
+        list_vals = [v for v in value.values() if isinstance(v, list) and v and all(isinstance(x, dict) for x in v)]
+        if len(list_vals) >= 2:
+            flat = []
+            for lst in list_vals:
+                flat.extend(lst)
+            if flat:
+                return flat
+        # 4. Discover longest embedded list
         discovered = _discover_longest_dict_list(value)
         if discovered:
             return discovered
+        # 5. Single decomposition object (last resort)
+        if _is_single_decomposition_dict(value):
+            return [value]
     return value
 
 
@@ -493,6 +508,9 @@ class Pipeline:
         self.pipeline_config = PipelineConfig(**raw).model_dump()
         self.memory_repo = MemoryRepository()
 
+        from services.orchestrator.adk_orchestrator import ADKOrchestrator
+        self.orchestrator = ADKOrchestrator(self.pipeline_config)
+
     async def run(
         self,
         input_data: dict,
@@ -582,33 +600,23 @@ class Pipeline:
             # Original /run behaviour: load project-scoped persistent memory
             await self._load_persisted_memory(memory_store, project_id)
 
-        max_parallel = self.pipeline_config.get("settings", {}).get("max_parallelism", 2)
-        semaphore = asyncio.Semaphore(max_parallel)
-
         steps_run_this_call: list = []
 
-        for step_cfg in self.pipeline_config["steps"]:
-            agent_name = step_cfg["agent"]
-
-            # Skip already-completed steps (resume logic)
-            if agent_name in completed_steps:
-                continue
-
-            # Interactive mode: skip steps that don't match the requested step
-            if step is not None and agent_name != step:
-                continue
-
-            # Pre-check: ensure required input_key exists in state
-            if step_cfg.get("input_key") and step_cfg["input_key"] not in state:
+        # Interactive single-step mode: run exactly one named step directly,
+        # bypassing the ADK orchestrator (which runs the full pipeline).
+        if step is not None:
+            step_cfgs = [s for s in self.pipeline_config["steps"] if s["agent"] == step]
+            if not step_cfgs:
                 raise ValueError(
-                    f"Cannot run step '{agent_name}': required input "
-                    f"'{step_cfg['input_key']}' is not in state. "
-                    f"Run prerequisite steps first."
+                    f"Step '{step}' not found in pipeline. "
+                    f"Valid steps: {sorted(s['agent'] for s in self.pipeline_config['steps'])}"
                 )
+            single_step_cfg = step_cfgs[0]
+            single_agent_name = single_step_cfg["agent"]
+            single_out_key = single_step_cfg.get("output_key", single_agent_name)
 
-            agent = AgentFactory.create(agent_name)
-
-            # Build memory config for this agent
+            agent = AgentFactory.create(single_agent_name)
+            logger.info("[dispatch] step=%s agent_class=%s", single_agent_name, type(agent).__name__)
             agent_memory_config = None
             if hasattr(agent, "config") and isinstance(agent.config, dict):
                 memory_raw = agent.config.get("memory")
@@ -617,163 +625,160 @@ class Pipeline:
                     agent_memory_config = MemoryConfig(**memory_raw)
 
             memory_slice = await memory_manager.read_for_agent(agent_memory_config)
-
-            # Log raw memory values and unwrap any {"data": value} that may have
-            # survived from persisted memory before the agent sees the slice.
-            for _mk, _mv in memory_slice.items():
-                logger.debug(
-                    "[memory_slice] agent=%s key=%s type=%s value=%r",
-                    agent_name, _mk, type(_mv).__name__, _mv,
-                )
-            memory_slice = {
-                k: self._unwrap_persisted_content(v)
-                for k, v in memory_slice.items()
-            }
-
-            # Session context passed to agents (for logging only — not in AI prompt)
-            agent_session = (
-                {"id": session_id, "state": {}} if session_id else None
-            )
+            memory_slice = {k: self._unwrap_persisted_content(v) for k, v in memory_slice.items()}
+            agent_session = {"id": session_id, "state": {}} if session_id else None
 
             try:
-                # Execute the step
-                if step_cfg.get("mode") == "parallel":
-                    async def execute_with_semaphore(item, _agent=agent, _step=step_cfg):
-                        async with semaphore:
-                            return await _agent.execute_async(
-                                _step["task"], item, memory=memory_slice,
-                                session=agent_session
-                            )
-
-                    results = await asyncio.gather(*[
-                        execute_with_semaphore(item)
-                        for item in state[step_cfg["input_key"]]
-                    ])
-                    state[step_cfg["output_key"]] = results
-                else:
-                    result = await agent.execute_async(
-                        step_cfg["task"], state, memory=memory_slice,
-                        session=agent_session
-                    )
-                    out_key = step_cfg.get("output_key", agent_name)
-                    if out_key == "problems":
-                        state[out_key] = _coerce_problems_output(result)
-                    elif out_key == "features":
-                        state[out_key] = _coerce_features_output(result)
-                    elif out_key == "decompositions":
-                        state[out_key] = _coerce_decompositions_output(result)
-                    elif out_key == "tasks":
-                        state[out_key] = _coerce_tasks_output(result)
-                    else:
-                        state[out_key] = result
-
-                # Score features immediately after coercion
-                _out_key = step_cfg.get("output_key", agent_name)
-                if _out_key == "features" and isinstance(state.get(_out_key), list):
-                    _score_features(state[_out_key])
-
-                # Optional: compress output before passing forward
-                if "compression" in step_cfg:
-                    from services.context.context_compressor import compress
-                    state[step_cfg["output_key"]] = compress(
-                        state[step_cfg["output_key"]],
-                        strategy=step_cfg["compression"].get("strategy", "none"),
-                        params=step_cfg["compression"].get("params", {}),
-                    )
-
-                output = state[step_cfg["output_key"]]
-
-                # Validate output quality against agent's output_schema
-                _schema = agent.config.get("output_schema") or {}
-                _validation = validate_output(agent_name, output, _schema)
-                if not _validation["valid"]:
-                    _flagged_count = sum(
-                        1 for x in _validation["flagged"]
-                        if isinstance(x, dict) and x.get("quality_flag")
-                    )
-                    logger.warning(
-                        "[validate_output] %s: %d item(s) flagged — %s",
-                        agent_name, _flagged_count, _validation["issues"][:5],
-                    )
-                    output = _validation["flagged"]
-                    state[step_cfg["output_key"]] = output
-
-                # Write output to runtime memory store
-                await memory_manager.write_from_agent(
-                    agent_memory_config, agent_name, output
+                result = await agent.execute_async(
+                    single_step_cfg["task"], state, memory=memory_slice, session=agent_session
                 )
+                if single_out_key == "problems":
+                    state[single_out_key] = _coerce_problems_output(result)
+                elif single_out_key == "features":
+                    state[single_out_key] = _coerce_features_output(result)
+                elif single_out_key == "decompositions":
+                    state[single_out_key] = _coerce_decompositions_output(result)
+                elif single_out_key == "tasks":
+                    state[single_out_key] = _coerce_tasks_output(result)
+                else:
+                    state[single_out_key] = result
 
-                # Persist to database
+                if single_out_key == "features" and isinstance(state.get(single_out_key), list):
+                    _score_features(state[single_out_key])
+
+                output = state[single_out_key]
+                _schema = agent.config.get("output_schema") or {}
+                _validation = validate_output(single_agent_name, output, _schema)
+                if not _validation["valid"]:
+                    _flagged_count = sum(1 for x in _validation["flagged"] if isinstance(x, dict) and x.get("quality_flag"))
+                    logger.warning("[validate_output] %s: %d item(s) flagged — %s", single_agent_name, _flagged_count, _validation["issues"][:5])
+                    output = _validation["flagged"]
+                    state[single_out_key] = output
+
+                await memory_manager.write_from_agent(agent_memory_config, single_agent_name, output)
+
                 if session_id and session_manager and persistence_on:
-                    await self._persist_step_memory(
-                        project_id or "",
-                        agent_name,
-                        step_cfg.get("output_key", agent_name),
-                        output,
-                        session_id=session_id,
-                    )
+                    await self._persist_step_memory(project_id or "", single_agent_name, single_out_key, output, session_id=session_id)
                 elif project_id:
-                    await self._persist_step_memory(
-                        project_id,
-                        agent_name,
-                        step_cfg.get("output_key", agent_name),
-                        output,
-                    )
+                    await self._persist_step_memory(project_id, single_agent_name, single_out_key, output)
 
-                steps_run_this_call.append(agent_name)
-                completed_steps.add(agent_name)
+                steps_run_this_call.append(single_agent_name)
+                completed_steps.add(single_agent_name)
 
-                # Save session state snapshot after each successful step
                 if session_id and session_manager and persistence_on:
                     snapshot = {
-                        "last_completed_step": agent_name,
-                        "outputs": {
-                            key: state[key]
-                            for s in self.pipeline_config["steps"]
-                            for key in [s.get("output_key")]
-                            if key and key in state
-                        },
+                        "last_completed_step": single_agent_name,
+                        "outputs": {key: state[key] for s in self.pipeline_config["steps"] for key in [s.get("output_key")] if key and key in state},
                     }
-                    await session_manager.update_state(session_id, snapshot, agent_name)
+                    await session_manager.update_state(session_id, snapshot, single_agent_name)
 
                 if session_id and session_manager and event_tracking_on:
-                    await session_manager.append_event(
-                        session_id,
-                        "agent_step",
-                        {
-                            "agent": agent_name,
-                            "output_key": step_cfg.get("output_key", agent_name),
-                            "status": "completed",
-                            "data_keys": (
-                                list(output.keys())
-                                if isinstance(output, dict)
-                                else []
-                            ),
-                        },
-                    )
+                    await session_manager.append_event(session_id, "agent_step", {"agent": single_agent_name, "output_key": single_out_key, "status": "completed", "data_keys": list(output.keys()) if isinstance(output, dict) else []})
 
-                logger.info(
-                    json.dumps({
-                        "session_id": session_id,
-                        "step": agent_name,
-                        "agent": agent_name,
-                        "status": "completed",
-                        "data_keys": (
-                            list(output.keys()) if isinstance(output, dict) else []
-                        ),
-                    })
-                )
+                logger.info(json.dumps({"session_id": session_id, "step": single_agent_name, "agent": single_agent_name, "status": "completed", "data_keys": list(output.keys()) if isinstance(output, dict) else []}))
 
             except Exception as e:
                 if session_id and session_manager:
                     await session_manager.update_status(session_id, SESSION_STATUS_FAILED)
                     if event_tracking_on:
-                        await session_manager.append_event(
-                            session_id,
-                            "agent_step",
-                            {"agent": agent_name, "status": "failed", "error": str(e)},
-                        )
+                        await session_manager.append_event(session_id, "agent_step", {"agent": single_agent_name, "status": "failed", "error": str(e)})
                 raise
+
+        else:
+            # Full pipeline: delegate agent execution to the ADK SequentialAgent orchestrator.
+            # Each typed agent's build_prompt() slices only its needed context keys.
+            prior_state = {
+                key: state[key]
+                for s in self.pipeline_config["steps"]
+                for key in [s.get("output_key")]
+                if key and key in state
+            }
+            try:
+                adk_result = await self.orchestrator.run(
+                    input_data,
+                    session_id=session_id or "anon",
+                    completed_steps=completed_steps,
+                    prior_state=prior_state,
+                )
+            except Exception as e:
+                if session_id and session_manager:
+                    await session_manager.update_status(session_id, SESSION_STATUS_FAILED)
+                    if event_tracking_on:
+                        await session_manager.append_event(session_id, "agent_step", {"status": "failed", "error": str(e)})
+                raise
+
+            # Post-process each new step output: coerce → score → validate → persist → snapshot → event
+            for step_cfg in self.pipeline_config["steps"]:
+                agent_name = step_cfg["agent"]
+                out_key = step_cfg.get("output_key", agent_name)
+
+                if agent_name in completed_steps:
+                    continue
+
+                raw = adk_result.get(out_key)
+                if raw is None:
+                    continue
+
+                # Coerce
+                if out_key == "problems":
+                    data = _coerce_problems_output(raw)
+                elif out_key == "features":
+                    data = _coerce_features_output(raw)
+                elif out_key == "decompositions":
+                    data = _coerce_decompositions_output(raw)
+                elif out_key == "tasks":
+                    data = _coerce_tasks_output(raw)
+                else:
+                    data = raw
+
+                # Score
+                if out_key == "features" and isinstance(data, list):
+                    _score_features(data)
+
+                state[out_key] = data
+
+                # Validate
+                agent = AgentFactory.create(agent_name)
+                logger.info("[dispatch] step=%s agent_class=%s", agent_name, type(agent).__name__)
+                _schema = agent.config.get("output_schema") or {}
+                _validation = validate_output(agent_name, data, _schema)
+                if not _validation["valid"]:
+                    _flagged_count = sum(1 for x in _validation["flagged"] if isinstance(x, dict) and x.get("quality_flag"))
+                    logger.warning("[validate_output] %s: %d item(s) flagged — %s", agent_name, _flagged_count, _validation["issues"][:5])
+                    data = _validation["flagged"]
+                    state[out_key] = data
+
+                # Memory write
+                agent_memory_config = None
+                if hasattr(agent, "config") and isinstance(agent.config, dict):
+                    memory_raw = agent.config.get("memory")
+                    if memory_raw:
+                        from services.memory.memory_schemas import MemoryConfig
+                        agent_memory_config = MemoryConfig(**memory_raw)
+                await memory_manager.write_from_agent(agent_memory_config, agent_name, data)
+
+                # Persist to database
+                if session_id and session_manager and persistence_on:
+                    await self._persist_step_memory(project_id or "", agent_name, out_key, data, session_id=session_id)
+                elif project_id:
+                    await self._persist_step_memory(project_id, agent_name, out_key, data)
+
+                steps_run_this_call.append(agent_name)
+                completed_steps.add(agent_name)
+
+                # Session snapshot
+                if session_id and session_manager and persistence_on:
+                    snapshot = {
+                        "last_completed_step": agent_name,
+                        "outputs": {key: state[key] for s in self.pipeline_config["steps"] for key in [s.get("output_key")] if key and key in state},
+                    }
+                    await session_manager.update_state(session_id, snapshot, agent_name)
+
+                # Event
+                if session_id and session_manager and event_tracking_on:
+                    await session_manager.append_event(session_id, "agent_step", {"agent": agent_name, "output_key": out_key, "status": "completed", "data_keys": list(data.keys()) if isinstance(data, dict) else []})
+
+                logger.info(json.dumps({"session_id": session_id, "step": agent_name, "agent": agent_name, "status": "completed", "data_keys": list(data.keys()) if isinstance(data, dict) else []}))
 
         # Mark session completed if all pipeline steps are now done
         if session_id and session_manager:

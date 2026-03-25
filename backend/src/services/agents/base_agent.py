@@ -25,7 +25,7 @@ class BaseAgent:
     # -------------------------
     def build_prompt(self, task: str, context: dict = None, memory: dict = None) -> str:
         output_schema = self.config.get("output_schema", {})
-        schema_hint = json.dumps(output_schema, indent=2) if output_schema else "JSON"
+        schema_hint = self._build_schema_hint(output_schema) if output_schema else "JSON"
         context_str = json.dumps(context or {}, indent=2)
 
         return (
@@ -272,10 +272,6 @@ class BaseAgent:
         # 2. Build Prompt
         prompt = self.build_prompt(task, context, memory=memory)
 
-        if self.name == "features":
-            messages = [{"role": "user", "content": prompt}]
-            logger.info(f"FEATURES_PROMPT_DEBUG: {json.dumps(messages, indent=2)}")
-
         # 3. Apply token budget
         from services.token.token_manager import estimate_tokens, allocate_budget, trim_to_budget
         budget = allocate_budget(self.name, self.config)
@@ -295,14 +291,22 @@ class BaseAgent:
 
         for _ in range(self.max_retries + 1):
             response = run_ai(prompt, max_tokens=max_output_tokens, retries=retries)
+            logger.info("[execute] agent=%s raw_response_len=%d", self.name, len(response))
 
             parsed = self.parse_json(response)
+            logger.info("[execute] agent=%s parsed_type=%s parsed_len=%s",
+                self.name, type(parsed).__name__,
+                len(parsed) if isinstance(parsed, (list, dict)) else "N/A")
 
             if parsed:
                 parsed = self.run_tools(parsed)
 
                 if self.use_critic:
+                    pre_critic_len = len(parsed) if isinstance(parsed, (list, dict)) else "N/A"
                     parsed = self.run_critic(parsed)
+                    post_critic_len = len(parsed) if isinstance(parsed, (list, dict)) else "N/A"
+                    logger.info("[execute] agent=%s critic: before=%s after=%s",
+                        self.name, pre_critic_len, post_critic_len)
 
                 if self.config.get("validate_evidence_chain") and memory:
                     parsed = self.validate_evidence_chain(parsed, memory)
