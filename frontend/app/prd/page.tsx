@@ -256,7 +256,7 @@ export default function PrdPage() {
 
   const stepStatuses = computeStepStatuses(sessionDetail);
 
-  // ── Load existing PRD from session on mount ──
+  // ── Load existing PRD from memory_entries on mount ──
   useEffect(() => {
     setPrd(null);
     setQualityScore(null);
@@ -265,25 +265,27 @@ export default function PrdPage() {
     setSessionDetail(null);
     if (!activeSessionId) return;
     let cancelled = false;
+
+    // Load session detail for stepper
     getSession(activeSessionId)
-      .then((d) => {
+      .then((d) => { if (!cancelled) setSessionDetail(d); })
+      .catch(() => {});
+
+    // Load PRD from memory_entries (separate from session state)
+    fetch(`/api/sessions/${activeSessionId}/prd`)
+      .then(async (res) => {
         if (cancelled) return;
-        setSessionDetail(d);
-        const out = d.state?.state?.outputs as Record<string, unknown> | undefined;
-        if (out && out.prd != null) {
+        if (!res.ok) return; // 404 = no PRD yet, silently ignore
+        const data = await res.json();
+        if (cancelled) return;
+        if (data.prd) {
+          setPrd(data.prd as PrdData);
           setFromSession(true);
-          const raw = out.prd;
-          // Unwrap {"data": ...} wrapper
-          const unwrapped =
-            typeof raw === "object" && raw !== null && Object.keys(raw as object).length === 1 && (raw as Record<string, unknown>).data
-              ? (raw as Record<string, unknown>).data
-              : raw;
-          setPrd(unwrapped as PrdData);
+          if (data.quality_score) setQualityScore(data.quality_score);
         }
       })
-      .catch(() => {
-        if (!cancelled) setSessionDetail(null);
-      });
+      .catch(() => {});
+
     return () => { cancelled = true; };
   }, [activeSessionId]);
 

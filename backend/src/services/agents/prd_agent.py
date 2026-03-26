@@ -166,7 +166,12 @@ class PRDAgent(BaseAgent):
         draft = await self.execute_async(
             "Generate a comprehensive Product Requirements Document.",
             context=context,
+            memory=memory,
         )
+        # LLM sometimes wraps the PRD dict in an array — unwrap it
+        if isinstance(draft, list) and len(draft) >= 1 and isinstance(draft[0], dict):
+            logger.warning("[prd] LLM returned list, unwrapping first element")
+            draft = draft[0]
         critique = self.self_critique(draft)
         if critique["score"] < 70 and not memory.get("_prd_retry"):
             memory["_prd_retry"] = True

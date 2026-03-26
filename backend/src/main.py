@@ -374,6 +374,23 @@ async def generate_prd_stream(session_id: str):
     )
 
 
+@app.get("/session/{session_id}/prd")
+async def get_prd(session_id: str):
+    """Load stored PRD from memory_entries for a session."""
+    try:
+        memory_repo = MemoryRepository()
+        entry = await memory_repo.get_by_session_and_key(session_id, "prd")
+        if not entry:
+            raise HTTPException(status_code=404, detail="No PRD found for this session")
+        prd = Pipeline._unwrap_persisted_content(entry.content)
+        quality = entry.metadata.get("quality_score") if entry.metadata else None
+        return {"prd": prd, "quality_score": quality}
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @app.get("/session/{session_id}/prd/export")
 async def export_prd_markdown(session_id: str):
     """
