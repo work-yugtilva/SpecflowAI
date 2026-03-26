@@ -20,6 +20,7 @@ class PRDAgent(BaseAgent):
     def build_prompt(self, task: str, context: dict = None, memory: dict = None) -> str:
         ctx = context or {}
         mem = memory or {}
+        product_context = self._unwrap(ctx.get("product_context") or mem.get("product_context", {}))
         problems = self._unwrap(ctx.get("problems") or mem.get("problems", []))
         features = self._unwrap(ctx.get("features") or mem.get("features", []))
         decompositions = self._unwrap(ctx.get("decompositions") or mem.get("decompositions", []))
@@ -33,6 +34,7 @@ class PRDAgent(BaseAgent):
             decompositions = [decompositions] if decompositions else []
 
         slice_ = {
+            "product_context": product_context,
             "problems": problems,
             "features": features,
             "decompositions": decompositions,
@@ -41,22 +43,64 @@ class PRDAgent(BaseAgent):
 
         context_str = json.dumps(slice_, indent=2)
 
-        # Concrete output template so the model cannot confuse object vs array
+        # Nested output template — model must return an object, not an array
         output_template = json.dumps({
-            "executive_summary": "One-paragraph overview of the product and its purpose.",
-            "problem_statement": "Detailed description of the core problems being solved.",
-            "goals": ["Specific, measurable goal 1", "Goal 2"],
-            "features": [{"title": "Feature name", "description": "Feature description and value"}],
-            "architecture": "Technical architecture and system design overview.",
-            "implementation_plan": [{"phase": "Phase name", "description": "What gets built and why"}],
-            "risks": [{"risk": "Risk description", "mitigation": "Mitigation strategy"}],
-            "success_metrics": ["Metric 1 with target value", "Metric 2"],
+            "executive_summary": "2-3 sentences. Must name the product, target user, and core value prop.",
+            "problem_statement": "Specific problem with evidence from the research. No generic claims.",
+            "goals": [
+                {
+                    "goal": "Specific measurable outcome",
+                    "metric": "How we measure it",
+                    "target": "Specific number or threshold",
+                    "timeline": "When",
+                }
+            ],
+            "features": [
+                {
+                    "title": "Feature name",
+                    "description": "What it does",
+                    "acceptance_criteria": "Specific, testable pass/fail criteria",
+                    "linked_problem": "Which problem it solves",
+                }
+            ],
+            "architecture": {
+                "frontend": "What the UI layer does",
+                "backend": "What the server layer does",
+                "data": "What gets stored and how",
+            },
+            "implementation_plan": [
+                {
+                    "phase": "Phase name",
+                    "deliverables": ["specific thing 1", "specific thing 2"],
+                    "duration": "estimate",
+                }
+            ],
+            "risks": [
+                {
+                    "risk": "Specific risk description",
+                    "likelihood": "high | medium | low",
+                    "mitigation": "Concrete mitigation step",
+                }
+            ],
+            "success_metrics": [
+                {
+                    "metric": "Metric name",
+                    "baseline": "Current state",
+                    "target": "Goal state",
+                    "measurement": "How to measure",
+                }
+            ],
         }, indent=2)
+
+        gaps_note = ""
+        if ctx.get("_prd_gaps") or mem.get("_prd_gaps"):
+            gaps_note = f"\nPREVIOUS ATTEMPT GAPS (fix these): {ctx.get('_prd_gaps') or mem.get('_prd_gaps')}\n"
 
         return (
             f"ROLE: {self.role}\n\n"
             f"CONTEXT (pipeline outputs — use this data, do not invent):\n{context_str}\n\n"
-            f"INSTRUCTIONS:\n{self.instructions}\n\n"
+            f"INSTRUCTIONS:\n{self.instructions}\n"
+            f"{gaps_note}\n"
             f"TASK: {task}\n"
             f"INPUT: {len(problems)} problems, {len(features)} features, "
             f"{len(decompositions)} components, {len(tasks) if isinstance(tasks, list) else 1} task group(s).\n\n"
@@ -106,3 +150,28 @@ class PRDAgent(BaseAgent):
         except Exception as e:
             logger.error("[prd] self_critique failed: %s", e)
             return {"score": 0, "critical_gaps": ["Self-critique failed"]}
+
+    async def run(self, memory: dict):
+        """
+        Wraps execute_async with critique-gated single retry.
+        Returns (draft_dict, quality_dict).
+        """
+        context = {
+            key: self._unwrap(memory.get(key, []))
+            for key in ("product_context", "problems", "features", "decompositions", "tasks")
+        }
+        if memory.get("_prd_gaps"):
+            context["_prd_gaps"] = memory["_prd_gaps"]
+
+        draft = await self.execute_async(
+            "Generate a comprehensive Product Requirements Document.",
+            context=context,
+        )
+        critique = self.self_critique(draft)
+        if critique["score"] < 70 and not memory.get("_prd_retry"):
+            memory["_prd_retry"] = True
+            gaps_str = "; ".join(critique["critical_gaps"])
+            memory["_prd_gaps"] = f"Previous draft scored {critique['score']}/100. Fix: {gaps_str}"
+            logger.info("[prd] score=%d < 70, retrying once with gap context", critique["score"])
+            return await self.run(memory)
+        return draft, critique

@@ -42,9 +42,135 @@ function qualityColor(score: number): { bg: string; color: string } {
   return { bg: "rgba(239,68,68,0.12)", color: "#DC2626" };
 }
 
+// ─── Specialized section renderers ────────────────────────────────────────────
+
+function GoalsRenderer({ items }: { items: unknown[] }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {items.map((item: any, i) => (
+        <div key={i} style={{ background: "#F8F4EF", borderRadius: 8, padding: "12px 14px" }}>
+          <div style={{ fontWeight: 600, color: "#0D0D0D", fontSize: 13, marginBottom: 6 }}>{item.goal}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 12px", fontSize: 12, color: "#6B6B6B" }}>
+            {item.metric && <span><strong>Metric:</strong> {item.metric}</span>}
+            {item.target && <span><strong>Target:</strong> {item.target}</span>}
+            {item.timeline && <span><strong>Timeline:</strong> {item.timeline}</span>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function FeaturesRenderer({ items }: { items: unknown[] }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {items.map((item: any, i) => (
+        <div key={i} style={{ borderLeft: "2px solid #E4DDD4", paddingLeft: 12 }}>
+          <div style={{ fontWeight: 600, color: "#0D0D0D", fontSize: 13 }}>{item.title}</div>
+          {item.description && <div style={{ fontSize: 13, color: "#6B6B6B", marginTop: 4 }}>{item.description}</div>}
+          {item.linked_problem && (
+            <div style={{ fontSize: 11, color: "#E8561B", marginTop: 4 }}>Solves: {item.linked_problem}</div>
+          )}
+          {item.acceptance_criteria && (
+            <div style={{
+              marginTop: 8, background: "#F3F4F6", borderRadius: 6,
+              padding: "8px 10px", fontSize: 12, color: "#374151",
+              fontFamily: "var(--font-mono, 'Courier New', monospace)",
+              whiteSpace: "pre-wrap",
+            }}>
+              {item.acceptance_criteria}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+const LIKELIHOOD_STYLE: Record<string, { bg: string; color: string }> = {
+  high:   { bg: "#FEF2F2", color: "#EF4444" },
+  medium: { bg: "#FFF7ED", color: "#F59E0B" },
+  low:    { bg: "#F0FDF4", color: "#22C55E" },
+};
+
+function RisksRenderer({ items }: { items: unknown[] }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {items.map((item: any, i) => {
+        const lk = (item.likelihood ?? "medium").toLowerCase();
+        const style = LIKELIHOOD_STYLE[lk] ?? LIKELIHOOD_STYLE.medium;
+        return (
+          <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+            <span style={{
+              fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 20, flexShrink: 0,
+              background: style.bg, color: style.color, textTransform: "uppercase", letterSpacing: "0.05em",
+            }}>
+              {item.likelihood ?? "medium"}
+            </span>
+            <div>
+              <div style={{ fontSize: 13, color: "#0D0D0D", fontWeight: 500 }}>{item.risk}</div>
+              {item.mitigation && <div style={{ fontSize: 12, color: "#6B6B6B", marginTop: 3 }}>↳ {item.mitigation}</div>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function MetricsRenderer({ items }: { items: unknown[] }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {items.map((item: any, i) => (
+        <div key={i} style={{
+          display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 8,
+          background: "#F8F4EF", borderRadius: 8, padding: "10px 12px", fontSize: 12,
+        }}>
+          <div>
+            <div style={{ fontWeight: 600, color: "#0D0D0D", fontSize: 13 }}>{item.metric}</div>
+            {item.measurement && <div style={{ color: "#9E9E9E", marginTop: 2 }}>{item.measurement}</div>}
+          </div>
+          <div style={{ color: "#6B6B6B" }}>
+            <div style={{ fontWeight: 500 }}>Baseline</div>
+            <div>{item.baseline ?? "—"}</div>
+          </div>
+          <div style={{ color: "#E8561B" }}>
+            <div style={{ fontWeight: 500 }}>Target</div>
+            <div>{item.target ?? "—"}</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ArchitectureRenderer({ arch }: { arch: Record<string, string> }) {
+  const layers = [
+    { key: "frontend", label: "Frontend" },
+    { key: "backend",  label: "Backend" },
+    { key: "data",     label: "Data" },
+  ];
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {layers.map(({ key, label }) => arch[key] ? (
+        <div key={key} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+          <span style={{
+            fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 4,
+            background: "#F3F4F6", color: "#6B6B6B", textTransform: "uppercase",
+            letterSpacing: "0.06em", flexShrink: 0, minWidth: 64, textAlign: "center",
+          }}>
+            {label}
+          </span>
+          <span style={{ fontSize: 13, color: "#6B6B6B", lineHeight: 1.6 }}>{arch[key]}</span>
+        </div>
+      ) : null)}
+    </div>
+  );
+}
+
 // ─── Section card renderer ────────────────────────────────────────────────────
 
-function SectionCard({ title, value }: { title: string; value: unknown }) {
+function SectionCard({ title, value, sectionKey }: { title: string; value: unknown; sectionKey: string }) {
   return (
     <div
       style={{
@@ -75,7 +201,12 @@ function SectionCard({ title, value }: { title: string; value: unknown }) {
           lineHeight: 1.7,
         }}
       >
-        {renderValue(value)}
+        {sectionKey === "goals" && Array.isArray(value) ? <GoalsRenderer items={value} /> :
+         sectionKey === "features" && Array.isArray(value) ? <FeaturesRenderer items={value} /> :
+         sectionKey === "risks" && Array.isArray(value) ? <RisksRenderer items={value} /> :
+         sectionKey === "success_metrics" && Array.isArray(value) ? <MetricsRenderer items={value} /> :
+         sectionKey === "architecture" && typeof value === "object" && !Array.isArray(value) ? <ArchitectureRenderer arch={value as Record<string, string>} /> :
+         renderValue(value)}
       </div>
     </div>
   );
@@ -434,7 +565,7 @@ export default function PrdPage() {
             {PRD_SECTIONS.map(({ key, title }) => {
               const val = prd[key];
               if (val == null) return null;
-              return <SectionCard key={key} title={title} value={val} />;
+              return <SectionCard key={key} title={title} value={val} sectionKey={key} />;
             })}
           </div>
         )}

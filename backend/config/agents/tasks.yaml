@@ -33,7 +33,7 @@ memory:
   read:
     strategy: top_k
     keys:
-      decompose: 5
+      decompositions: 5
   write:
     key: tasks
     mode: overwrite

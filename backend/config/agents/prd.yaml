@@ -20,7 +20,7 @@ output_schema:
     problem_statement: string
     goals: list
     features: list
-    architecture: string
+    architecture: object
     implementation_plan: list
     risks: list
     success_metrics: list
@@ -38,6 +38,7 @@ memory:
   read:
     strategy: top_k
     keys:
+      product_context: 1
       problems: 7
       features: 8
       decompositions: 12

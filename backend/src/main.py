@@ -258,10 +258,10 @@ async def generate_prd(session_id: str):
 
         context = {
             key: Pipeline._unwrap_persisted_content(outputs.get(key, []))
-            for key in ("problems", "features", "decompositions", "tasks")
+            for key in ("product_context", "problems", "features", "decompositions", "tasks")
         }
 
-        # Validate prerequisites
+        # Validate prerequisites (product_context is optional)
         missing = [k for k in ("problems", "features", "decompositions", "tasks")
                     if not context.get(k)]
         if missing:
@@ -271,13 +271,7 @@ async def generate_prd(session_id: str):
             )
 
         agent = AgentFactory.create("prd")
-        result = await agent.execute_async(
-            task="Generate a comprehensive Product Requirements Document.",
-            context=context,
-        )
-
-        # Self-critique quality scoring
-        quality = agent.self_critique(result)
+        result, quality = await agent.run(context)
 
         # Persist to memory
         entry = MemoryEntry(
