@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
 import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
+import { QualityBadge } from "@/components/pipeline/QualityBadge";
 import { getSession } from "@/lib/api/session";
 import type { SessionDetail } from "@/lib/api/session";
 import {
@@ -44,8 +45,9 @@ interface Problem {
 function normalizeScore(val: any): number {
   const n = Number(val);
   if (isNaN(n)) return 0;
-  if (n > 1) return n / 10;
-  return n;
+  if (n > 1 && n <= 10) return n / 10;   // 0-10 scale
+  if (n > 10) return n / 100;             // 0-100 scale
+  return n;                               // already 0-1
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -334,6 +336,7 @@ export default function ProblemsPage() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fromSession, setFromSession] = useState(false);
+  const [qualityScore, setQualityScore] = useState<{score: number; passed: boolean} | null>(null);
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
   const {
     showOrphanedModal,
@@ -363,12 +366,15 @@ export default function ProblemsPage() {
         // Only hydrate non-empty lists so a stale in-flight GET cannot overwrite
         // a successful run with an empty `problems: []` snapshot.
         if (out && out.problems != null) {
+          console.log("[debug] first problem raw:", (out.problems as any[])?.[0]);
           const adapted = adaptPipelineProblems({
             ...out,
             problems: out.problems,
           } as Record<string, unknown>);
           if (adapted.length > 0) {
             setFromSession(true);
+            const _pq = out?.problems_quality as {score: number; passed: boolean} | undefined;
+            if (_pq) setQualityScore(_pq);
             setProblems(adapted);
             setSelectedId(adapted[0].id);
           }
@@ -400,6 +406,7 @@ export default function ProblemsPage() {
       );
       const { data, mode, sessionState } = result;
       setFromSession(mode === "session");
+      if (data.problems_quality) setQualityScore(data.problems_quality as any);
       // If orphaned, trigger save prompt after processing results
       if (mode === "orphaned" && result.orphanedOutput) {
         triggerOrphanedPrompt(result.orphanedOutput);
@@ -481,6 +488,9 @@ export default function ProblemsPage() {
               <span style={{ fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(232,86,27,0.10)", color: "#E8561B", letterSpacing: "0.03em" }}>
                 From Session
               </span>
+            )}
+            {qualityScore && (
+              <QualityBadge score={qualityScore.score} passed={qualityScore.passed} />
             )}
           </div>
           <button
@@ -704,27 +714,18 @@ export default function ProblemsPage() {
 
                       {/* Row 3: confidence bar */}
                       <div className="flex items-center gap-2">
-                        <span style={{ fontSize: 11.5, color: "#6B6B6B" }}>
-                          {p.confidence != null ? `${p.confidence}% confidence` : "— confidence"}
-                        </span>
-                        <div
-                          style={{
-                            flex: 1,
-                            height: 4,
-                            borderRadius: 2,
-                            background: "#F0EDE9",
-                            overflow: "hidden",
-                          }}
-                        >
-                          <div
-                            style={{
-                              height: "100%",
-                              width: `${p.confidence ?? 0}%`,
-                              background: "#E8561B",
-                              borderRadius: 2,
-                            }}
-                          />
-                        </div>
+                        {p.confidence != null ? (
+                          <>
+                            <span style={{ fontSize: 11.5, color: "#6B6B6B" }}>
+                              {p.confidence}% confidence
+                            </span>
+                            <div style={{ flex: 1, height: 4, borderRadius: 2, background: "#F0EDE9", overflow: "hidden" }}>
+                              <div style={{ height: "100%", width: `${p.confidence}%`, background: "#E8561B", borderRadius: 2 }} />
+                            </div>
+                          </>
+                        ) : (
+                          <span style={{ fontSize: 11.5, color: "#C8C2BB" }}>— confidence</span>
+                        )}
                       </div>
                     </button>
                   );

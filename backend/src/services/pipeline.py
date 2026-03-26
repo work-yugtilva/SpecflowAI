@@ -671,6 +671,25 @@ class Pipeline:
                     output = _validation["flagged"]
                     state[single_out_key] = output
 
+                # Quality gate (non-blocking)
+                if single_out_key in ("problems", "features", "decompositions", "tasks"):
+                    try:
+                        from services.agents.quality_gate_agent import QualityGateAgent
+                        from services.config.config_manager import ConfigManager as _QGConfigManager
+                        _qg_config = _QGConfigManager.load_agent("quality_gate").model_dump()
+                        _qg_agent = QualityGateAgent("quality_gate", _qg_config)
+                        _research_ctx = {
+                            "ingest": state.get("ingest", []),
+                            "product_context": state.get("product_context", {}),
+                        }
+                        _qg_result = _qg_agent.evaluate(single_out_key, output, _research_ctx)
+                        logger.info("[pipeline] quality_gate step=%s score=%d passed=%s", single_out_key, _qg_result["score"], _qg_result["passed"])
+                        state[f"{single_out_key}_quality"] = _qg_result
+                        if session_id and session_manager and event_tracking_on:
+                            await session_manager.append_event(session_id, "quality_gate", {"step": single_out_key, "score": _qg_result["score"], "passed": _qg_result["passed"]})
+                    except Exception as _qg_err:
+                        logger.warning("[pipeline] quality_gate failed for %s: %s", single_out_key, _qg_err)
+
                 await memory_manager.write_from_agent(agent_memory_config, single_agent_name, output)
 
                 if session_id and session_manager and persistence_on:
@@ -763,6 +782,25 @@ class Pipeline:
                     logger.warning("[validate_output] %s: %d item(s) flagged — %s", agent_name, _flagged_count, _validation["issues"][:5])
                     data = _validation["flagged"]
                     state[out_key] = data
+
+                # Quality gate (non-blocking)
+                if out_key in ("problems", "features", "decompositions", "tasks"):
+                    try:
+                        from services.agents.quality_gate_agent import QualityGateAgent as _QGAgent
+                        from services.config.config_manager import ConfigManager as _QGCfg
+                        _qg_config = _QGCfg.load_agent("quality_gate").model_dump()
+                        _qg_agent = _QGAgent("quality_gate", _qg_config)
+                        _research_ctx = {
+                            "ingest": state.get("ingest", []),
+                            "product_context": state.get("product_context", {}),
+                        }
+                        _qg_result = _qg_agent.evaluate(out_key, data, _research_ctx)
+                        logger.info("[pipeline] quality_gate step=%s score=%d passed=%s", out_key, _qg_result["score"], _qg_result["passed"])
+                        state[f"{out_key}_quality"] = _qg_result
+                        if session_id and session_manager and event_tracking_on:
+                            await session_manager.append_event(session_id, "quality_gate", {"step": out_key, "score": _qg_result["score"], "passed": _qg_result["passed"]})
+                    except Exception as _qg_err:
+                        logger.warning("[pipeline] quality_gate failed for %s: %s", out_key, _qg_err)
 
                 # Memory write
                 agent_memory_config = None

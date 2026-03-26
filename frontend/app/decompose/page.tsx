@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
 import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
+import { QualityBadge } from "@/components/pipeline/QualityBadge";
 import { getSession } from "@/lib/api/session";
 import type { SessionDetail } from "@/lib/api/session";
 import {
@@ -287,6 +288,7 @@ export default function DecomposePage() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fromSession, setFromSession] = useState(false);
+  const [qualityScore, setQualityScore] = useState<{score: number; passed: boolean} | null>(null);
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
   const {
     showOrphanedModal,
@@ -313,6 +315,8 @@ export default function DecomposePage() {
           | undefined;
         if (out && out.decompositions != null) {
           setFromSession(true);
+          const _dq = out?.decompositions_quality as {score: number; passed: boolean} | undefined;
+          if (_dq) setQualityScore(_dq);
           setDecomposition(
             adaptPipelineResult({
               ...out,
@@ -345,6 +349,7 @@ export default function DecomposePage() {
       );
       const { data, mode } = result;
       setFromSession(mode === "session");
+      if (data.decompositions_quality) setQualityScore(data.decompositions_quality as any);
       if (mode === "orphaned" && result.orphanedOutput) {
         triggerOrphanedPrompt(result.orphanedOutput);
       }
@@ -440,6 +445,9 @@ export default function DecomposePage() {
               <span style={{ fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(232,86,27,0.10)", color: "#E8561B", letterSpacing: "0.03em" }}>
                 From Session
               </span>
+            )}
+            {qualityScore && (
+              <QualityBadge score={qualityScore.score} passed={qualityScore.passed} />
             )}
             {dm && (
               <span

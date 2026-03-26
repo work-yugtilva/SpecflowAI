@@ -6,6 +6,13 @@ settings:
   log_level: info
 
 steps:
+  - name: product_context
+    agent: product_context
+    task: |
+      Extract structured product context from the research inputs and user-provided context.
+      Return a JSON object summarizing the product, users, workflow, constraints, and goals.
+    output_key: product_context
+
   - name: problems
     agent: problems
     task: |

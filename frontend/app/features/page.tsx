@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
 import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
+import { QualityBadge } from "@/components/pipeline/QualityBadge";
 import { getSession } from "@/lib/api/session";
 import type { SessionDetail } from "@/lib/api/session";
 import {
@@ -387,6 +388,7 @@ export default function FeaturesPage() {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fromSession, setFromSession] = useState(false);
+  const [qualityScore, setQualityScore] = useState<{score: number; passed: boolean} | null>(null);
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
   const {
     showOrphanedModal,
@@ -416,6 +418,8 @@ export default function FeaturesPage() {
           | undefined;
         if (out && out.features != null) {
           setFromSession(true);
+          const _fq = out?.features_quality as {score: number; passed: boolean} | undefined;
+          if (_fq) setQualityScore(_fq);
           const adapted = adaptFeatures({
             ...out,
             features: out.features,
@@ -452,6 +456,7 @@ export default function FeaturesPage() {
       );
       const { data, mode, sessionState } = result;
       setFromSession(mode === "session");
+      if (data.features_quality) setQualityScore(data.features_quality as any);
       if (mode === "orphaned" && result.orphanedOutput) {
         triggerOrphanedPrompt(result.orphanedOutput);
       }
@@ -528,6 +533,9 @@ export default function FeaturesPage() {
               <span style={{ fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(232,86,27,0.10)", color: "#E8561B", letterSpacing: "0.03em" }}>
                 From Session
               </span>
+            )}
+            {qualityScore && (
+              <QualityBadge score={qualityScore.score} passed={qualityScore.passed} />
             )}
           </div>
           <button

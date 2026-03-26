@@ -2,6 +2,8 @@
 
 from services.config.config_manager import ConfigManager
 from services.agents.base_agent import BaseAgent
+from services.agents.product_context_agent import ProductContextAgent
+from services.agents.quality_gate_agent import QualityGateAgent
 from services.agents.problems_agent import ProblemsAgent
 from services.agents.features_agent import FeaturesAgent
 from services.agents.decompose_agent import DecomposeAgent
@@ -13,6 +15,8 @@ logger = logging.getLogger("specflow.agent_factory")
 
 # Map agent names to their typed classes. Only this file may hardcode these names.
 _AGENT_CLASS_MAP: dict[str, type[BaseAgent]] = {
+    "product_context": ProductContextAgent,
+    "quality_gate": QualityGateAgent,
     "problems": ProblemsAgent,
     "features": FeaturesAgent,
     "decompose": DecomposeAgent,

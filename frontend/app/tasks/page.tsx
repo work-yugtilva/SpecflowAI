@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
 import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
+import { QualityBadge } from "@/components/pipeline/QualityBadge";
 import { getSession } from "@/lib/api/session";
 import type { SessionDetail } from "@/lib/api/session";
 import {
@@ -290,6 +291,7 @@ export default function TasksPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
   const [fromSession, setFromSession] = useState(false);
+  const [qualityScore, setQualityScore] = useState<{score: number; passed: boolean} | null>(null);
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
   const {
     showOrphanedModal,
@@ -334,6 +336,8 @@ export default function TasksPage() {
           | undefined;
         if (out && out.tasks != null) {
           setFromSession(true);
+          const _tq = out?.tasks_quality as {score: number; passed: boolean} | undefined;
+          if (_tq) setQualityScore(_tq);
           const adapted = adaptTasks({
             ...out,
             tasks: out.tasks,
@@ -397,6 +401,7 @@ export default function TasksPage() {
       );
       const { data, mode } = result;
       setFromSession(mode === "session");
+      if (data.tasks_quality) setQualityScore(data.tasks_quality as any);
       if (mode === "orphaned" && result.orphanedOutput) {
         triggerOrphanedPrompt(result.orphanedOutput);
       }
@@ -523,6 +528,9 @@ export default function TasksPage() {
                 From Session
               </span>
             )}
+            {qualityScore && (
+              <QualityBadge score={qualityScore.score} passed={qualityScore.passed} />
+            )}
           </div>
 
           {/* Actions */}
@@ -544,6 +552,7 @@ export default function TasksPage() {
             <button
               onClick={() => router.push("/prd")}
               disabled={!activeSessionId}
+              title={!activeSessionId ? "Select a session first" : undefined}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -569,6 +578,7 @@ export default function TasksPage() {
               <button
                 onClick={handleGeneratePrd}
                 disabled={prdGenerating || !activeSessionId}
+                title={!activeSessionId ? "Select a session first" : undefined}
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
@@ -634,6 +644,19 @@ export default function TasksPage() {
             </button>
           </div>
         </header>
+
+        {prdStatus === "error" && prdError && (
+          <div style={{
+            background: "rgba(239,68,68,0.07)",
+            borderBottom: "1px solid rgba(239,68,68,0.15)",
+            padding: "6px 20px",
+            fontSize: 12.5,
+            color: "#DC2626",
+            flexShrink: 0,
+          }}>
+            PRD generation failed: {prdError}
+          </div>
+        )}
 
         {/* Content */}
         {!tasks.length && !generating ? (

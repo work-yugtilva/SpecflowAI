@@ -297,31 +297,42 @@ export default function PrdPage() {
     setLoadingPhase("Loading context...");
 
     try {
-      const phaseTimer = setTimeout(() => setLoadingPhase("Drafting PRD..."), 3000);
-      const phaseTimer2 = setTimeout(() => setLoadingPhase("Quality check..."), 12000);
-
-      const res = await fetch(`/api/sessions/${activeSessionId}/prd`, {
+      const res = await fetch(`/api/sessions/${activeSessionId}/prd/stream`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
       });
 
-      clearTimeout(phaseTimer);
-      clearTimeout(phaseTimer2);
-
-      if (!res.ok) {
+      if (!res.ok || !res.body) {
         const body = await res.json().catch(() => ({}));
-        const msg = body.detail ?? body.error ?? res.statusText;
-        setError(msg);
+        setError(body.detail ?? body.error ?? "Generation failed");
         return;
       }
 
-      const body = await res.json();
-      setPrd(body.prd ?? body.data ?? null);
-      if (body.quality_score) setQualityScore(body.quality_score);
-      setFromSession(true);
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
 
-      // Refresh session detail
-      try { setSessionDetail(await getSession(activeSessionId)); } catch {}
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const text = decoder.decode(value);
+        const lines = text.split("\n").filter((l) => l.startsWith("data: "));
+
+        for (const line of lines) {
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.type === "phase") {
+              setLoadingPhase(event.phase);
+            } else if (event.type === "complete") {
+              setPrd(event.prd ?? null);
+              if (event.quality_score) setQualityScore(event.quality_score);
+              setFromSession(true);
+              try { setSessionDetail(await getSession(activeSessionId)); } catch {}
+            } else if (event.type === "error") {
+              setError(event.message);
+            }
+          } catch {}
+        }
+      }
     } catch {
       setError("Failed to generate PRD. Check that the backend is running.");
     } finally {

@@ -14,7 +14,8 @@ load_root_env()
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import JSONResponse, Response, StreamingResponse
+import asyncio
 from pydantic import BaseModel
 from typing import Any, Optional
 
@@ -293,6 +294,84 @@ async def generate_prd(session_id: str):
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.post("/session/{session_id}/prd/stream")
+async def generate_prd_stream(session_id: str):
+    """SSE streaming PRD generation. Sends phase updates then final result."""
+
+    async def event_stream():
+        try:
+            sm = SessionManager()
+            await sm.load_session(session_id)
+            current_state = await sm.get_current_state(session_id)
+            outputs = (current_state or {}).get("outputs", {})
+
+            context = {
+                key: Pipeline._unwrap_persisted_content(outputs.get(key, []))
+                for key in ("product_context", "problems", "features", "decompositions", "tasks")
+            }
+
+            missing = [k for k in ("problems", "features", "decompositions", "tasks")
+                       if not context.get(k)]
+            if missing:
+                yield f"data: {json.dumps({'type': 'error', 'message': f'Run {chr(44).join(missing)} first'})}\n\n"
+                return
+
+            yield f"data: {json.dumps({'type': 'phase', 'phase': 'Loading context...', 'progress': 10})}\n\n"
+            await asyncio.sleep(0.1)
+
+            yield f"data: {json.dumps({'type': 'phase', 'phase': 'Drafting PRD...', 'progress': 30})}\n\n"
+
+            agent = AgentFactory.create("prd")
+            result_container = {}
+
+            async def run_agent():
+                result, quality = await agent.run(context)
+                result_container["result"] = result
+                result_container["quality"] = quality
+
+            agent_task = asyncio.create_task(run_agent())
+
+            progress = 30
+            while not agent_task.done():
+                await asyncio.sleep(2)
+                if not agent_task.done():
+                    progress = min(progress + 10, 85)
+                    yield f"data: {json.dumps({'type': 'phase', 'phase': 'Drafting PRD...', 'progress': progress})}\n\n"
+
+            await agent_task  # propagate exceptions
+
+            result = result_container["result"]
+            quality = result_container["quality"]
+
+            yield f"data: {json.dumps({'type': 'phase', 'phase': 'Quality check...', 'progress': 90})}\n\n"
+
+            entry = MemoryEntry(
+                session_id=session_id,
+                agent_name="prd",
+                memory_key="prd",
+                content=result if isinstance(result, dict) else {"data": result},
+                metadata={"quality_score": quality},
+            )
+            memory_repo = MemoryRepository()
+            await memory_repo.save_for_session(entry)
+
+            yield f"data: {json.dumps({'type': 'complete', 'prd': result, 'quality_score': quality, 'progress': 100})}\n\n"
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/session/{session_id}/prd/export")
