@@ -169,7 +169,7 @@ class BaseAgent:
         max_output_tokens = token_ctrl.get("max_output_tokens", 2048)
         retries = token_ctrl.get("retries", self.max_retries)
 
-        response = run_ai(prompt, max_tokens=max_output_tokens, retries=retries)
+        response = run_ai(prompt, max_tokens=max_output_tokens, retries=retries, model=self.config.get("model"), temperature=self.config.get("temperature"))
         parsed = self.parse_json(response)
 
         if isinstance(parsed, list):
@@ -290,7 +290,7 @@ class BaseAgent:
             prompt = self.build_prompt(task, context, memory=memory)
 
         for _ in range(self.max_retries + 1):
-            response = run_ai(prompt, max_tokens=max_output_tokens, retries=retries)
+            response = run_ai(prompt, max_tokens=max_output_tokens, retries=retries, model=self.config.get("model"), temperature=self.config.get("temperature"))
             logger.info("[execute] agent=%s raw_response_len=%d", self.name, len(response))
 
             parsed = self.parse_json(response)
@@ -331,7 +331,7 @@ class BaseAgent:
     # -------------------------
     def stream(self, task: str, context: dict = None):
         prompt = self.build_prompt(task, context)
-        response = run_ai(prompt)
+        response = run_ai(prompt, model=self.config.get("model"), temperature=self.config.get("temperature"))
 
         for chunk in response.split():
             yield chunk

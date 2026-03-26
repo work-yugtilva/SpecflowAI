@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
 import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
 import { getSession } from "@/lib/api/session";
@@ -283,6 +284,7 @@ function TypeBadge({ type }: { type: TaskType }) {
 // ─── Tasks Page ───────────────────────────────────────────────────────────────
 
 export default function TasksPage() {
+  const router = useRouter();
   const { activeSessionId } = useActiveSession();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -305,6 +307,9 @@ export default function TasksPage() {
   const [stepsMap, setStepsMap] = useState<
     Record<string, Record<string, boolean>>
   >({});
+  const [prdGenerating, setPrdGenerating] = useState(false);
+  const [prdStatus, setPrdStatus] = useState<"success" | "error" | null>(null);
+  const [prdError, setPrdError] = useState<string | null>(null);
 
   const selectedTask = tasks.find((t) => t.id === selectedId) ?? null;
   const effectiveStatus = (t: Task): TaskStatus => statusMap[t.id] ?? t.status;
@@ -413,6 +418,39 @@ export default function TasksPage() {
     }
   }
 
+  async function handleGeneratePrd() {
+    if (!activeSessionId || prdGenerating) return;
+    setPrdGenerating(true);
+    setPrdStatus(null);
+    setPrdError(null);
+    try {
+      const res = await fetch(`/api/sessions/${activeSessionId}/prd`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        const msg = body.error ?? body.detail ?? res.statusText ?? "Generation failed";
+        setPrdError(msg);
+        setPrdStatus("error");
+        return;
+      }
+      setPrdStatus("success");
+      router.push("/prd");
+    } catch (err) {
+      setPrdError(err instanceof Error ? err.message : "Connection failed");
+      setPrdStatus("error");
+    } finally {
+      setPrdGenerating(false);
+    }
+  }
+
+  useEffect(() => {
+    if (prdStatus === null) return;
+    const t = setTimeout(() => setPrdStatus(null), 5000);
+    return () => clearTimeout(t);
+  }, [prdStatus]);
+
   useEffect(() => {
     if (!activeSessionId || !isAutorunPending(activeSessionId)) return;
     handleGenerate();
@@ -489,8 +527,48 @@ export default function TasksPage() {
 
           {/* Actions */}
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {prdStatus === "success" && (
+              <span style={{ fontSize: 11.5, fontWeight: 600, padding: "2px 10px", borderRadius: 20, background: "rgba(34,197,94,0.12)", color: "#15803D" }}>
+                PRD generated ✓
+              </span>
+            )}
+            {prdStatus === "error" && (
+              <span
+                title={prdError ?? undefined}
+                style={{ fontSize: 11.5, fontWeight: 600, padding: "2px 10px", borderRadius: 20, background: "rgba(239,68,68,0.12)", color: "#DC2626", cursor: "help", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+              >
+                {prdError ? `Error: ${prdError}` : "Failed — try again"}
+              </span>
+            )}
+            {/* Navigate to PRD page */}
+            <button
+              onClick={() => router.push("/prd")}
+              disabled={!activeSessionId}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                padding: "0.4rem 0.875rem",
+                borderRadius: 8,
+                fontSize: "0.8125rem",
+                fontWeight: 500,
+                background: "#FFFFFF",
+                border: "1.5px solid #E4DDD4",
+                color: !activeSessionId ? "#9E9E9E" : "#6B6B6B",
+                cursor: !activeSessionId ? "not-allowed" : "pointer",
+                fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                opacity: !activeSessionId ? 0.6 : 1,
+              }}
+            >
+              PRD
+              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ opacity: 0.5 }}>
+                <path d="M2 5h6M5.5 2.5L8 5l-2.5 2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
             {tasks.length > 0 && (
               <button
+                onClick={handleGeneratePrd}
+                disabled={prdGenerating || !activeSessionId}
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
@@ -501,9 +579,10 @@ export default function TasksPage() {
                   fontWeight: 500,
                   background: "#FFFFFF",
                   border: "1.5px solid #E4DDD4",
-                  color: "#6B6B6B",
-                  cursor: "pointer",
+                  color: prdGenerating || !activeSessionId ? "#9E9E9E" : "#6B6B6B",
+                  cursor: prdGenerating || !activeSessionId ? "not-allowed" : "pointer",
                   fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                  opacity: prdGenerating || !activeSessionId ? 0.6 : 1,
                 }}
               >
                 <svg
@@ -521,7 +600,7 @@ export default function TasksPage() {
                     strokeLinejoin="round"
                   />
                 </svg>
-                Export
+                {prdGenerating ? "Generating PRD..." : "Generate PRD"}
               </button>
             )}
             <button

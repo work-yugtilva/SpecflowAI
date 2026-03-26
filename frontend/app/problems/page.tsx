@@ -25,7 +25,7 @@ interface Problem {
   id: string;
   title: string;
   summary: string;
-  confidence: number;
+  confidence: number | null;
   impact: "High" | "Medium" | "Low";
   frequency: number;
   tags: string[];
@@ -240,7 +240,7 @@ function adaptPipelineProblems(data: Record<string, unknown>): Problem[] {
         id: `p${idx}`,
         title: p.slice(0, 120) || `Problem ${idx + 1}`,
         summary: p,
-        confidence: 0,
+        confidence: null,
         impact: "Medium" as const,
         frequency: 0,
         tags: [],
@@ -253,7 +253,11 @@ function adaptPipelineProblems(data: Record<string, unknown>): Problem[] {
     id: p.id ?? `p${idx}`,
     title: p.title ?? p.name ?? `Problem ${idx + 1}`,
     summary: p.summary ?? p.description ?? "",
-    confidence: Math.round(normalizeScore(p.attributes?.confidence ?? p.confidence) * 100),
+    confidence: p.attributes?.confidence != null
+      ? Math.round(normalizeScore(p.attributes.confidence) * 100)
+      : p.confidence != null
+      ? Math.round(normalizeScore(p.confidence) * 100)
+      : null,
     impact: toImpact(p.attributes?.impact ?? p.impact ?? p.severity),
     frequency: Math.round(normalizeScore(p.attributes?.frequency ?? p.frequency) * 100),
     tags: Array.isArray(p.tags) ? p.tags : p.cluster ? [p.cluster] : [],
@@ -701,7 +705,7 @@ export default function ProblemsPage() {
                       {/* Row 3: confidence bar */}
                       <div className="flex items-center gap-2">
                         <span style={{ fontSize: 11.5, color: "#6B6B6B" }}>
-                          {p.confidence}% confidence
+                          {p.confidence != null ? `${p.confidence}% confidence` : "— confidence"}
                         </span>
                         <div
                           style={{
@@ -715,7 +719,7 @@ export default function ProblemsPage() {
                           <div
                             style={{
                               height: "100%",
-                              width: `${p.confidence}%`,
+                              width: `${p.confidence ?? 0}%`,
                               background: "#E8561B",
                               borderRadius: 2,
                             }}
@@ -978,7 +982,7 @@ export default function ProblemsPage() {
                             letterSpacing: "-0.02em",
                           }}
                         >
-                          {selectedProblem.confidence}%
+                          {selectedProblem.confidence != null ? `${selectedProblem.confidence}%` : "—"}
                         </div>
                       </div>
                     </div>

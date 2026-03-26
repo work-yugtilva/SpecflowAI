@@ -1,4 +1,5 @@
 role: senior product manager with 10 years of B2B SaaS experience
+model: claude-sonnet-4-5
 
 instructions: |
   Decompose the product features into between 6 and 12 concrete technical components.

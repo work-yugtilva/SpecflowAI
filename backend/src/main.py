@@ -14,7 +14,7 @@ load_root_env()
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 from typing import Any, Optional
 
@@ -23,6 +23,9 @@ from services.session.session_manager import SessionManager
 from services.db.models.session import SESSION_STATUS_COMPLETED
 from services.pipeline_repository import PipelineRepository
 from services.db.models.pipeline import PipelineRun, PIPELINE_STATUS_ORPHANED, PIPELINE_STATUS_COMPLETED
+from services.agent_factory import AgentFactory
+from services.memory.memory_repository import MemoryRepository
+from services.memory.memory_schemas import MemoryEntry
 
 
 # ---------------------------------------------------------------------------
@@ -234,6 +237,124 @@ async def run_session(session_id: str, req: SessionRunRequest):
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.post("/session/{session_id}/prd")
+async def generate_prd(session_id: str):
+    """
+    Generate a PRD for an existing session using the accumulated pipeline outputs.
+    Reads problems, features, decompositions, tasks from session state and runs PRDAgent.
+    Returns 422 if any prerequisite step output is missing.
+    """
+    try:
+        sm = SessionManager()
+        await sm.load_session(session_id)
+
+        current_state = await sm.get_current_state(session_id)
+        outputs = (current_state or {}).get("outputs", {})
+
+        context = {
+            key: Pipeline._unwrap_persisted_content(outputs.get(key, []))
+            for key in ("problems", "features", "decompositions", "tasks")
+        }
+
+        # Validate prerequisites
+        missing = [k for k in ("problems", "features", "decompositions", "tasks")
+                    if not context.get(k)]
+        if missing:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Run {', '.join(missing)} first",
+            )
+
+        agent = AgentFactory.create("prd")
+        result = await agent.execute_async(
+            task="Generate a comprehensive Product Requirements Document.",
+            context=context,
+        )
+
+        # Self-critique quality scoring
+        quality = agent.self_critique(result)
+
+        # Persist to memory
+        entry = MemoryEntry(
+            session_id=session_id,
+            agent_name="prd",
+            memory_key="prd",
+            content=result if isinstance(result, dict) else {"data": result},
+            metadata={"quality_score": quality},
+        )
+        memory_repo = MemoryRepository()
+        await memory_repo.save_for_session(entry)
+
+        return {"success": True, "prd": result, "quality_score": quality}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.get("/session/{session_id}/prd/export")
+async def export_prd_markdown(session_id: str):
+    """
+    Export the session's PRD as a downloadable markdown file.
+    """
+    try:
+        memory_repo = MemoryRepository()
+        entry = await memory_repo.get_by_session_and_key(session_id, "prd")
+        if not entry:
+            raise HTTPException(status_code=404, detail="No PRD found for this session")
+
+        prd = Pipeline._unwrap_persisted_content(entry.content)
+        if not isinstance(prd, dict):
+            raise HTTPException(status_code=404, detail="PRD data is malformed")
+
+        # Convert JSON sections to markdown
+        lines = ["# Product Requirements Document\n"]
+        section_titles = {
+            "executive_summary": "Executive Summary",
+            "problem_statement": "Problem Statement",
+            "goals": "Goals",
+            "features": "Features",
+            "architecture": "Architecture",
+            "implementation_plan": "Implementation Plan",
+            "risks": "Risks",
+            "success_metrics": "Success Metrics",
+        }
+        for key, title in section_titles.items():
+            val = prd.get(key)
+            if val is None:
+                continue
+            lines.append(f"## {title}\n")
+            if isinstance(val, list):
+                for item in val:
+                    if isinstance(item, dict):
+                        lines.append(f"- **{item.get('title', item.get('name', ''))}**: {item.get('description', json.dumps(item))}")
+                    else:
+                        lines.append(f"- {item}")
+            elif isinstance(val, str):
+                lines.append(val)
+            else:
+                lines.append(json.dumps(val, indent=2))
+            lines.append("")
+
+        md = "\n".join(lines)
+        short_id = session_id[:8]
+        return Response(
+            content=md,
+            media_type="text/markdown",
+            headers={"Content-Disposition": f'attachment; filename="prd-{short_id}.md"'},
+        )
+    except HTTPException:
+        raise
+    except Exception:
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Internal server error")

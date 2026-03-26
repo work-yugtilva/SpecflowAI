@@ -16,6 +16,7 @@ output_schema:
     description: string
     user_problem_it_solves: string
     severity: string
+    confidence: number
     acceptance_criteria: string
     research_evidence: string
   sections: null

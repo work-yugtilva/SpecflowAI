@@ -1,55 +1,147 @@
-# CLAUDE.md — Frontend Website Rules
+# SpecFlow v2 — CLAUDE.md
 
-## Always Do First
-- **Invoke the `frontend-design` skill** before writing any frontend code, every session, no exceptions.
+## Project Identity
+SpecFlow v2 is an AI-powered product management automation platform.
+Stack: Next.js 14 (App Router) · FastAPI · Supabase · Anthropic SDK · Google ADK.
+Target: Product managers at Series A–B startups.
 
+---
 
-## Reference Images
-- If a reference image is provided: match layout, spacing, typography, and color exactly. Swap in placeholder content (images via `https://placehold.co/`, generic copy). Do not improve or add to the design.
-- If no reference image: design from scratch with high craft (see guardrails below).
-- Screenshot your output, compare against reference, fix mismatches, re-screenshot. Do at least 2 comparison rounds. Stop only when no visible differences remain or user says so.
+## Architecture
 
-## Local Server
-- **Always serve on localhost** — never screenshot a `file:///` URL.
-- Start the dev server: `node serve.mjs` (serves the project root at `http://localhost:3000`)
-- `serve.mjs` lives in the project root. Start it in the background before taking any screenshots.
-- If the server is already running, do not start a second instance.
+```
+/
+├── frontend/          # Next.js 14 App Router
+│   ├── app/           # Pages: problems, features, decompose, tasks, sessions, prd
+│   ├── components/    # UI + pipeline components
+│   └── lib/           # API clients, hooks, stores, utils
+│
+└── backend/
+    └── src/
+        ├── main.py                    # FastAPI entry point (port 8001)
+        ├── services/
+        │   ├── agents/                # ProblemsAgent, FeaturesAgent, DecomposeAgent, TasksAgent, PRDAgent
+        │   ├── orchestrator/          # ADK SequentialAgent orchestrator
+        │   ├── pipeline.py            # Pipeline runner + coercion + validation
+        │   ├── agent_factory.py       # Agent dispatch map — only file with hardcoded names
+        │   ├── memory/                # MemoryStore, MemoryManager, MemoryRepository
+        │   ├── session/               # SessionManager, SessionRepository
+        │   └── config/                # YAML loaders, schemas, env
+        └── config/agents/             # problems.yaml, features.yaml, decompose.yaml, tasks.yaml, prd.yaml
+```
 
-## Screenshot Workflow
-- Puppeteer is installed at `C:/Users/nateh/AppData/Local/Temp/puppeteer-test/`. Chrome cache is at `C:/Users/nateh/.cache/puppeteer/`.
-- **Always screenshot from localhost:** `node screenshot.mjs http://localhost:3000`
-- Screenshots are saved automatically to `./temporary screenshots/screenshot-N.png` (auto-incremented, never overwritten).
-- Optional label suffix: `node screenshot.mjs http://localhost:3000 label` → saves as `screenshot-N-label.png`
-- `screenshot.mjs` lives in the project root. Use it as-is.
-- After screenshotting, read the PNG from `temporary screenshots/` with the Read tool — Claude can see and analyze the image directly.
-- When comparing, be specific: "heading is 32px but reference shows ~24px", "card gap is 16px but should be 24px"
-- Check: spacing/padding, font size/weight/line-height, colors (exact hex), alignment, border-radius, shadows, image sizing
+---
 
-## Output Defaults
-- Single `index.html` file, all styles inline, unless user says otherwise
-- Tailwind CSS via CDN: `<script src="https://cdn.tailwindcss.com"></script>`
-- Placeholder images: `https://placehold.co/WIDTHxHEIGHT`
-- Mobile-first responsive
+## Pipeline
 
-## Brand Assets
-- Always check the `brand_assets/` folder before designing. It may contain logos, color guides, style guides, or images.
-- If assets exist there, use them. Do not use placeholders where real assets are available.
-- If a logo is present, use it. If a color palette is defined, use those exact values — do not invent brand colors.
+4-step sequential pipeline orchestrated by Google ADK:
 
-## Anti-Generic Guardrails
-- **Colors:** Never use default Tailwind palette (indigo-500, blue-600, etc.). Pick a custom brand color and derive from it.
-- **Shadows:** Never use flat `shadow-md`. Use layered, color-tinted shadows with low opacity.
-- **Typography:** Never use the same font for headings and body. Pair a display/serif with a clean sans. Apply tight tracking (`-0.03em`) on large headings, generous line-height (`1.7`) on body.
-- **Gradients:** Layer multiple radial gradients. Add grain/texture via SVG noise filter for depth.
-- **Animations:** Only animate `transform` and `opacity`. Never `transition-all`. Use spring-style easing.
-- **Interactive states:** Every clickable element needs hover, focus-visible, and active states. No exceptions.
-- **Images:** Add a gradient overlay (`bg-gradient-to-t from-black/60`) and a color treatment layer with `mix-blend-multiply`.
-- **Spacing:** Use intentional, consistent spacing tokens — not random Tailwind steps.
-- **Depth:** Surfaces should have a layering system (base → elevated → floating), not all sit at the same z-plane.
+```
+problems → features → decompose → tasks → [prd]
+```
 
-## Hard Rules
-- Do not add sections, features, or content not in the reference
-- Do not "improve" a reference design — match it
-- Do not stop after one screenshot pass
-- Do not use `transition-all`
-- Do not use default Tailwind blue/indigo as primary color
+Each step writes to Supabase `memory_entries` scoped by `session_id`.
+
+**Output keys** (must match across yaml + pipeline.py + frontend adapters):
+- `problems` · `features` · `decompositions` · `tasks` · `prd`
+
+**Memory read keys** (tasks.yaml reads `decompositions`, NOT `decompose`):
+- features reads: `problems`
+- decompose reads: `problems`, `features`
+- tasks reads: `problems`, `features`, `decompositions`
+- prd reads: `problems`, `features`, `decompositions`, `tasks`
+
+---
+
+## Agents
+
+Every typed agent lives in `backend/src/services/agents/` and extends `BaseAgent`.
+Each overrides `build_prompt()` to inject **only its required context slice**.
+Never pass the full state dict to any agent.
+
+| Agent | Receives | Output key |
+|---|---|---|
+| ProblemsAgent | product_context + ingest | problems |
+| FeaturesAgent | product_context + ingest + problems | features |
+| DecomposeAgent | product_context + ingest + problems + features | decompositions |
+| TasksAgent | problems + features + decompositions | tasks |
+| PRDAgent | product_context + problems + features + decompositions + tasks | prd |
+
+**Unwrap pattern** — all agents must unwrap `{"data": [...]}` before use:
+```python
+def _unwrap(self, val):
+    if isinstance(val, dict) and list(val.keys()) == ["data"]:
+        return val["data"]
+    return val
+```
+
+**agent_factory.py** is the only file that maps names to classes.
+Do not hardcode agent names anywhere else.
+
+---
+
+## Models
+
+- Default: `claude-sonnet-4-5` (set via `AI_MODEL` env var)
+- Features, Decompose, Tasks, PRD: Sonnet only — Haiku truncates output
+- Token budgets: features 3000 · decompose 3000 · tasks 4000 · prd 6000
+
+---
+
+## Database (Supabase)
+
+Key tables:
+- `sessions` — session identity + metadata
+- `session_state` — pipeline snapshot per session (upserted, one row per session)
+- `session_events` — append-only event log
+- `memory_entries` — scoped by `(session_id, memory_key)` unique index
+
+**Persistence rule**: `_persist_step_memory()` wraps lists as `{"data": [...]}`.
+`_unwrap_persisted_content()` reverses this at read time.
+Both live in `pipeline.py` — do not duplicate this logic elsewhere.
+
+**Never** add `project_id` to session-scoped memory entries (causes constraint conflicts).
+
+---
+
+## Frontend
+
+- Brand: paper `#F8F4EF` · terra `#E8561B` · sage · charcoal `#0D0D0D`
+- Fonts: Georgia (display) · Outfit/DM Sans (body) · Courier (mono)
+- State: active session via `useActiveSession()` context + Zustand `useSessionStore`
+- Pipeline pages read from `session.state.outputs` on mount
+- All pipeline output adapters handle `{"data": [...]}` unwrap client-side
+
+**Pipeline page pattern:**
+1. On mount: call `getSession(activeSessionId)` → hydrate from `state.outputs`
+2. On generate: call `runPipelineStepOrFull(step, inputData, sessionId)`
+3. Adapt raw output through typed adapter function before setting state
+
+---
+
+## Commands
+
+```bash
+# Backend
+cd backend/src && uvicorn main:app --reload --port 8001
+
+# Frontend
+cd frontend && npm run dev
+
+# Tests
+cd backend && python -m pytest tests/ -v
+cd frontend && npm run test
+```
+
+---
+
+## Critical Rules
+
+- No hardcoding anywhere — all agent config lives in YAML
+- `agent_factory.py` is the single source of agent name → class mapping
+- Memory keys must be consistent: pipeline.yaml output_key = yaml write.key = frontend adapter key
+- Do not modify BaseAgent — extend it
+- Do not touch Supabase schema without a migration file in `db/migrations/`
+- Session-scoped memory: never set project_id
+- PRD generation is a terminal step — runs after tasks, not part of the main 4-step loop
+- Restart FastAPI after any change to `.yaml` config files

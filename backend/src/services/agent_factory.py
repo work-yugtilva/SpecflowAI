@@ -6,6 +6,7 @@ from services.agents.problems_agent import ProblemsAgent
 from services.agents.features_agent import FeaturesAgent
 from services.agents.decompose_agent import DecomposeAgent
 from services.agents.tasks_agent import TasksAgent
+from services.agents.prd_agent import PRDAgent
 import logging
 
 logger = logging.getLogger("specflow.agent_factory")
@@ -16,6 +17,7 @@ _AGENT_CLASS_MAP: dict[str, type[BaseAgent]] = {
     "features": FeaturesAgent,
     "decompose": DecomposeAgent,
     "tasks":    TasksAgent,
+    "prd":      PRDAgent,
 }
 
 

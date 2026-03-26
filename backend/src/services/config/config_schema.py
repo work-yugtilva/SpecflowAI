@@ -66,7 +66,10 @@ class AgentConfig(BaseModel):
     use_critic: Optional[bool] = False
     validate_evidence_chain: Optional[bool] = False
     
+    model: Optional[str] = None
+    temperature: Optional[float] = None
+
     token_control: Optional[TokenControl] = Field(default_factory=TokenControl)
     compression: Optional[CompressionConfig] = Field(default_factory=lambda: CompressionConfig(strategy="none"))
-    
+
     memory: Optional[MemoryConfig] = None

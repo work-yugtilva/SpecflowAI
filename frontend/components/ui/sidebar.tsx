@@ -107,6 +107,7 @@ const NAV_SECTIONS: NavSection[] = [
       { id: "features", label: "Features" },
       { id: "decompose", label: "Decompose" },
       { id: "tasks", label: "Tasks" },
+      { id: "prd", label: "PRD" },
     ],
   },
   {
