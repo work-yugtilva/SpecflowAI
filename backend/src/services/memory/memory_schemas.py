@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Union
 
 class MemoryReadConfig(BaseModel):
     """Config for how an agent reads from memory."""
-    strategy: str = "selective"        # "selective" | "all" | "none" | "top_k"
+    strategy: str = "selective"        # "selective" | "all" | "none" | "top_k" | "global_project_rag"
     keys: Optional[Union[List[str], Dict[str, Any]]] = []
     params: Optional[Dict[str, Any]] = {}
 

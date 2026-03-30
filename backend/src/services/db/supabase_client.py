@@ -27,3 +27,17 @@ def get_supabase_client() -> Client:
             )
         _client = create_client(url, key)
     return _client
+
+
+def get_user_integration(user_id: str, provider: str) -> dict | None:
+    """Return a user_integrations row for (user_id, provider), or None if not found."""
+    client = get_supabase_client()
+    result = (
+        client.table("user_integrations")
+        .select("*")
+        .eq("user_id", user_id)
+        .eq("provider", provider)
+        .maybe_single()
+        .execute()
+    )
+    return result.data if result else None

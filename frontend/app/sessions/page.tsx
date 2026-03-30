@@ -1455,16 +1455,23 @@ export default function SessionsPage() {
                       <div style={{ fontSize: 11, fontWeight: 600, color: "#9B9189", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 12 }}>
                         Outputs
                       </div>
-                      {(["problems", "features", "decompose", "tasks"] as const).map((stepKey) => {
-                        const items = detail.state?.state?.outputs?.[stepKey];
+                      {(
+                        [
+                          { step: "problems", outputKey: "problems" },
+                          { step: "features", outputKey: "features" },
+                          { step: "decompose", outputKey: "decompositions" },
+                          { step: "tasks", outputKey: "tasks" },
+                        ] as const
+                      ).map(({ step, outputKey }) => {
+                        const items = detail.state?.state?.outputs?.[outputKey];
                         if (!Array.isArray(items) || items.length === 0) return null;
                         return (
-                          <div key={stepKey} style={{ marginBottom: 12 }}>
+                          <div key={step} style={{ marginBottom: 12 }}>
                             <div style={{ fontSize: 12, fontWeight: 600, color: "#0D0D0D", marginBottom: 4, textTransform: "capitalize" }}>
-                              {stepKey}
+                              {step}
                             </div>
                             <StepInspector
-                              step={stepKey}
+                              step={step}
                               items={items as Record<string, unknown>[]}
                             />
                           </div>

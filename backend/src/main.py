@@ -101,6 +101,7 @@ class RunRequest(BaseModel):
 
 class CreateSessionRequest(BaseModel):
     session_name: str
+    project_id: Optional[str] = None
     metadata: Optional[dict] = {}
 
 
@@ -175,6 +176,7 @@ async def create_session(req: CreateSessionRequest):
         print(f"[session] SessionManager instantiated")
         session = await sm.create_session(
             session_name=req.session_name,
+            project_id=req.project_id,
             metadata=req.metadata,
         )
         print(f"[session] Session created: {session.id}")
@@ -218,7 +220,7 @@ async def run_session(session_id: str, req: SessionRunRequest):
         pipeline = Pipeline()
         result = await pipeline.run(
             input_data=req.input_data,
-            project_id=None,
+            project_id=session.project_id,
             session_id=session_id,
             session_manager=sm,
             step=req.step,

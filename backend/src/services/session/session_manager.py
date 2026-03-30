@@ -25,10 +25,12 @@ class SessionManager:
     async def create_session(
         self,
         session_name: str,
+        project_id: Optional[str] = None,
         metadata: Optional[dict] = None,
     ) -> Session:
         """Create and persist a new session. Returns the Session with DB-assigned id."""
         session = Session(
+            project_id=project_id,
             session_name=session_name,
             status=SESSION_STATUS_ACTIVE,
             metadata=metadata or {},

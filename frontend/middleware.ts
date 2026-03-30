@@ -17,6 +17,7 @@ const PROTECTED_PATHS = [
   "/research",
   "/onboarding",
   "/sessions",
+  "/settings",
 ];
 
 export async function middleware(request: NextRequest) {

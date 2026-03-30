@@ -28,9 +28,11 @@ export interface ResearchEntry {
   title: string;
   content: string;
   user?: string;
-  painPoint?: string;
+  pain?: string;
   context?: string;
   tags?: string[];
+  scope?: ContextScope;
+  sessionId?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }

@@ -119,7 +119,12 @@ const NAV_SECTIONS: NavSection[] = [
       { id: "research", label: "Research" },
     ],
   },
-  { id: "settings", title: "Settings", icon: <GearIcon />, items: [] },
+  {
+    id: "settings",
+    title: "Settings",
+    icon: <GearIcon />,
+    items: [{ id: "settings/integrations", label: "Integrations" }],
+  },
 ];
 
 // ─── Sub-components ───────────────────────────────────────────────────────────

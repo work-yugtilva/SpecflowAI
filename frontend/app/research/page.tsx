@@ -9,22 +9,18 @@ import {
   scopedStorageKey,
 } from "@/lib/session-scoped-storage";
 import { Sidebar } from "@/components/ui/sidebar";
+import {
+  createResearchEntry,
+  deleteResearchEntry,
+  fetchResearchEntries,
+  updateResearchEntry,
+  type ResearchEntryRecord,
+  type ResearchType,
+} from "@/lib/api/research";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type ResearchType = "Interview" | "Survey" | "Analytics" | "Market Insight";
-
-interface ResearchEntry {
-  id: string;
-  type: ResearchType;
-  title: string;
-  content: string;
-  user: string;
-  pain: string;
-  context: string;
-  tags: string[];
-  date: string;
-}
+type ResearchEntry = ResearchEntryRecord;
 
 interface FormState {
   type: ResearchType;
@@ -61,12 +57,6 @@ const EMPTY_FORM: FormState = {
   context: "",
   tagsRaw: "",
 };
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function genId(): string {
-  return Math.random().toString(36).slice(2, 9);
-}
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString("en-US", {
@@ -181,6 +171,7 @@ function FieldLabel({
 
 export default function ResearchPage() {
   const { activeSessionId } = useActiveSession();
+  const researchScope = activeSessionId ? "session" : "global";
   const researchStorageKey = activeSessionId
     ? scopedStorageKey(activeSessionId, "research")
     : LS_RESEARCH;
@@ -191,6 +182,7 @@ export default function ResearchPage() {
 
   useEffect(() => {
     setResearchHydrated(false);
+    setSyncError(null);
     try {
       if (activeSessionId) {
         migrateGlobalToScopedOnce(
@@ -217,8 +209,26 @@ export default function ResearchPage() {
       setEntries([]);
       setSelectedId(null);
     }
-    setResearchHydrated(true);
-  }, [researchStorageKey]);
+    let cancelled = false;
+    fetchResearchEntries(researchScope, activeSessionId ?? undefined)
+      .then((remoteEntries) => {
+        if (cancelled) return;
+        setEntries(remoteEntries);
+        setSelectedId(remoteEntries[0]?.id ?? null);
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          setSyncError(err instanceof Error ? err.message : "Failed to sync research");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setResearchHydrated(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSessionId, researchScope, researchStorageKey]);
 
   useEffect(() => {
     if (!researchHydrated) return;
@@ -233,6 +243,7 @@ export default function ResearchPage() {
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [formError, setFormError] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const selectedEntry = entries.find((e) => e.id === selectedId) ?? null;
 
@@ -269,58 +280,65 @@ export default function ResearchPage() {
     setFormError(false);
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!form.title.trim() || !form.content.trim()) {
       setFormError(true);
       return;
     }
+    setSyncError(null);
     const tags = form.tagsRaw
       .split(",")
       .map((t) => t.trim())
       .filter(Boolean);
 
-    if (editingId) {
-      setEntries((prev) =>
-        prev.map((e) =>
-          e.id === editingId
-            ? {
-                ...e,
-                type: form.type,
-                title: form.title,
-                content: form.content,
-                user: form.user,
-                pain: form.pain,
-                context: form.context,
-                tags,
-              }
-            : e
-        )
+    const payload = {
+      type: form.type,
+      title: form.title,
+      content: form.content,
+      user: form.user,
+      pain: form.pain,
+      context: form.context,
+      tags,
+    };
+
+    try {
+      if (editingId) {
+        const updated = await updateResearchEntry(editingId, payload);
+        setEntries((prev) =>
+          prev.map((e) => (e.id === editingId ? updated : e))
+        );
+      } else {
+        const created = await createResearchEntry(
+          researchScope,
+          payload,
+          activeSessionId ?? undefined
+        );
+        setEntries((prev) => [created, ...prev]);
+        setSelectedId(created.id);
+      }
+      closeModal();
+    } catch (err) {
+      setSyncError(
+        err instanceof Error ? err.message : "Failed to save research entry"
       );
-    } else {
-      const newEntry: ResearchEntry = {
-        id: genId(),
-        type: form.type,
-        title: form.title,
-        content: form.content,
-        user: form.user,
-        pain: form.pain,
-        context: form.context,
-        tags,
-        date: new Date().toISOString(),
-      };
-      setEntries((prev) => [newEntry, ...prev]);
-      setSelectedId(newEntry.id);
     }
-    closeModal();
   }
 
-  function handleDelete(id: string) {
-    const remaining = entries.filter((e) => e.id !== id);
-    setEntries(remaining);
-    if (selectedId === id) {
-      setSelectedId(remaining[0]?.id ?? null);
+  async function handleDelete(id: string) {
+    setSyncError(null);
+    try {
+      await deleteResearchEntry(id);
+      const remaining = entries.filter((e) => e.id !== id);
+      setEntries(remaining);
+      if (selectedId === id) {
+        setSelectedId(remaining[0]?.id ?? null);
+      }
+      setConfirmDeleteId(null);
+    } catch (err) {
+      setSyncError(
+        err instanceof Error ? err.message : "Failed to delete research entry"
+      );
     }
-    setConfirmDeleteId(null);
   }
 
   return (
@@ -417,6 +435,20 @@ export default function ResearchPage() {
             Add Research
           </button>
         </header>
+
+        {syncError && (
+          <div
+            style={{
+              padding: "10px 20px",
+              background: "rgba(239,68,68,0.08)",
+              borderBottom: "1px solid rgba(239,68,68,0.18)",
+              color: "#B91C1C",
+              fontSize: 12.5,
+            }}
+          >
+            {syncError}
+          </div>
+        )}
 
         {/* ── Two-column content ── */}
         <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
@@ -573,7 +605,11 @@ export default function ResearchPage() {
                             color: "#C8C2BB",
                           }}
                         >
-                          {formatDate(entry.date)}
+                          {formatDate(
+                            entry.createdAt ??
+                              entry.updatedAt ??
+                              new Date().toISOString()
+                          )}
                         </span>
                       </div>
                     </button>
@@ -713,7 +749,11 @@ export default function ResearchPage() {
                   }}
                 >
                   <span style={{ fontSize: 12, color: "#9E9E9E" }}>
-                    {formatDate(selectedEntry.date)}
+                    {formatDate(
+                      selectedEntry.createdAt ??
+                        selectedEntry.updatedAt ??
+                        new Date().toISOString()
+                    )}
                   </span>
                   {selectedEntry.tags.length > 0 && (
                     <>

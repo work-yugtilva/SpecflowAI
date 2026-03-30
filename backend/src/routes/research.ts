@@ -2,8 +2,25 @@ import { Router } from 'express';
 import { verifyAuth, AuthRequest } from '@/middleware/auth.js';
 import { researchService } from '@/services/researchService.js';
 import { AppError } from '@/middleware/errorHandler.js';
+import { ContextScope } from '@/types/index.js';
 
 const router = Router();
+
+function resolveScope(req: AuthRequest): { scope: ContextScope; sessionId?: string } {
+  const rawScope = String(req.query.scope ?? 'global').toLowerCase();
+  if (rawScope !== 'global' && rawScope !== 'session') {
+    throw new AppError(400, 'scope must be either "global" or "session"', 'VALIDATION_ERROR');
+  }
+  const scope = rawScope as ContextScope;
+  const sessionId =
+    typeof req.query.sessionId === 'string' ? req.query.sessionId.trim() : undefined;
+
+  if (scope === 'session' && !sessionId) {
+    throw new AppError(400, 'sessionId query param is required when scope=session', 'MISSING_PARAM');
+  }
+
+  return { scope, sessionId };
+}
 
 // GET /api/research - Get all research entries for user
 router.get('/', verifyAuth, async (req: AuthRequest, res) => {
@@ -12,10 +29,16 @@ router.get('/', verifyAuth, async (req: AuthRequest, res) => {
       throw new AppError(401, 'User not authenticated', 'UNAUTHORIZED');
     }
 
-    const page = parseInt(req.query.page as string) || 1;
-    const pageSize = parseInt(req.query.pageSize as string) || 10;
+    const page = parseInt(req.query.page as string, 10) || 1;
+    const pageSize = parseInt(req.query.pageSize as string, 10) || 25;
+    const { scope, sessionId } = resolveScope(req);
 
-    const result = await researchService.getEntries(req.user.id, page, pageSize);
+    const result = await researchService.getEntries(req.user.id, {
+      scope,
+      sessionId,
+      page,
+      pageSize,
+    });
 
     res.json(result);
   } catch (error) {
@@ -41,7 +64,8 @@ router.post('/', verifyAuth, async (req: AuthRequest, res) => {
       });
     }
 
-    const entry = await researchService.createEntry(req.user.id, req.body);
+    const { scope, sessionId } = resolveScope(req);
+    const entry = await researchService.createEntry(req.user.id, req.body, scope, sessionId);
 
     res.status(201).json({
       success: true,
@@ -70,7 +94,8 @@ router.get('/search', verifyAuth, async (req: AuthRequest, res) => {
       });
     }
 
-    const results = await researchService.searchEntries(req.user.id, query);
+    const { scope, sessionId } = resolveScope(req);
+    const results = await researchService.searchEntries(req.user.id, query, scope, sessionId);
 
     res.json({
       success: true,

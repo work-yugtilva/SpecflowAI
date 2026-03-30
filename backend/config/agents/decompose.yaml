@@ -25,8 +25,21 @@ output_schema:
 max_retries: 2
 use_critic: true
 
+critic:
+  binary_checks:
+    - name: evidence_cited
+      pass_condition: "Every component's user_problem_it_solves and research_evidence trace directly to research context"
+      fail_condition: "Any component references a problem or evidence not found in the input"
+    - name: metrics_concrete
+      pass_condition: "acceptance_criteria uses measurable, layer-specific thresholds (e.g., 'renders in < 100ms', 'stores < 1KB per record')"
+      fail_condition: "Any acceptance criterion is vague: fast, efficient, scalable, handles load, etc."
+    - name: edge_cases_technical
+      pass_condition: "Described edge cases are specific to the component's layer (ui, backend, or system)"
+      fail_condition: "Edge cases are generic or absent when technically required for the layer"
+      auto_pass_if_missing: true
+
 token_control:
-  max_output_tokens: 4096
+  max_output_tokens: 8192
   retries: 2
 
 memory:

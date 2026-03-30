@@ -1,5 +1,7 @@
 # SpecFlow Pipeline Health — 5-Issue Fix Design
 
+> Historical design snapshot. For the current local runtime, ports, and startup flow, follow [/Users/yug/Desktop/SpecFlow/docs/setup.md](/Users/yug/Desktop/SpecFlow/docs/setup.md). The active FastAPI pipeline default is `8001`.
+
 **Date:** 2026-03-24
 **Status:** Approved
 **Source:** Codex Playwright audit findings (P0/P1/P2 severity)

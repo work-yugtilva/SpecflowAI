@@ -3,6 +3,7 @@
 import os
 import time
 import random
+from typing import Any
 from anthropic import Anthropic, APIStatusError, RateLimitError
 
 from services.config.load_env import load_root_env
@@ -10,6 +11,7 @@ from services.config.load_env import load_root_env
 load_root_env()
 
 _client = None
+_instructor_client = None
 
 
 def get_client() -> Anthropic:
@@ -17,6 +19,17 @@ def get_client() -> Anthropic:
     if _client is None:
         _client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     return _client
+
+
+def get_instructor_client():
+    global _instructor_client
+    if _instructor_client is None:
+        import instructor
+        # SDK-level max_retries handles rate-limit 429s automatically
+        _instructor_client = instructor.from_anthropic(
+            Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"], max_retries=3)
+        )
+    return _instructor_client
 
 
 def run_ai(prompt: str, max_tokens: int = None, retries: int = None, model: str = None, temperature: float = None) -> str:
@@ -68,3 +81,32 @@ def run_ai(prompt: str, max_tokens: int = None, retries: int = None, model: str 
             time.sleep(1)
             
     return ""
+
+
+def run_ai_structured(
+    prompt: str,
+    response_model: type,
+    max_tokens: int = None,
+    model: str = None,
+    temperature: float = None,
+    max_retries: int = 2,
+) -> Any:
+    """
+    Run AI inference with strict structured output enforcement via Instructor.
+    The response is guaranteed to match response_model's schema (Pydantic BaseModel).
+    max_retries controls instructor's retry-on-validation-failure behaviour.
+    Rate-limit retries are handled by the underlying SDK client (max_retries=3).
+    """
+    client = get_instructor_client()
+    model = model or os.environ.get("AI_MODEL", "claude-sonnet-4-6")
+    max_tokens = max_tokens or int(os.environ.get("AI_MAX_TOKENS", 2048))
+    kwargs: dict = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": [{"role": "user", "content": prompt}],
+        "response_model": response_model,
+        "max_retries": max_retries,
+    }
+    if temperature is not None:
+        kwargs["temperature"] = temperature
+    return client.messages.create(**kwargs)

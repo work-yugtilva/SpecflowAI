@@ -1,5 +1,7 @@
 # SpecFlow Pipeline Health Implementation Plan
 
+> Historical implementation plan. For the current local runtime, ports, and startup flow, follow [/Users/yug/Desktop/SpecFlow/docs/setup.md](/Users/yug/Desktop/SpecFlow/docs/setup.md). The active FastAPI pipeline default is `8001`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Fix five pipeline issues (backend connectivity, semantic pollution, auth redirect, step data contracts, hidden outputs) so SpecFlow produces real AI-generated product specs.

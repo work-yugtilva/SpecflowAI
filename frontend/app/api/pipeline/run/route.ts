@@ -69,7 +69,7 @@ const SCHEMAS: Record<string, object[]> = {
 const OUTPUT_KEYS: Record<string, string> = {
   problems: "problems",
   features: "features",
-  decompose: "decompose",   // was "decompositions" — fixed to match backend key
+  decompose: "decompose",
   tasks: "tasks",
 };
 

@@ -17,203 +17,19 @@ import { computeStepStatuses } from "@/lib/pipeline-session";
 import { runPipelineStepOrFull } from "@/lib/run-pipeline-client";
 import { useOrphanedPipeline } from "@/lib/use-orphaned-pipeline";
 import { OrphanedPipelineModal } from "@/components/ui/orphaned-pipeline-modal";
+import { adaptTasks } from "@/lib/pipeline-contracts";
+import type {
+  LinearPayload,
+  TaskStatus,
+  TaskStepViewModel as TaskStep,
+  TaskType,
+  TaskViewModel as Task,
+} from "@/lib/pipeline-contracts";
 import type { PipelineInput } from "@/lib/pipeline-types";
 import dynamic from "next/dynamic";
 const TextShimmer = dynamic(
   () => import("@/components/ui/text-shimmer").then((m) => m.TextShimmer)
 );
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-type TaskStatus = "todo" | "in-progress" | "done";
-type TaskType = "Frontend" | "Backend" | "API" | "Infrastructure";
-
-interface TaskStep {
-  id: string;
-  title: string;
-  done: boolean;
-}
-
-interface Task {
-  id: string;
-  title: string;
-  description: string;
-  type: TaskType;
-  status: TaskStatus;
-  priority: "High" | "Medium" | "Low";
-  steps: TaskStep[];
-  dependencies: string[];
-}
-
-// ─── Pipeline Adapter (session / API output only — no mock data) ──────────────
-
-const TYPE_MAP: Record<string, TaskType> = {
-  frontend: "Frontend", ui: "Frontend", component: "Frontend",
-  backend: "Backend", service: "Backend", logic: "Backend",
-  api: "API", endpoint: "API", route: "API",
-  infrastructure: "Infrastructure", infra: "Infrastructure", devops: "Infrastructure",
-};
-
-function toTaskType(val: unknown): TaskType {
-  if (!val) return "Backend";
-  const v = String(val).toLowerCase();
-  for (const [key, type] of Object.entries(TYPE_MAP)) {
-    if (v.includes(key)) return type;
-  }
-  return "Backend";
-}
-
-function toPriority(val: unknown): Task["priority"] {
-  if (val == null || val === "") return "Medium";
-  if (typeof val === "number") {
-    if (val >= 7) return "High";
-    if (val <= 3) return "Low";
-    return "Medium";
-  }
-  const v = String(val).toLowerCase();
-  if (v === "high" || v === "critical") return "High";
-  if (v === "low") return "Low";
-  return "Medium";
-}
-
-/**
- * Pull task rows from `outputs.tasks` whether it is a flat list, `{ tasks: [] }`,
- * grouped maps (`{ Group: { tasks: [] } }`), or parallel pipeline output
- * (`[{ Group: { tasks: [] } }, ...]`).
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractFromGroupMap(map: Record<string, unknown>): any[] {
-  const out: any[] = [];
-  for (const v of Object.values(map)) {
-    if (v && typeof v === "object" && !Array.isArray(v)) {
-      const vo = v as Record<string, unknown>;
-      if (Array.isArray(vo.tasks)) {
-        out.push(...vo.tasks);
-        continue;
-      }
-    }
-    if (Array.isArray(v)) {
-      out.push(...v);
-    }
-  }
-  return out;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function extractTaskRowsFromPipelineTasks(tasksField: unknown): any[] {
-  if (tasksField == null) return [];
-
-  if (typeof tasksField === "object" && !Array.isArray(tasksField)) {
-    const o = tasksField as Record<string, unknown>;
-    if (Array.isArray(o.tasks)) return o.tasks as any[];
-    if (Array.isArray(o.items)) return o.items as any[];
-    if (o.groups && typeof o.groups === "object" && !Array.isArray(o.groups)) {
-      return extractFromGroupMap(o.groups as Record<string, unknown>);
-    }
-    const fromMap = extractFromGroupMap(o);
-    if (fromMap.length > 0) return fromMap;
-    if (
-      (typeof o.title === "string" && o.title.trim() !== "") ||
-      (typeof o.name === "string" && o.name.trim() !== "") ||
-      (typeof o.description === "string" && o.description.trim() !== "")
-    ) {
-      return [o];
-    }
-    return [];
-  }
-
-  if (!Array.isArray(tasksField)) return [];
-
-  const out: any[] = [];
-  for (const el of tasksField) {
-    if (el == null || typeof el !== "object") continue;
-    const row = el as Record<string, unknown>;
-
-    const titled =
-      (typeof row.title === "string" && row.title.trim() !== "") ||
-      (typeof row.name === "string" && row.name.trim() !== "");
-    const summaryOnly =
-      (typeof row.description === "string" && row.description.trim() !== "") ||
-      (typeof row.summary === "string" && row.summary.trim() !== "");
-
-    if (titled || (summaryOnly && Array.isArray(row.subtasks || row.steps))) {
-      out.push(row);
-      continue;
-    }
-
-    if (row.groups && typeof row.groups === "object" && !Array.isArray(row.groups)) {
-      out.push(...extractFromGroupMap(row.groups as Record<string, unknown>));
-      continue;
-    }
-
-    const fromValues = extractFromGroupMap(row);
-    if (fromValues.length > 0) {
-      out.push(...fromValues);
-      continue;
-    }
-
-    if (Array.isArray(row.tasks)) {
-      out.push(...row.tasks);
-    }
-  }
-  return out;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function adaptTasks(data: Record<string, unknown>): Task[] {
-  const raw = extractTaskRowsFromPipelineTasks(data.tasks);
-  if (raw.length === 0) return [];
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  return raw.map((item: any, idx: number) => {
-    const attrs =
-      item.attributes && typeof item.attributes === "object"
-        ? (item.attributes as Record<string, unknown>)
-        : undefined;
-    const stepSourceRaw =
-      Array.isArray(item.subtasks)
-        ? item.subtasks
-        : Array.isArray(item.steps)
-          ? item.steps
-          : attrs && Array.isArray(attrs.subtasks)
-            ? attrs.subtasks
-            : attrs && Array.isArray(attrs.steps)
-              ? attrs.steps
-              : Array.isArray(item.action_items)
-                ? item.action_items
-                : [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const subtasks: TaskStep[] = stepSourceRaw.map((s: any, si: number) => ({
-      id: s.id ?? `${idx}-s${si}`,
-      title: s.title ?? s.name ?? s.description ?? `Step ${si + 1}`,
-      done: s.done ?? s.completed ?? false,
-    }));
-    return {
-      id: item.id ?? `t${idx}`,
-      title: item.title ?? item.name ?? `Task ${idx + 1}`,
-      description:
-        item.description ??
-        item.summary ??
-        (typeof attrs?.description === "string" ? attrs.description : "") ??
-        "",
-      type: toTaskType(
-        item.type ?? item.layer ?? item.category ?? attrs?.layer ?? attrs?.category
-      ),
-      status: (["todo", "in-progress", "done"].includes(item.status)
-        ? item.status
-        : "todo") as TaskStatus,
-      priority: toPriority(
-        item.priority ?? attrs?.priority ?? attrs?.complexity
-      ),
-      steps: subtasks,
-      dependencies: Array.isArray(item.dependencies)
-        ? item.dependencies.map(String)
-        : Array.isArray(attrs?.dependencies)
-          ? (attrs.dependencies as unknown[]).map(String)
-          : [],
-    };
-  });
-}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -312,6 +128,11 @@ export default function TasksPage() {
   const [prdGenerating, setPrdGenerating] = useState(false);
   const [prdStatus, setPrdStatus] = useState<"success" | "error" | null>(null);
   const [prdError, setPrdError] = useState<string | null>(null);
+  const [linearPayload, setLinearPayload] = useState<LinearPayload | null>(null);
+  const [linearPushing, setLinearPushing] = useState(false);
+  const [linearPushStatus, setLinearPushStatus] = useState<"success" | "error" | null>(null);
+  const [linearPushError, setLinearPushError] = useState<string | null>(null);
+  const [linearNotConnected, setLinearNotConnected] = useState(false);
 
   const selectedTask = tasks.find((t) => t.id === selectedId) ?? null;
   const effectiveStatus = (t: Task): TaskStatus => statusMap[t.id] ?? t.status;
@@ -325,6 +146,8 @@ export default function TasksPage() {
     setStepsMap({});
     setFromSession(false);
     setSessionDetail(null);
+    setLinearPayload(null);
+    setLinearNotConnected(false);
     if (!activeSessionId) return;
     let cancelled = false;
     getSession(activeSessionId)
@@ -338,13 +161,12 @@ export default function TasksPage() {
           setFromSession(true);
           const _tq = out?.tasks_quality as {score: number; passed: boolean} | undefined;
           if (_tq) setQualityScore(_tq);
-          const adapted = adaptTasks({
-            ...out,
-            tasks: out.tasks,
-          } as Record<string, unknown>);
+          const adapted = adaptTasks(out);
           setTasks(adapted);
           if (adapted.length > 0) setSelectedId(adapted[0].id);
         }
+        const lp = out?.linear_payload as LinearPayload | undefined;
+        if (lp) setLinearPayload(lp);
       })
       .catch(() => {
         if (!cancelled) setSessionDetail(null);
@@ -399,13 +221,13 @@ export default function TasksPage() {
         inputData,
         activeSessionId
       );
-      const { data, mode } = result;
+      const { data, mode, sessionState } = result;
       setFromSession(mode === "session");
       if (data.tasks_quality) setQualityScore(data.tasks_quality as any);
       if (mode === "orphaned" && result.orphanedOutput) {
         triggerOrphanedPrompt(result.orphanedOutput);
       }
-      const adapted = adaptTasks(data);
+      const adapted = adaptTasks(data, sessionState);
       setTasks(adapted);
       if (adapted.length > 0) setSelectedId(adapted[0].id);
       if (activeSessionId) {
@@ -455,6 +277,43 @@ export default function TasksPage() {
     const t = setTimeout(() => setPrdStatus(null), 5000);
     return () => clearTimeout(t);
   }, [prdStatus]);
+
+  async function handlePushToLinear() {
+    if (!linearPayload || linearPushing) return;
+    setLinearPushing(true);
+    setLinearPushStatus(null);
+    setLinearPushError(null);
+    setLinearNotConnected(false);
+    try {
+      const res = await fetch("/api/linear/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ linear_payload: linearPayload }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { code?: string; error?: string };
+        if (res.status === 401 && body.code === "linear_not_connected") {
+          setLinearNotConnected(true);
+          return;
+        }
+        setLinearPushError(body.error ?? res.statusText ?? "Push failed");
+        setLinearPushStatus("error");
+        return;
+      }
+      setLinearPushStatus("success");
+    } catch (err) {
+      setLinearPushError(err instanceof Error ? err.message : "Connection failed");
+      setLinearPushStatus("error");
+    } finally {
+      setLinearPushing(false);
+    }
+  }
+
+  useEffect(() => {
+    if (linearPushStatus === null) return;
+    const t = setTimeout(() => setLinearPushStatus(null), 5000);
+    return () => clearTimeout(t);
+  }, [linearPushStatus]);
 
   useEffect(() => {
     if (!activeSessionId || !isAutorunPending(activeSessionId)) return;
@@ -535,6 +394,64 @@ export default function TasksPage() {
 
           {/* Actions */}
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {linearPushStatus === "success" && (
+              <span style={{ fontSize: 11.5, fontWeight: 600, padding: "2px 10px", borderRadius: 20, background: "rgba(34,197,94,0.12)", color: "#15803D" }}>
+                Pushed to Linear ✓
+              </span>
+            )}
+            {linearNotConnected && (
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 500, color: "#6B6B6B" }}>
+                Linear not connected —{" "}
+                <a
+                  href="/settings/integrations"
+                  style={{ color: "#E8561B", fontWeight: 600, textDecoration: "none" }}
+                >
+                  Connect in Settings ↗
+                </a>
+              </span>
+            )}
+            {linearPushStatus === "error" && (
+              <span
+                title={linearPushError ?? undefined}
+                style={{ fontSize: 11.5, fontWeight: 600, padding: "2px 10px", borderRadius: 20, background: "rgba(239,68,68,0.12)", color: "#DC2626", cursor: "help", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+              >
+                {linearPushError ? `Linear error: ${linearPushError}` : "Push failed — try again"}
+              </span>
+            )}
+            {/* Push to Linear */}
+            <button
+              onClick={handlePushToLinear}
+              disabled={linearPushing || !linearPayload || !activeSessionId}
+              title={
+                !activeSessionId
+                  ? "Select a session first"
+                  : !linearPayload
+                  ? "Run the full pipeline to generate the Linear payload first"
+                  : undefined
+              }
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 5,
+                padding: "0.4rem 0.875rem",
+                borderRadius: 8,
+                fontSize: "0.8125rem",
+                fontWeight: 500,
+                background: linearPushing || !linearPayload || !activeSessionId ? "#F8F4EF" : "#FFFFFF",
+                border: "1.5px solid #E4DDD4",
+                color: linearPushing || !linearPayload || !activeSessionId ? "#9E9E9E" : "#0D0D0D",
+                cursor: linearPushing || !linearPayload || !activeSessionId ? "not-allowed" : "pointer",
+                fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                opacity: !linearPayload || !activeSessionId ? 0.6 : 1,
+                transition: "background 150ms ease, border-color 150ms ease",
+              }}
+            >
+              {/* Linear-style triangle icon */}
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none" style={{ opacity: linearPushing || !linearPayload ? 0.4 : 0.7 }}>
+                <polygon points="5.5,1 10,9.5 1,9.5" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" fill="none" />
+              </svg>
+              {linearPushing ? "Pushing…" : "Push to Linear"}
+            </button>
             {prdStatus === "success" && (
               <span style={{ fontSize: 11.5, fontWeight: 600, padding: "2px 10px", borderRadius: 20, background: "rgba(34,197,94,0.12)", color: "#15803D" }}>
                 PRD generated ✓
@@ -962,6 +879,16 @@ export default function TasksPage() {
                                 {task.title}
                               </span>
 
+                              {/* Quality warning icon */}
+                              {task.qualityFlag && (
+                                <span
+                                  title={task.qualityIssues?.join("\n") ?? "Quality issues detected"}
+                                  style={{ fontSize: 11, color: "#D97706", flexShrink: 0, cursor: "help", lineHeight: 1 }}
+                                >
+                                  ⚠
+                                </span>
+                              )}
+
                               {/* Priority chip */}
                               <span
                                 style={{
@@ -1095,6 +1022,38 @@ export default function TasksPage() {
                 >
                   {selectedTask.description}
                 </p>
+
+                {/* Quality Issues */}
+                {selectedTask.qualityIssues && selectedTask.qualityIssues.length > 0 && (
+                  <>
+                    <SectionLabel>Quality Issues</SectionLabel>
+                    <div
+                      style={{
+                        background: "rgba(245,158,11,0.07)",
+                        border: "1px solid rgba(245,158,11,0.25)",
+                        borderRadius: 8,
+                        padding: "10px 14px",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 6,
+                      }}
+                    >
+                      {selectedTask.qualityIssues.map((issue, i) => (
+                        <div
+                          key={i}
+                          style={{ display: "flex", gap: 8, alignItems: "flex-start" }}
+                        >
+                          <span style={{ color: "#D97706", flexShrink: 0, fontSize: 12, lineHeight: 1.6 }}>
+                            ⚠
+                          </span>
+                          <span style={{ fontSize: 12.5, color: "#92400E", lineHeight: 1.6 }}>
+                            {issue}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                )}
 
                 {/* Steps */}
                 <SectionLabel>Steps</SectionLabel>

@@ -2,9 +2,10 @@
   "name": "specflowai",
   "private": true,
   "scripts": {
-    "dev": "concurrently -k -n frontend,backend -c blue,green \"npm run dev --prefix frontend\" \"npm run dev --prefix backend\"",
+    "dev": "concurrently -k -n frontend,backend,pipeline -c blue,green,magenta \"npm run dev --prefix frontend\" \"npm run dev --prefix backend\" \"npm run dev:pipeline --prefix backend\"",
     "dev:frontend": "npm run dev --prefix frontend",
-    "dev:backend": "npm run dev --prefix backend"
+    "dev:backend": "npm run dev --prefix backend",
+    "dev:pipeline": "npm run dev:pipeline --prefix backend"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"

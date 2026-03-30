@@ -62,12 +62,17 @@ def trim_to_budget(data: Union[Dict, list, str], max_tokens: int) -> Union[Dict,
         return trimmed_list
 
     elif isinstance(data, dict):
-        # As a fallback, stringify and trim
-        try:
-            json_str = json.dumps(data)
-        except Exception:
-            json_str = str(data)
-        return trim_to_budget(json_str, max_tokens)
+        # Trim dict by removing keys until it fits
+        if not data:
+            return data
+        trimmed_dict = dict(data)
+        # Try removing items one by one (remove largest keys first by name order)
+        keys_to_try = sorted(trimmed_dict.keys(), reverse=True)
+        while estimate_tokens(trimmed_dict) > max_tokens and len(trimmed_dict) > 1 and keys_to_try:
+            key_to_remove = keys_to_try.pop(0)
+            if key_to_remove in trimmed_dict:
+                trimmed_dict.pop(key_to_remove)
+        return trimmed_dict
 
     else:
         # Fallback for other types

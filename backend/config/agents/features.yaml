@@ -27,18 +27,24 @@ output_schema:
   groups: null
 
 critic:
-  criteria:
-    - problem_traceability
-    - measurable_success_metrics
-    - priority_tier_assigned
-    - clarity
-    - feasibility
-    - research_evidence_non_empty
-    - linked_problems_exist_in_memory
+  binary_checks:
+    - name: evidence_cited
+      pass_condition: "Every claim and linked_problem traces to a verbatim quote or specific data point from the research context"
+      fail_condition: "Any claim invented or not traceable to research input"
+    - name: metrics_concrete
+      pass_condition: "impact, effort, and confidence are valid enum/numeric values; acceptance_criteria uses measurable thresholds"
+      fail_condition: "Any metric uses vague language: fast, improved, scalable, better, seamless"
+    - name: linked_problems_valid
+      pass_condition: "linked_problems is a non-empty list and each entry matches a known problem title from memory"
+      fail_condition: "linked_problems is empty, missing, or contains names not found in the problems list"
 
 use_critic: true
 validate_evidence_chain: true
 max_retries: 2
+
+token_control:
+  max_output_tokens: 8192
+  retries: 2
 
 memory:
   read:

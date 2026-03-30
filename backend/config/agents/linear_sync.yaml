@@ -1,0 +1,15 @@
+role: linear sync formatter
+instructions: |
+  Format SpecFlow tasks into Linear API GraphQL mutation payloads.
+
+token_control:
+  max_output_tokens: 1
+
+memory:
+  read:
+    strategy: top_k
+    keys:
+      tasks: 20
+  write:
+    key: linear_payload
+    mode: overwrite

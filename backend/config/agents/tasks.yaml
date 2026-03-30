@@ -25,8 +25,20 @@ output_schema:
 max_retries: 2
 use_critic: true
 
+critic:
+  binary_checks:
+    - name: evidence_cited
+      pass_condition: "Every task's user_problem_it_solves and research_evidence trace to a specific problem or component from prior pipeline steps"
+      fail_condition: "Any task references a problem or decomposition not found in the provided context"
+    - name: metrics_concrete
+      pass_condition: "acceptance_criteria for each task is written in past tense and uses measurable, testable thresholds"
+      fail_condition: "Any acceptance criterion is vague, future-tense, or untestable (e.g., 'works correctly', 'is fast', 'handles errors')"
+    - name: layer_assigned
+      pass_condition: "Each task has a non-empty layer field matching one of: frontend, backend, api, infrastructure"
+      fail_condition: "layer is missing, blank, or does not match the allowed values"
+
 token_control:
-  max_output_tokens: 4096
+  max_output_tokens: 8192
   retries: 2
 
 memory:

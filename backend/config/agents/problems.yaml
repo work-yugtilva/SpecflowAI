@@ -24,3 +24,15 @@ output_schema:
 
 max_retries: 2
 use_critic: true
+
+critic:
+  binary_checks:
+    - name: evidence_cited
+      pass_condition: "research_evidence contains a direct quote or specific observation from the research context naming a real user or workflow"
+      fail_condition: "research_evidence is generic, absent, or not traceable to a specific passage in the input"
+    - name: metrics_concrete
+      pass_condition: "severity and confidence are non-vague (confidence is a number 0-100; severity is a named tier)"
+      fail_condition: "severity or confidence is missing, blank, or expressed vaguely"
+    - name: real_user_problem
+      pass_condition: "The problem describes something a real user encounters in their workflow, not a feature request or technical wish"
+      fail_condition: "The problem is written as a feature request ('We need X') or is a generic technical concern with no user grounding"

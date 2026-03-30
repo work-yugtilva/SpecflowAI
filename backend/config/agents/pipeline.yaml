@@ -41,6 +41,15 @@ steps:
       Return a JSON array of tasks with title, description, layer, and dependencies.
     output_key: tasks
 
+  - name: linear_sync
+    agent: linear_sync
+    task: |
+      Format the implementation tasks into Linear API GraphQL mutation payloads.
+      Return a structured payload containing IssueCreate mutations for each task,
+      IssueLabelCreate mutations per layer, and a ProjectCreate mutation.
+      Use PLACEHOLDER_ sentinel values for teamId and labelIds.
+    output_key: linear_payload
+
 session:
   persistence: true
   event_tracking: true

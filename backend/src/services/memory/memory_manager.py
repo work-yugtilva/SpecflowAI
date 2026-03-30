@@ -36,7 +36,7 @@ class MemoryManager:
         raw_memory = {}
         if strategy == "all":
             raw_memory = await self.store.export()
-        elif strategy in ["selective", "top_k"]:
+        elif strategy in ["selective", "top_k", "global_project_rag"]:
             keys = read_config.keys or []
             # If keys is a dict (like in top_k: keys: {problems: 3}), extract the keys list
             if isinstance(keys, dict):
@@ -44,19 +44,20 @@ class MemoryManager:
             else:
                 keys_list = keys
             raw_memory = await self.store.get_many(keys_list)
-            
+
         # If strategy is selective, no compression needed (unless params say otherwise, but standard selective is just filtering)
         if strategy == "selective":
             return raw_memory
-            
+
         # Apply context compression based on strategy and params
         params = getattr(read_config, "params", {}) or {}
-        if strategy == "top_k":
+        if strategy in ["top_k", "global_project_rag"]:
             # Pass keys down in params for specific k values if keys was a dict
             if isinstance(read_config.keys, dict):
                 params["keys"] = read_config.keys
-            
-        return compress(raw_memory, strategy, params)
+            return compress(raw_memory, "top_k", params)
+
+        return raw_memory
 
     async def write_from_agent(
         self,

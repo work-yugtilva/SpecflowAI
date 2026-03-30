@@ -2,6 +2,8 @@
 
 RESTful API server for SpecFlow, built with Express.js and TypeScript.
 
+Canonical environment, ports, and startup instructions live in [../docs/setup.md](../docs/setup.md).
+
 ## Setup
 
 1. **Install dependencies:**
@@ -9,18 +11,17 @@ RESTful API server for SpecFlow, built with Express.js and TypeScript.
    npm install
    ```
 
-2. **Create the shared repo-root `.env` file:**
-   ```bash
-   cd ..
-   cp .env.example .env
-   ```
-   Fill in your environment variables.
-
-3. **Run in development:**
+2. **Run in development:**
    ```bash
    npm run dev
    ```
    Server will run on `http://localhost:3001`
+
+The FastAPI pipeline service is separate. Start the full stack from the repo root with:
+
+```bash
+npm run dev
+```
 
 ## API Endpoints
 
@@ -63,13 +64,11 @@ Tokens are obtained from Supabase authentication.
   index.ts        - Main Express app
 ```
 
-## Database Integration (TODO)
+## Database Integration
 
-Services are structured to integrate with Supabase tables. Currently, they log operations but don't persist data. To complete:
-
-1. Create Supabase tables for `context`, `research`, etc.
-2. Implement database queries in service methods
-3. Add proper validation and error handling
+- `context_entries` stores global and session-scoped context
+- `research_entries` stores global and session-scoped research inputs
+- Supabase credentials are read from the repo-root `.env`
 
 ## Development
 

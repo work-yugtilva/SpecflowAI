@@ -12,6 +12,7 @@ SESSION_STATUS_PARTIAL = "partial"
 class Session(BaseModel):
     """Mirrors the sessions table row."""
     id: Optional[str] = Field(default=None)
+    project_id: Optional[str] = None
     session_name: Optional[str] = Field(default=None)
     status: str = SESSION_STATUS_ACTIVE
     metadata: Dict[str, Any] = {}

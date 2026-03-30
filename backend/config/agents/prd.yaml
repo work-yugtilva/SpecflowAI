@@ -29,7 +29,7 @@ output_schema:
 
 token_control:
   max_tokens: 32000
-  max_output_tokens: 6000
+  max_output_tokens: 16384
   retries: 2
 
 use_critic: false

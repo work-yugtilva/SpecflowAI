@@ -1,5 +1,7 @@
 // lib/api/session.ts — Client for the session system API routes (proxied via Next.js)
 
+import type { PipelineOutputs } from "@/lib/pipeline-contracts";
+
 const API_BASE = "/api/sessions";
 
 async function handleResponse<T>(res: Response): Promise<T> {
@@ -26,8 +28,11 @@ export interface SessionCreated {
 
 export interface SessionRunResponse {
   success: boolean;
-  data: Record<string, unknown>;
-  session_state: Record<string, unknown> | null;
+  data: PipelineOutputs;
+  session_state: {
+    last_completed_step?: string;
+    outputs?: Partial<PipelineOutputs>;
+  } | null;
 }
 
 export interface SessionEvent {
@@ -43,7 +48,7 @@ export interface SessionStateSnapshot {
   session_id: string;
   state: {
     last_completed_step?: string;
-    outputs?: Record<string, unknown>;
+    outputs?: Partial<PipelineOutputs>;
   };
   step: string | null;
 }

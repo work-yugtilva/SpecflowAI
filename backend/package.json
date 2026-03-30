@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "dev:pipeline": "node scripts/run-pipeline.mjs",
     "build": "tsc",
     "start": "node dist/index.js",
     "lint": "eslint src",

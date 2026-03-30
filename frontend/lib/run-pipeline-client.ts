@@ -2,6 +2,7 @@ import type { PipelineInput } from "@/lib/pipeline-types";
 import { runSession } from "@/lib/api/session";
 import { getActiveSessionId } from "@/lib/pipeline-input";
 import type { PipelineStepId } from "@/lib/pipeline-session";
+import type { PipelineOutputs } from "@/lib/pipeline-contracts";
 
 /** Shown when Generate is clicked without an active session, and in empty-state hints. */
 export const PIPELINE_REQUIRES_SESSION_MESSAGE =
@@ -18,15 +19,18 @@ export class NoActiveSessionError extends Error {
 export type PipelineRunMode = "session" | "orphaned";
 
 export interface PipelineRunResult {
-  data: Record<string, unknown>;
+  data: PipelineOutputs;
   mode: PipelineRunMode;
-  sessionState: Record<string, unknown> | null;
+  sessionState: {
+    last_completed_step?: string;
+    outputs?: Partial<PipelineOutputs>;
+  } | null;
   /** When mode is "orphaned", the pipeline output is stored here for later attachment. */
-  orphanedOutput?: Record<string, unknown>;
+  orphanedOutput?: PipelineOutputs;
 }
 
 const PIPELINE_URL =
-  process.env.NEXT_PUBLIC_PIPELINE_URL ?? "http://localhost:8000";
+  process.env.NEXT_PUBLIC_PIPELINE_URL ?? "http://localhost:8001";
 
 export async function runPipelineStepOrFull(
   step: PipelineStepId,
@@ -50,7 +54,7 @@ export async function runPipelineStepOrFull(
       const text = await res.text().catch(() => res.statusText);
       throw new Error(`Pipeline API ${res.status}: ${text}`);
     }
-    const body = (await res.json()) as { success: boolean; data: Record<string, unknown> };
+    const body = (await res.json()) as { success: boolean; data: PipelineOutputs };
     return {
       data: body.data,
       mode: "orphaned",
@@ -65,8 +69,8 @@ export async function runPipelineStepOrFull(
     step
   );
   return {
-    data: res.data as Record<string, unknown>,
+    data: res.data,
     mode: "session",
-    sessionState: (res.session_state ?? null) as Record<string, unknown> | null,
+    sessionState: res.session_state ?? null,
   };
 }

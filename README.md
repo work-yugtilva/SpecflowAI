@@ -1,22 +1,21 @@
 # SpecflowAI
 
-SpecFlowAI uses a single repo-root env file for both the frontend and backend.
+SpecFlow uses a single repo-root env file for the frontend, Express API, and FastAPI pipeline service.
 
-## Setup
+Canonical setup instructions live in [docs/setup.md](./docs/setup.md).
 
-1. Copy the shared env template:
-   ```bash
-   cp .env.example .env
-   ```
-2. Install dependencies:
-   ```bash
-   npm install
-   npm install --prefix frontend
-   npm install --prefix backend
-   ```
-3. Start the app:
-   ```bash
-   npm run dev
-   ```
+Quick start:
 
-`frontend/.env.local` and `backend/.env` are no longer used.
+```bash
+cp .env.example .env
+npm install
+npm install --prefix frontend
+npm install --prefix backend
+python3 -m pip install -r backend/requirements.txt
+npm run dev
+```
+
+Local ports:
+- frontend: `http://localhost:3000`
+- express api: `http://localhost:3001`
+- pipeline api: `http://localhost:8001`

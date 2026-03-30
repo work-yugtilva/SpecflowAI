@@ -144,38 +144,147 @@ class BaseAgent:
     # -------------------------
     # CRITIC LOOP
     # -------------------------
-    def run_critic(self, output):
-        critic_config = self.config.get("critic", {})
+    def _build_checks_text(self, binary_checks: list) -> str:
+        """Format binary_checks list from config into a prompt-ready string."""
+        lines = []
+        for c in binary_checks:
+            lines.append(f"  CHECK — {c['name'].upper()}:")
+            lines.append(f"    PASS: {c['pass_condition']}")
+            lines.append(f"    FAIL: {c['fail_condition']}")
+            if c.get("auto_pass_if_missing"):
+                lines.append(f"    NOTE: auto-PASS if the field is absent")
+        return "\n".join(lines)
 
-        if not critic_config:
-            return output
+    def _critic_check(self, output: list, binary_checks: list) -> list:
+        """
+        Phase 1 — Binary check each item against the configured binary_checks.
+        Returns list of dicts: [{index, binary_checks: {name: bool}, quality_issues: [...]}]
+        """
+        checks_text = self._build_checks_text(binary_checks)
+        check_names = [c["name"] for c in binary_checks]
 
         prompt = (
             f"ROLE: {self.role}\n\n"
-            f"You are reviewing AI-generated output for quality.\n\n"
-            f"ORIGINAL OUTPUT:\n{json.dumps(output, indent=2)}\n\n"
-            f"EVALUATION CRITERIA:\n{json.dumps(critic_config.get('criteria', []))}\n\n"
-            f"OUTPUT SCHEMA (every item must conform to this):\n"
-            f"{json.dumps(self.config.get('output_schema', {}), indent=2)}\n\n"
-            f"For each item that fails a criterion or violates the schema:\n"
-            f"- Rewrite it to fix the issue\n"
-            f"- Ensure research_evidence is non-empty and references specific input data\n"
-            f"- Ensure all required fields are present and non-vague\n\n"
-            f"Return ONLY a JSON array of the improved items. No preamble. No markdown."
+            f"You are a Skeptical Principal Engineer reviewing AI-generated output.\n\n"
+            f"ITEMS TO CHECK ({len(output)} total):\n{json.dumps(output, indent=2)}\n\n"
+            f"BINARY CHECKS — apply each to every item:\n{checks_text}\n\n"
+            f"For each item, return an object with:\n"
+            f"  index (int, 0-based position in the array above)\n"
+            f"  binary_checks: object mapping each check name to true (PASS) or false (FAIL)\n"
+            f"  quality_issues: array of strings — one specific sentence per failing check\n\n"
+            f"Return ONLY a JSON array of these objects. No preamble. No markdown."
         )
 
-        # Output token control for critic
         token_ctrl = self.config.get("token_control", {})
         max_output_tokens = token_ctrl.get("max_output_tokens", 2048)
         retries = token_ctrl.get("retries", self.max_retries)
 
-        response = run_ai(prompt, max_tokens=max_output_tokens, retries=retries, model=self.config.get("model"), temperature=self.config.get("temperature"))
+        response = run_ai(
+            prompt,
+            max_tokens=max_output_tokens,
+            retries=retries,
+            model=self.config.get("model"),
+            temperature=self.config.get("temperature"),
+        )
         parsed = self.parse_json(response)
 
-        if isinstance(parsed, list):
+        if not isinstance(parsed, list):
+            logger.warning("[critic_check] agent=%s failed to parse check results — skipping", self.name)
+            return []
+
+        # Guarantee all check names are present; default to True (pass) if missing
+        for item_result in parsed:
+            checks = item_result.setdefault("binary_checks", {})
+            for name in check_names:
+                checks.setdefault(name, True)
+            item_result.setdefault("quality_issues", [])
+
+        return parsed
+
+    def _critic_rewrite(self, output: list, failing: list, binary_checks: list) -> list:
+        """
+        Phase 2 — Rewrite only the items that failed >= 1 binary check.
+        Returns rewritten items in the same order as `failing`.
+        """
+        checks_text = self._build_checks_text(binary_checks)
+
+        # Build a list of failing items annotated with their issues
+        annotated = []
+        for item_result in failing:
+            idx = item_result.get("index", 0)
+            original = output[idx] if idx < len(output) else {}
+            annotated.append({
+                **original,
+                "__quality_issues": item_result.get("quality_issues", []),
+            })
+
+        prompt = (
+            f"ROLE: {self.role}\n\n"
+            f"The following items FAILED one or more binary quality checks.\n"
+            f"Each item includes a '__quality_issues' field listing exactly what failed.\n\n"
+            f"BINARY CHECKS (all items must pass these after rewrite):\n{checks_text}\n\n"
+            f"OUTPUT SCHEMA (every rewritten item must conform to this):\n"
+            f"{json.dumps(self.config.get('output_schema', {}), indent=2)}\n\n"
+            f"FAILING ITEMS TO REWRITE:\n{json.dumps(annotated, indent=2)}\n\n"
+            f"For each item:\n"
+            f"- Fix every issue listed in '__quality_issues'\n"
+            f"- Remove the '__quality_issues' field from the rewritten item\n"
+            f"- Keep all other fields intact unless they caused a failure\n\n"
+            f"Return ONLY a JSON array of the rewritten items (same count and order). "
+            f"No preamble. No markdown."
+        )
+
+        token_ctrl = self.config.get("token_control", {})
+        max_output_tokens = token_ctrl.get("max_output_tokens", 2048)
+        retries = token_ctrl.get("retries", self.max_retries)
+
+        response = run_ai(
+            prompt,
+            max_tokens=max_output_tokens,
+            retries=retries,
+            model=self.config.get("model"),
+            temperature=self.config.get("temperature"),
+        )
+        parsed = self.parse_json(response)
+
+        if isinstance(parsed, list) and len(parsed) == len(failing):
             return parsed
 
-        return output
+        # If rewrite count mismatches, fall back to original failing items unchanged
+        logger.warning(
+            "[critic_rewrite] agent=%s rewrite count mismatch (expected=%d got=%d) — using originals",
+            self.name, len(failing), len(parsed) if isinstance(parsed, list) else 0,
+        )
+        return [output[r.get("index", 0)] for r in failing if r.get("index", 0) < len(output)]
+
+    def run_critic(self, output):
+        critic_config = self.config.get("critic", {})
+        binary_checks = critic_config.get("binary_checks", [])
+
+        if not binary_checks or not isinstance(output, list) or not output:
+            return output  # no checks defined — nothing to do
+
+        # Phase 1: check each item against configured binary_checks
+        check_results = self._critic_check(output, binary_checks)
+        failing = [r for r in check_results if not all(r.get("binary_checks", {}).values())]
+
+        logger.info(
+            "[critic] agent=%s total=%d failing=%d",
+            self.name, len(output), len(failing),
+        )
+
+        if not failing:
+            return output  # all items passed — skip rewrite
+
+        # Phase 2: mandatory targeted rewrite of failing items only
+        rewritten = self._critic_rewrite(output, failing, binary_checks)
+
+        result = list(output)
+        for item_result, rewrite in zip(failing, rewritten):
+            idx = item_result.get("index", 0)
+            if idx < len(result):
+                result[idx] = rewrite
+        return result
 
     def validate_evidence_chain(self, output: Any, memory: dict) -> Any:
         """
@@ -289,33 +398,48 @@ class BaseAgent:
                 memory = trim_to_budget(memory, budget // 3)
             prompt = self.build_prompt(task, context, memory=memory)
 
-        for _ in range(self.max_retries + 1):
-            response = run_ai(prompt, max_tokens=max_output_tokens, retries=retries, model=self.config.get("model"), temperature=self.config.get("temperature"))
-            logger.info("[execute] agent=%s raw_response_len=%d", self.name, len(response))
+        output_schema = self.config.get("output_schema") or {}
 
+        if output_schema:
+            from services.agents.agent_schema_factory import build_response_model, extract_output
+            from services.ai.client import run_ai_structured
+            ResponseModel = build_response_model(output_schema, self.name)
+            structured = run_ai_structured(
+                prompt,
+                ResponseModel,
+                max_tokens=max_output_tokens,
+                model=self.config.get("model"),
+                temperature=self.config.get("temperature"),
+                max_retries=retries,
+            )
+            parsed = extract_output(structured, output_schema)
+            logger.info("[execute] agent=%s structured_output parsed_type=%s parsed_len=%s",
+                self.name, type(parsed).__name__,
+                len(parsed) if isinstance(parsed, (list, dict)) else "N/A")
+        else:
+            response = run_ai(prompt, max_tokens=max_output_tokens, retries=retries,
+                              model=self.config.get("model"), temperature=self.config.get("temperature"))
+            logger.info("[execute] agent=%s raw_response_len=%d", self.name, len(response))
             parsed = self.parse_json(response)
             logger.info("[execute] agent=%s parsed_type=%s parsed_len=%s",
                 self.name, type(parsed).__name__,
                 len(parsed) if isinstance(parsed, (list, dict)) else "N/A")
+            if not parsed:
+                return {"error": "Invalid JSON", "raw": response}
 
-            if parsed:
-                parsed = self.run_tools(parsed)
+        parsed = self.run_tools(parsed)
 
-                if self.use_critic:
-                    pre_critic_len = len(parsed) if isinstance(parsed, (list, dict)) else "N/A"
-                    parsed = self.run_critic(parsed)
-                    post_critic_len = len(parsed) if isinstance(parsed, (list, dict)) else "N/A"
-                    logger.info("[execute] agent=%s critic: before=%s after=%s",
-                        self.name, pre_critic_len, post_critic_len)
+        if self.use_critic:
+            pre_critic_len = len(parsed) if isinstance(parsed, (list, dict)) else "N/A"
+            parsed = self.run_critic(parsed)
+            post_critic_len = len(parsed) if isinstance(parsed, (list, dict)) else "N/A"
+            logger.info("[execute] agent=%s critic: before=%s after=%s",
+                self.name, pre_critic_len, post_critic_len)
 
-                if self.config.get("validate_evidence_chain") and memory:
-                    parsed = self.validate_evidence_chain(parsed, memory)
+        if self.config.get("validate_evidence_chain") and memory:
+            parsed = self.validate_evidence_chain(parsed, memory)
 
-                return parsed
-
-            prompt += "\nFix JSON. Return ONLY valid JSON."
-
-        return {"error": "Invalid JSON", "raw": response}
+        return parsed
 
     # -------------------------
     # ASYNC
