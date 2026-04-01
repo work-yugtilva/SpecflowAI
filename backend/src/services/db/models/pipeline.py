@@ -13,6 +13,7 @@ class PipelineRun(BaseModel):
     """Mirrors the pipelines table row."""
     id: Optional[str] = Field(default=None)
     session_id: Optional[str] = Field(default=None)
+    user_id: Optional[str] = None       # Supabase auth user UUID; required for RLS (added in migration 011)
     status: str = PIPELINE_STATUS_PENDING
     input_data: Dict[str, Any] = {}
     output_data: Dict[str, Any] = {}

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Check, X, Loader } from "lucide-react";
 import {
   PIPELINE_STEPS,
   type PipelineStepId,
@@ -19,22 +20,34 @@ const STEP_STYLE: Record<
 
 function StepIcon({ status }: { status: StepStatus }) {
   if (status === "completed")
-    return <span style={{ color: "#15803D", marginRight: 4 }}>✓</span>;
+    return (
+      <Check
+        size={11}
+        strokeWidth={2.5}
+        style={{ color: "#15803D", marginRight: 4, flexShrink: 0 }}
+      />
+    );
   if (status === "running")
     return (
-      <span
+      <Loader
+        size={11}
+        strokeWidth={2.5}
         style={{
           color: "#E8561B",
           marginRight: 4,
-          display: "inline-block",
+          flexShrink: 0,
           animation: "pipelineStepSpin 1s linear infinite",
         }}
-      >
-        ⟳
-      </span>
+      />
     );
   if (status === "failed")
-    return <span style={{ color: "#B91C1C", marginRight: 4 }}>✕</span>;
+    return (
+      <X
+        size={11}
+        strokeWidth={2.5}
+        style={{ color: "#B91C1C", marginRight: 4, flexShrink: 0 }}
+      />
+    );
   return null;
 }
 
@@ -143,6 +156,11 @@ export function PipelineStepper({
               const isCurrent = step.id === currentStepId;
               const st = statuses[step.id];
               const c = STEP_STYLE[st];
+              // Completed/failed steps always use their status colour so green
+              // stays visible even when this is the current page. Current pending
+              // steps get a dark border to act as a "you are here" indicator.
+              const borderColor =
+                isCurrent && st === "pending" ? "#0D0D0D" : c.border;
               return (
                 <div key={step.id} style={{ display: "flex", alignItems: "center" }}>
                   {i > 0 && (
@@ -157,11 +175,11 @@ export function PipelineStepper({
                       fontWeight: isCurrent ? 600 : 500,
                       padding: "4px 10px",
                       borderRadius: 8,
-                      border: `1px solid ${c.border}`,
-                      background: isCurrent ? "rgba(232,86,27,0.08)" : c.bg,
-                      color: isCurrent ? "#0D0D0D" : c.text,
+                      border: `1px solid ${borderColor}`,
+                      background: c.bg,
+                      color: c.text,
                       textDecoration: "none",
-                      transition: "background 0.15s ease",
+                      transition: "background 0.2s ease, border-color 0.2s ease",
                       display: "flex",
                       alignItems: "center",
                     }}

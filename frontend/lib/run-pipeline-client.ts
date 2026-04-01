@@ -1,5 +1,6 @@
 import type { PipelineInput } from "@/lib/pipeline-types";
-import { runSession } from "@/lib/api/session";
+import { startSessionRunAsync, subscribeToRunStream } from "@/lib/api/session";
+import type { RunStreamEvent } from "@/lib/api/session";
 import { getActiveSessionId } from "@/lib/pipeline-input";
 import type { PipelineStepId } from "@/lib/pipeline-session";
 import type { PipelineOutputs } from "@/lib/pipeline-contracts";
@@ -24,6 +25,7 @@ export interface PipelineRunResult {
   sessionState: {
     last_completed_step?: string;
     outputs?: Partial<PipelineOutputs>;
+    regeneration_counts?: Partial<Record<string, number>>;
   } | null;
   /** When mode is "orphaned", the pipeline output is stored here for later attachment. */
   orphanedOutput?: PipelineOutputs;
@@ -36,7 +38,9 @@ export async function runPipelineStepOrFull(
   step: PipelineStepId,
   inputData: PipelineInput,
   /** When set, overrides localStorage active session. */
-  explicitSessionId?: string | null
+  explicitSessionId?: string | null,
+  /** Optional callback fired for each SSE event (phase, step_complete, etc.). */
+  onProgress?: (event: RunStreamEvent) => void
 ): Promise<PipelineRunResult> {
   const sessionId =
     explicitSessionId !== undefined ? explicitSessionId : getActiveSessionId();
@@ -63,14 +67,28 @@ export async function runPipelineStepOrFull(
     };
   }
 
-  const res = await runSession(
+  // Session mode: start background job and subscribe to SSE stream.
+  // This prevents 504 timeouts on long pipeline runs because the connection
+  // receives heartbeat events before any proxy timeout window elapses.
+  const { job_id } = await startSessionRunAsync(
     sessionId,
     inputData as unknown as Record<string, unknown>,
     step
   );
-  return {
-    data: res.data,
-    mode: "session",
-    sessionState: res.session_state ?? null,
-  };
+
+  for await (const event of subscribeToRunStream(sessionId, job_id)) {
+    onProgress?.(event);
+    if (event.type === "complete") {
+      return {
+        data: event.data,
+        mode: "session",
+        sessionState: event.session_state ?? null,
+      };
+    }
+    if (event.type === "error") {
+      throw new Error(event.message ?? "Pipeline run failed");
+    }
+  }
+
+  throw new Error("Stream ended without a completion event");
 }

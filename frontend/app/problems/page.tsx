@@ -99,6 +99,9 @@ export default function ProblemsPage() {
 
   const selectedProblem = problems.find((p) => p.id === selectedId) ?? null;
   const stepStatuses = computeStepStatuses(sessionDetail);
+  const regenCount = sessionDetail?.state?.state?.regeneration_counts?.["problems"] ?? 0;
+  const regenLimitReached = regenCount >= 3;
+  const regenLeft = Math.max(0, 3 - regenCount);
 
   useEffect(() => {
     setProblems([]);
@@ -235,16 +238,22 @@ export default function ProblemsPage() {
             {qualityScore && (
               <QualityBadge score={qualityScore.score} passed={qualityScore.passed} />
             )}
+            {activeSessionId && regenCount > 0 && (
+              <span style={{ fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(0,0,0,0.06)", color: regenLimitReached ? "#B91C1C" : "#6B6B6B", letterSpacing: "0.03em" }}>
+                {regenLeft}/3 Regenerations Left
+              </span>
+            )}
           </div>
           <button
             onClick={handleGenerate}
-            disabled={generating || !activeSessionId}
+            disabled={generating || !activeSessionId || regenLimitReached}
+            title={regenLimitReached ? "Limit reached. Use the editor." : undefined}
             className="btn-dark"
             style={{
               fontSize: 13,
               padding: "0.45rem 1rem",
-              opacity: generating || !activeSessionId ? 0.6 : 1,
-              cursor: generating || !activeSessionId ? "not-allowed" : "pointer",
+              opacity: generating || !activeSessionId || regenLimitReached ? 0.6 : 1,
+              cursor: generating || !activeSessionId || regenLimitReached ? "not-allowed" : "pointer",
             }}
           >
             {generating

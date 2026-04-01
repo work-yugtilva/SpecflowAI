@@ -1,11 +1,14 @@
 # services/agents/base_agent.py
 
-from services.ai.client import run_ai
+import asyncio
 import json
 import logging
-import time
-import asyncio
+import re
 from typing import Any, Dict, List, Optional
+
+from json_repair import loads as repair_loads
+from core.exceptions import JSONParsingError
+from services.ai.client import run_ai, run_ai_async
 
 logger = logging.getLogger(__name__)
 
@@ -23,54 +26,104 @@ class BaseAgent:
     # -------------------------
     # PROMPT BUILDER
     # -------------------------
-    def build_prompt(self, task: str, context: dict = None, memory: dict = None) -> str:
+    def build_prompt(
+        self,
+        task: str,
+        context: dict = None,
+        memory: dict = None,
+        response_contract_extra: str = "",
+    ) -> str:
         output_schema = self.config.get("output_schema", {})
         schema_hint = self._build_schema_hint(output_schema) if output_schema else "JSON"
-        context_str = json.dumps(context or {}, indent=2)
+        blocks = [
+            self._wrap_xml("role", self.role),
+            self._wrap_xml("instructions", self.instructions),
+            self._wrap_xml("task", task),
+        ]
 
-        return (
-            f"ROLE: {self.role}\n\n"
-            f"CONTEXT:\n{context_str}\n\n"
-            f"TASK: {task}\n\n"
-            f"OUTPUT FORMAT: Return ONLY a JSON array. No preamble. No markdown. No explanation.\n"
-            f"{schema_hint}"
+        for tag, value in self._iter_context_blocks(context):
+            blocks.append(self._wrap_xml(tag, value))
+
+        blocks.append(
+            self._wrap_xml(
+                "response_contract",
+                self._build_response_contract(output_schema, schema_hint, response_contract_extra),
+            )
         )
+        return "\n\n".join(blocks)
 
-    def _format_list(self, items):
-        if not items:
-            return "None"
-        return "\n".join([f"- {i}" for i in items])
+    def _iter_context_blocks(self, context: dict | None) -> list[tuple[str, Any]]:
+        if not context:
+            return []
+        if not isinstance(context, dict):
+            return [("context", context)]
 
-    def _format_dict(self, d):
-        if not d:
-            return "None"
-        if isinstance(d, dict):
-            return "\n".join([f"- {k}: {v}" for k, v in d.items()])
-        return str(d)
+        blocks: list[tuple[str, Any]] = []
+        for key, value in context.items():
+            if value is None:
+                continue
+            tag = re.sub(r"[^a-zA-Z0-9_]+", "_", str(key)).strip("_") or "context"
+            blocks.append((tag, value))
+        return blocks
+
+    def _wrap_xml(self, tag: str, value: Any) -> str:
+        if isinstance(value, str):
+            rendered = value.strip()
+        else:
+            rendered = json.dumps(value, indent=2, ensure_ascii=True)
+        return f"<{tag}>\n{rendered}\n</{tag}>"
+
+    def _build_response_contract(
+        self,
+        output_schema: dict,
+        schema_hint: str,
+        response_contract_extra: str = "",
+    ) -> str:
+        schema_type = (output_schema or {}).get("type", "object")
+        lines = [
+            "Return ONLY JSON. Do not emit markdown, prose, or code fences.",
+            "Fill the top-level reasoning field first using only facts grounded in the tagged context.",
+            "After reasoning, fill the final payload fields.",
+        ]
+
+        if schema_type == "list":
+            lines.append("For list outputs, return an object with top-level metadata plus an items array.")
+
+        if response_contract_extra:
+            lines.append(response_contract_extra.strip())
+
+        lines.append("Schema:")
+        lines.append(schema_hint)
+        return "\n".join(lines)
 
     def _build_schema_hint(self, schema: dict) -> str:
         """Generate a concrete JSON example from the output_schema config."""
         if not schema:
             return '{"result": "..."}'
+
         schema_type = schema.get("type", "object")
-        
-        # Merge all structure-defining keys
-        combined = {}
-        if "fields" in schema and schema["fields"]:
-            combined.update(schema["fields"])
-        if "sections" in schema and schema["sections"]:
-            combined.update(schema["sections"])
-        if "groups" in schema and schema["groups"]:
-            combined.update(schema["groups"])
 
         if schema_type == "list":
-            example = self._fields_to_example(combined)
-            return f"[\n  {json.dumps(example, indent=2)}\n]"
-        else:
-            if not combined:
-                return '{"result": "..."}'
-            example = self._fields_to_example(combined)
+            envelope_fields = {}
+            for key in ("sections", "groups"):
+                value = schema.get(key)
+                if isinstance(value, dict):
+                    envelope_fields.update(value)
+            item_fields = schema.get("fields") or {}
+
+            example = self._fields_to_example(envelope_fields) if envelope_fields else {}
+            example["items"] = [self._fields_to_example(item_fields)] if item_fields else []
             return json.dumps(example, indent=2)
+
+        combined = {}
+        for key in ("fields", "sections", "groups"):
+            value = schema.get(key)
+            if isinstance(value, dict):
+                combined.update(value)
+
+        if not combined:
+            return '{"result": "..."}'
+        return json.dumps(self._fields_to_example(combined), indent=2)
 
     def _fields_to_example(self, fields) -> Any:
         """Recursively build an example object from field definitions."""
@@ -78,12 +131,14 @@ class BaseAgent:
             if not fields:
                 return ["..."]
             return [self._fields_to_example(fields[0])]
-            
+
         if not isinstance(fields, dict):
             if fields == "string":
                 return "..."
             if fields == "number":
                 return 0
+            if fields == "boolean":
+                return False
             if fields == "list":
                 return ["..."]
             if fields == "object":
@@ -95,35 +150,37 @@ class BaseAgent:
             result[key] = self._fields_to_example(val)
         return result
 
+    def _clip_list(self, values: Any, limit: int | None) -> list:
+        if not isinstance(values, list):
+            return [values] if values else []
+        if limit is None:
+            return values
+        return values[:limit]
+
     # -------------------------
     # JSON PARSER
     # -------------------------
     def parse_json(self, text: str):
+        snippet = (text or "")[:200]
         try:
-            return json.loads(text)
-        except:
-            pass
+            result = repair_loads(text)
+            # json_repair returns the input as a string when it cannot find JSON structure
+            if not isinstance(result, (dict, list)):
+                raise ValueError(f"json_repair returned {type(result).__name__}, expected dict or list")
+            return result
+        except JSONParsingError:
+            raise
+        except Exception as e:
+            logger.error(
+                "[parse_json] agent=%s failed: %s | snippet=%r",
+                self.name, e, snippet,
+            )
+            raise JSONParsingError(str(e), raw_snippet=snippet) from e
 
-        # Try to extract JSON from markdown code blocks
-        import re
-        match = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text)
-        if match:
-            try:
-                return json.loads(match.group(1))
-            except:
-                pass
-
-        # Try to find JSON object/array pattern
-        for start in range(len(text)):
-            if text[start] in ('{', '['):
-                for end in range(len(text), start, -1):
-                    if text[end-1] in ('}', ']'):
-                        try:
-                            return json.loads(text[start:end])
-                        except:
-                            pass
-
-        return None
+    def strip_reasoning_field(self, output: Any) -> Any:
+        if isinstance(output, dict) and "reasoning" in output:
+            return {key: value for key, value in output.items() if key != "reasoning"}
+        return output
 
     # -------------------------
     # TOOL EXECUTION
@@ -142,17 +199,51 @@ class BaseAgent:
         return output
 
     # -------------------------
+    # RETRY FEEDBACK
+    # -------------------------
+    def build_failure_feedback(
+        self,
+        source: str,
+        attempt: int,
+        score: int | None = None,
+        critical_issues: Optional[list[str]] = None,
+        item_results: Optional[list[dict]] = None,
+    ) -> dict:
+        item_failures = []
+        for item in item_results or []:
+            checks = item.get("binary_checks", {}) if isinstance(item, dict) else {}
+            failed_checks = [name for name, passed in checks.items() if passed is False]
+            quality_issues = [
+                str(issue) for issue in item.get("quality_issues", [])
+            ] if isinstance(item, dict) else []
+            if failed_checks or quality_issues:
+                item_failures.append({
+                    "index": item.get("index"),
+                    "failed_checks": failed_checks,
+                    "quality_issues": quality_issues,
+                })
+
+        feedback = {
+            "source": source,
+            "attempt": attempt,
+            "critical_issues": [str(issue) for issue in (critical_issues or [])],
+            "item_failures": item_failures,
+        }
+        if score is not None:
+            feedback["score"] = score
+        return feedback
+
+    # -------------------------
     # CRITIC LOOP
     # -------------------------
     def _build_checks_text(self, binary_checks: list) -> str:
-        """Format binary_checks list from config into a prompt-ready string."""
         lines = []
         for c in binary_checks:
-            lines.append(f"  CHECK — {c['name'].upper()}:")
-            lines.append(f"    PASS: {c['pass_condition']}")
-            lines.append(f"    FAIL: {c['fail_condition']}")
+            lines.append(f"CHECK: {c['name']}")
+            lines.append(f"PASS: {c['pass_condition']}")
+            lines.append(f"FAIL: {c['fail_condition']}")
             if c.get("auto_pass_if_missing"):
-                lines.append(f"    NOTE: auto-PASS if the field is absent")
+                lines.append("NOTE: auto-PASS if the field is absent")
         return "\n".join(lines)
 
     def _critic_check(self, output: list, binary_checks: list) -> list:
@@ -160,20 +251,27 @@ class BaseAgent:
         Phase 1 — Binary check each item against the configured binary_checks.
         Returns list of dicts: [{index, binary_checks: {name: bool}, quality_issues: [...]}]
         """
-        checks_text = self._build_checks_text(binary_checks)
         check_names = [c["name"] for c in binary_checks]
-
-        prompt = (
-            f"ROLE: {self.role}\n\n"
-            f"You are a Skeptical Principal Engineer reviewing AI-generated output.\n\n"
-            f"ITEMS TO CHECK ({len(output)} total):\n{json.dumps(output, indent=2)}\n\n"
-            f"BINARY CHECKS — apply each to every item:\n{checks_text}\n\n"
-            f"For each item, return an object with:\n"
-            f"  index (int, 0-based position in the array above)\n"
-            f"  binary_checks: object mapping each check name to true (PASS) or false (FAIL)\n"
-            f"  quality_issues: array of strings — one specific sentence per failing check\n\n"
-            f"Return ONLY a JSON array of these objects. No preamble. No markdown."
-        )
+        prompt = "\n\n".join([
+            self._wrap_xml("role", self.role),
+            self._wrap_xml(
+                "instructions",
+                "You are a skeptical principal engineer reviewing AI-generated output. "
+                "Evaluate every item against every binary check with no partial credit.",
+            ),
+            self._wrap_xml("items_to_check", output),
+            self._wrap_xml("binary_checks", binary_checks),
+            self._wrap_xml(
+                "response_contract",
+                (
+                    "Return ONLY a JSON array.\n"
+                    "Each object must contain:\n"
+                    "- index: 0-based item position\n"
+                    "- binary_checks: object mapping each check name to true or false\n"
+                    "- quality_issues: array with one specific sentence per failed check"
+                ),
+            ),
+        ])
 
         token_ctrl = self.config.get("token_control", {})
         max_output_tokens = token_ctrl.get("max_output_tokens", 2048)
@@ -186,13 +284,12 @@ class BaseAgent:
             model=self.config.get("model"),
             temperature=self.config.get("temperature"),
         )
-        parsed = self.parse_json(response)
-
-        if not isinstance(parsed, list):
+        try:
+            parsed = self.parse_json(response)
+        except JSONParsingError:
             logger.warning("[critic_check] agent=%s failed to parse check results — skipping", self.name)
             return []
 
-        # Guarantee all check names are present; default to True (pass) if missing
         for item_result in parsed:
             checks = item_result.setdefault("binary_checks", {})
             for name in check_names:
@@ -206,9 +303,6 @@ class BaseAgent:
         Phase 2 — Rewrite only the items that failed >= 1 binary check.
         Returns rewritten items in the same order as `failing`.
         """
-        checks_text = self._build_checks_text(binary_checks)
-
-        # Build a list of failing items annotated with their issues
         annotated = []
         for item_result in failing:
             idx = item_result.get("index", 0)
@@ -218,21 +312,35 @@ class BaseAgent:
                 "__quality_issues": item_result.get("quality_issues", []),
             })
 
-        prompt = (
-            f"ROLE: {self.role}\n\n"
-            f"The following items FAILED one or more binary quality checks.\n"
-            f"Each item includes a '__quality_issues' field listing exactly what failed.\n\n"
-            f"BINARY CHECKS (all items must pass these after rewrite):\n{checks_text}\n\n"
-            f"OUTPUT SCHEMA (every rewritten item must conform to this):\n"
-            f"{json.dumps(self.config.get('output_schema', {}), indent=2)}\n\n"
-            f"FAILING ITEMS TO REWRITE:\n{json.dumps(annotated, indent=2)}\n\n"
-            f"For each item:\n"
-            f"- Fix every issue listed in '__quality_issues'\n"
-            f"- Remove the '__quality_issues' field from the rewritten item\n"
-            f"- Keep all other fields intact unless they caused a failure\n\n"
-            f"Return ONLY a JSON array of the rewritten items (same count and order). "
-            f"No preamble. No markdown."
+        feedback = self.build_failure_feedback(
+            source="critic",
+            attempt=1,
+            critical_issues=[
+                issue
+                for item in failing
+                for issue in item.get("quality_issues", [])
+            ],
+            item_results=failing,
         )
+
+        prompt = "\n\n".join([
+            self._wrap_xml("role", self.role),
+            self._wrap_xml(
+                "instructions",
+                (
+                    "Rewrite only the failing items. Fix every listed issue, keep intact fields that already pass, "
+                    "and remove the temporary __quality_issues field from the final output."
+                ),
+            ),
+            self._wrap_xml("previous_attempt_failure", feedback),
+            self._wrap_xml("binary_checks", binary_checks),
+            self._wrap_xml("failing_items", annotated),
+            self._wrap_xml("output_schema", self.config.get("output_schema", {})),
+            self._wrap_xml(
+                "response_contract",
+                "Return ONLY a JSON array of rewritten items in the same count and order as failing_items.",
+            ),
+        ])
 
         token_ctrl = self.config.get("token_control", {})
         max_output_tokens = token_ctrl.get("max_output_tokens", 2048)
@@ -245,15 +353,23 @@ class BaseAgent:
             model=self.config.get("model"),
             temperature=self.config.get("temperature"),
         )
-        parsed = self.parse_json(response)
+        try:
+            parsed = self.parse_json(response)
+        except JSONParsingError:
+            logger.warning(
+                "[critic_rewrite] agent=%s failed to parse rewrite — using originals",
+                self.name,
+            )
+            return [output[r.get("index", 0)] for r in failing if r.get("index", 0) < len(output)]
 
         if isinstance(parsed, list) and len(parsed) == len(failing):
             return parsed
 
-        # If rewrite count mismatches, fall back to original failing items unchanged
         logger.warning(
             "[critic_rewrite] agent=%s rewrite count mismatch (expected=%d got=%d) — using originals",
-            self.name, len(failing), len(parsed) if isinstance(parsed, list) else 0,
+            self.name,
+            len(failing),
+            len(parsed) if isinstance(parsed, list) else 0,
         )
         return [output[r.get("index", 0)] for r in failing if r.get("index", 0) < len(output)]
 
@@ -262,22 +378,181 @@ class BaseAgent:
         binary_checks = critic_config.get("binary_checks", [])
 
         if not binary_checks or not isinstance(output, list) or not output:
-            return output  # no checks defined — nothing to do
+            return output
 
-        # Phase 1: check each item against configured binary_checks
         check_results = self._critic_check(output, binary_checks)
         failing = [r for r in check_results if not all(r.get("binary_checks", {}).values())]
 
         logger.info(
             "[critic] agent=%s total=%d failing=%d",
-            self.name, len(output), len(failing),
+            self.name,
+            len(output),
+            len(failing),
         )
 
         if not failing:
-            return output  # all items passed — skip rewrite
+            return output
 
-        # Phase 2: mandatory targeted rewrite of failing items only
         rewritten = self._critic_rewrite(output, failing, binary_checks)
+
+        result = list(output)
+        for item_result, rewrite in zip(failing, rewritten):
+            idx = item_result.get("index", 0)
+            if idx < len(result):
+                result[idx] = rewrite
+        return result
+
+    async def _critic_check_async(self, output: list, binary_checks: list) -> list:
+        """
+        Async version of _critic_check — uses run_ai_async.
+        Phase 1 — Binary check each item against the configured binary_checks.
+        Returns list of dicts: [{index, binary_checks: {name: bool}, quality_issues: [...]}]
+        """
+        check_names = [c["name"] for c in binary_checks]
+        prompt = "\n\n".join([
+            self._wrap_xml("role", self.role),
+            self._wrap_xml(
+                "instructions",
+                "You are a skeptical principal engineer reviewing AI-generated output. "
+                "Evaluate every item against every binary check with no partial credit.",
+            ),
+            self._wrap_xml("items_to_check", output),
+            self._wrap_xml("binary_checks", binary_checks),
+            self._wrap_xml(
+                "response_contract",
+                (
+                    "Return ONLY a JSON array.\n"
+                    "Each object must contain:\n"
+                    "- index: 0-based item position\n"
+                    "- binary_checks: object mapping each check name to true or false\n"
+                    "- quality_issues: array with one specific sentence per failed check"
+                ),
+            ),
+        ])
+
+        token_ctrl = self.config.get("token_control", {})
+        max_output_tokens = token_ctrl.get("max_output_tokens", 2048)
+        retries = token_ctrl.get("retries", self.max_retries)
+
+        response = await run_ai_async(
+            prompt,
+            max_tokens=max_output_tokens,
+            retries=retries,
+            model=self.config.get("model"),
+            temperature=self.config.get("temperature"),
+        )
+        try:
+            parsed = self.parse_json(response)
+        except JSONParsingError:
+            logger.warning("[critic_check] agent=%s failed to parse check results — skipping", self.name)
+            return []
+
+        for item_result in parsed:
+            checks = item_result.setdefault("binary_checks", {})
+            for name in check_names:
+                checks.setdefault(name, True)
+            item_result.setdefault("quality_issues", [])
+
+        return parsed
+
+    async def _critic_rewrite_async(self, output: list, failing: list, binary_checks: list) -> list:
+        """
+        Async version of _critic_rewrite — uses run_ai_async.
+        Phase 2 — Rewrite only the items that failed >= 1 binary check.
+        Returns rewritten items in the same order as `failing`.
+        """
+        annotated = []
+        for item_result in failing:
+            idx = item_result.get("index", 0)
+            original = output[idx] if idx < len(output) else {}
+            annotated.append({
+                **original,
+                "__quality_issues": item_result.get("quality_issues", []),
+            })
+
+        feedback = self.build_failure_feedback(
+            source="critic",
+            attempt=1,
+            critical_issues=[
+                issue
+                for item in failing
+                for issue in item.get("quality_issues", [])
+            ],
+            item_results=failing,
+        )
+
+        prompt = "\n\n".join([
+            self._wrap_xml("role", self.role),
+            self._wrap_xml(
+                "instructions",
+                (
+                    "Rewrite only the failing items. Fix every listed issue, keep intact fields that already pass, "
+                    "and remove the temporary __quality_issues field from the final output."
+                ),
+            ),
+            self._wrap_xml("previous_attempt_failure", feedback),
+            self._wrap_xml("binary_checks", binary_checks),
+            self._wrap_xml("failing_items", annotated),
+            self._wrap_xml("output_schema", self.config.get("output_schema", {})),
+            self._wrap_xml(
+                "response_contract",
+                "Return ONLY a JSON array of rewritten items in the same count and order as failing_items.",
+            ),
+        ])
+
+        token_ctrl = self.config.get("token_control", {})
+        max_output_tokens = token_ctrl.get("max_output_tokens", 2048)
+        retries = token_ctrl.get("retries", self.max_retries)
+
+        response = await run_ai_async(
+            prompt,
+            max_tokens=max_output_tokens,
+            retries=retries,
+            model=self.config.get("model"),
+            temperature=self.config.get("temperature"),
+        )
+        try:
+            parsed = self.parse_json(response)
+        except JSONParsingError:
+            logger.warning(
+                "[critic_rewrite] agent=%s failed to parse rewrite — using originals",
+                self.name,
+            )
+            return [output[r.get("index", 0)] for r in failing if r.get("index", 0) < len(output)]
+
+        if isinstance(parsed, list) and len(parsed) == len(failing):
+            return parsed
+
+        logger.warning(
+            "[critic_rewrite] agent=%s rewrite count mismatch (expected=%d got=%d) — using originals",
+            self.name,
+            len(failing),
+            len(parsed) if isinstance(parsed, list) else 0,
+        )
+        return [output[r.get("index", 0)] for r in failing if r.get("index", 0) < len(output)]
+
+    async def run_critic_async(self, output):
+        """Async version of run_critic."""
+        critic_config = self.config.get("critic", {})
+        binary_checks = critic_config.get("binary_checks", [])
+
+        if not binary_checks or not isinstance(output, list) or not output:
+            return output
+
+        check_results = await self._critic_check_async(output, binary_checks)
+        failing = [r for r in check_results if not all(r.get("binary_checks", {}).values())]
+
+        logger.info(
+            "[critic] agent=%s total=%d failing=%d",
+            self.name,
+            len(output),
+            len(failing),
+        )
+
+        if not failing:
+            return output
+
+        rewritten = await self._critic_rewrite_async(output, failing, binary_checks)
 
         result = list(output)
         for item_result, rewrite in zip(failing, rewritten):
@@ -307,7 +582,6 @@ class BaseAgent:
         if not isinstance(problems_raw, list) or not problems_raw:
             return output
 
-        # Build case-insensitive set of known problem titles
         known_titles: set = set()
         for p in problems_raw:
             if isinstance(p, dict):
@@ -323,14 +597,12 @@ class BaseAgent:
 
             issues: list = list(item.get("quality_issues", []))
 
-            # Check research_evidence length
             evidence = item.get("research_evidence", "")
             if not isinstance(evidence, str) or len(evidence.strip()) <= 10:
                 issues.append(
                     "research_evidence is missing or too short (must be > 10 chars)"
                 )
 
-            # Check linked_problems exists and is a non-empty list
             linked = item.get("linked_problems")
             if not linked or not isinstance(linked, list):
                 issues.append("linked_problems is missing or empty")
@@ -358,7 +630,6 @@ class BaseAgent:
     # EXECUTE
     # -------------------------
     def execute(self, task: str, context: dict = None, memory: dict = None, session: dict = None):
-        # Log session context for observability (not injected into AI prompt)
         if session:
             logger.debug(
                 json.dumps({
@@ -368,30 +639,27 @@ class BaseAgent:
                 })
             )
 
-        # 1. Compress context
         compression_config = self.config.get("compression", {})
         if compression_config:
             from services.context.context_compressor import compress
+
             context = compress(
-                context, 
-                strategy=compression_config.get("strategy", "none"), 
-                params=compression_config.get("params", {})
+                context,
+                strategy=compression_config.get("strategy", "none"),
+                params=compression_config.get("params", {}),
             )
 
-        # 2. Build Prompt
         prompt = self.build_prompt(task, context, memory=memory)
 
-        # 3. Apply token budget
-        from services.token.token_manager import estimate_tokens, allocate_budget, trim_to_budget
+        from services.token.token_manager import allocate_budget, estimate_tokens, trim_to_budget
+
         budget = allocate_budget(self.name, self.config)
         prompt_tokens = estimate_tokens(prompt)
 
-        # Output token control from config, default to something sensible
         max_output_tokens = self.config.get("token_control", {}).get("max_output_tokens", 2048)
         retries = self.config.get("token_control", {}).get("retries", self.max_retries)
 
         if prompt_tokens > budget:
-            # Rebuild prompt with trimmed context/memory
             if context:
                 context = trim_to_budget(context, budget // 3)
             if memory:
@@ -401,8 +669,12 @@ class BaseAgent:
         output_schema = self.config.get("output_schema") or {}
 
         if output_schema:
-            from services.agents.agent_schema_factory import build_response_model, extract_output
+            from services.agents.agent_schema_factory import (
+                build_response_model,
+                extract_payload_and_reasoning,
+            )
             from services.ai.client import run_ai_structured
+
             ResponseModel = build_response_model(output_schema, self.name)
             structured = run_ai_structured(
                 prompt,
@@ -412,50 +684,232 @@ class BaseAgent:
                 temperature=self.config.get("temperature"),
                 max_retries=retries,
             )
-            parsed = extract_output(structured, output_schema)
-            logger.info("[execute] agent=%s structured_output parsed_type=%s parsed_len=%s",
-                self.name, type(parsed).__name__,
-                len(parsed) if isinstance(parsed, (list, dict)) else "N/A")
+            parsed, reasoning = extract_payload_and_reasoning(structured, output_schema)
+            if reasoning:
+                logger.info("[execute] agent=%s reasoning_len=%d", self.name, len(reasoning))
+            logger.info(
+                "[execute] agent=%s structured_output parsed_type=%s parsed_len=%s",
+                self.name,
+                type(parsed).__name__,
+                len(parsed) if isinstance(parsed, (list, dict)) else "N/A",
+            )
         else:
-            response = run_ai(prompt, max_tokens=max_output_tokens, retries=retries,
-                              model=self.config.get("model"), temperature=self.config.get("temperature"))
-            logger.info("[execute] agent=%s raw_response_len=%d", self.name, len(response))
-            parsed = self.parse_json(response)
-            logger.info("[execute] agent=%s parsed_type=%s parsed_len=%s",
-                self.name, type(parsed).__name__,
-                len(parsed) if isinstance(parsed, (list, dict)) else "N/A")
-            if not parsed:
-                return {"error": "Invalid JSON", "raw": response}
+            attempt_prompt = prompt
+            parse_error: JSONParsingError | None = None
+            for attempt in range(retries + 1):
+                response = run_ai(
+                    attempt_prompt,
+                    max_tokens=max_output_tokens,
+                    model=self.config.get("model"),
+                    temperature=self.config.get("temperature"),
+                )
+                logger.info(
+                    "[execute] agent=%s raw_response_len=%d attempt=%d",
+                    self.name, len(response), attempt,
+                )
+                try:
+                    parsed = self.parse_json(response)
+                    parse_error = None
+                    logger.info(
+                        "[execute] agent=%s parsed_type=%s parsed_len=%s",
+                        self.name,
+                        type(parsed).__name__,
+                        len(parsed) if isinstance(parsed, (list, dict)) else "N/A",
+                    )
+                    break
+                except JSONParsingError as exc:
+                    parse_error = exc
+                    if attempt < retries:
+                        logger.warning(
+                            "[execute] agent=%s JSON parse failed (attempt %d/%d): %s",
+                            self.name, attempt + 1, retries + 1, exc,
+                        )
+                        attempt_prompt = "\n\n".join([
+                            "Your previous response could not be parsed as JSON.",
+                            f"Parse error: {exc}",
+                            f"Failing snippet: {exc.raw_snippet!r}",
+                            "Return ONLY a valid JSON object or array, with no preamble or markdown fences.",
+                            "Original task:",
+                            prompt,
+                        ])
+                    else:
+                        logger.error(
+                            "[execute] agent=%s JSON parsing failed after %d attempts — halting",
+                            self.name, retries + 1,
+                        )
 
+            if parse_error:
+                return {"status": "error", "message": "Critical JSON parsing failure after retries."}
+
+        parsed = self.strip_reasoning_field(parsed)
         parsed = self.run_tools(parsed)
 
         if self.use_critic:
             pre_critic_len = len(parsed) if isinstance(parsed, (list, dict)) else "N/A"
             parsed = self.run_critic(parsed)
             post_critic_len = len(parsed) if isinstance(parsed, (list, dict)) else "N/A"
-            logger.info("[execute] agent=%s critic: before=%s after=%s",
-                self.name, pre_critic_len, post_critic_len)
+            logger.info(
+                "[execute] agent=%s critic: before=%s after=%s",
+                self.name,
+                pre_critic_len,
+                post_critic_len,
+            )
 
         if self.config.get("validate_evidence_chain") and memory:
             parsed = self.validate_evidence_chain(parsed, memory)
 
-        return parsed
+        return self.strip_reasoning_field(parsed)
 
     # -------------------------
     # ASYNC
     # -------------------------
     async def execute_async(self, task: str, context: dict = None, memory: dict = None, session: dict = None):
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(
-            None, lambda: self.execute(task, context, memory=memory, session=session)
-        )
+        """
+        Native async version of execute() — uses await on all I/O (AI calls, critic, tools).
+        No thread pool blocking. Mirrors execute() exactly but with async/await.
+        """
+        if session:
+            logger.debug(
+                json.dumps({
+                    "event": "agent_execute",
+                    "agent": self.name,
+                    "session_id": session.get("id", ""),
+                })
+            )
+
+        compression_config = self.config.get("compression", {})
+        if compression_config:
+            from services.context.context_compressor import compress
+
+            context = compress(
+                context,
+                strategy=compression_config.get("strategy", "none"),
+                params=compression_config.get("params", {}),
+            )
+
+        prompt = self.build_prompt(task, context, memory=memory)
+
+        from services.token.token_manager import allocate_budget, estimate_tokens, trim_to_budget
+
+        budget = allocate_budget(self.name, self.config)
+        prompt_tokens = estimate_tokens(prompt)
+
+        max_output_tokens = self.config.get("token_control", {}).get("max_output_tokens", 2048)
+        retries = self.config.get("token_control", {}).get("retries", self.max_retries)
+
+        if prompt_tokens > budget:
+            if context:
+                context = trim_to_budget(context, budget // 3)
+            if memory:
+                memory = trim_to_budget(memory, budget // 3)
+            prompt = self.build_prompt(task, context, memory=memory)
+
+        output_schema = self.config.get("output_schema") or {}
+
+        if output_schema:
+            from services.agents.agent_schema_factory import (
+                build_response_model,
+                extract_payload_and_reasoning,
+            )
+            from services.ai.client import run_ai_structured_async
+
+            ResponseModel = build_response_model(output_schema, self.name)
+            structured = await run_ai_structured_async(
+                prompt,
+                ResponseModel,
+                max_tokens=max_output_tokens,
+                model=self.config.get("model"),
+                temperature=self.config.get("temperature"),
+                max_retries=retries,
+            )
+            parsed, reasoning = extract_payload_and_reasoning(structured, output_schema)
+            if reasoning:
+                logger.info("[execute_async] agent=%s reasoning_len=%d", self.name, len(reasoning))
+            logger.info(
+                "[execute_async] agent=%s structured_output parsed_type=%s parsed_len=%s",
+                self.name,
+                type(parsed).__name__,
+                len(parsed) if isinstance(parsed, (list, dict)) else "N/A",
+            )
+        else:
+            from services.ai.client import run_ai_async
+
+            attempt_prompt = prompt
+            parse_error: JSONParsingError | None = None
+            for attempt in range(retries + 1):
+                response = await run_ai_async(
+                    attempt_prompt,
+                    max_tokens=max_output_tokens,
+                    model=self.config.get("model"),
+                    temperature=self.config.get("temperature"),
+                )
+                logger.info(
+                    "[execute_async] agent=%s raw_response_len=%d attempt=%d",
+                    self.name, len(response), attempt,
+                )
+                try:
+                    parsed = self.parse_json(response)
+                    parse_error = None
+                    logger.info(
+                        "[execute_async] agent=%s parsed_type=%s parsed_len=%s",
+                        self.name,
+                        type(parsed).__name__,
+                        len(parsed) if isinstance(parsed, (list, dict)) else "N/A",
+                    )
+                    break
+                except JSONParsingError as exc:
+                    parse_error = exc
+                    if attempt < retries:
+                        logger.warning(
+                            "[execute_async] agent=%s JSON parse failed (attempt %d/%d): %s",
+                            self.name, attempt + 1, retries + 1, exc,
+                        )
+                        attempt_prompt = "\n\n".join([
+                            "Your previous response could not be parsed as JSON.",
+                            f"Parse error: {exc}",
+                            f"Failing snippet: {exc.raw_snippet!r}",
+                            "Return ONLY a valid JSON object or array, with no preamble or markdown fences.",
+                            "Original task:",
+                            prompt,
+                        ])
+                    else:
+                        logger.error(
+                            "[execute_async] agent=%s JSON parsing failed after %d attempts — halting",
+                            self.name, retries + 1,
+                        )
+
+            if parse_error:
+                return {"status": "error", "message": "Critical JSON parsing failure after retries."}
+
+        parsed = self.strip_reasoning_field(parsed)
+        parsed = self.run_tools(parsed)
+
+        if self.use_critic:
+            pre_critic_len = len(parsed) if isinstance(parsed, (list, dict)) else "N/A"
+            parsed = await self.run_critic_async(parsed)
+            post_critic_len = len(parsed) if isinstance(parsed, (list, dict)) else "N/A"
+            logger.info(
+                "[execute_async] agent=%s critic: before=%s after=%s",
+                self.name,
+                pre_critic_len,
+                post_critic_len,
+            )
+
+        if self.config.get("validate_evidence_chain") and memory:
+            parsed = self.validate_evidence_chain(parsed, memory)
+
+        return self.strip_reasoning_field(parsed)
 
     # -------------------------
     # STREAMING
     # -------------------------
     def stream(self, task: str, context: dict = None):
         prompt = self.build_prompt(task, context)
-        response = run_ai(prompt, model=self.config.get("model"), temperature=self.config.get("temperature"))
+        response = run_ai(
+            prompt,
+            model=self.config.get("model"),
+            temperature=self.config.get("temperature"),
+        )
 
         for chunk in response.split():
             yield chunk

@@ -1,13 +1,16 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Sidebar } from "@/components/ui/sidebar";
 import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
 import { getSession } from "@/lib/api/session";
 import type { SessionDetail } from "@/lib/api/session";
 import { useActiveSession } from "@/lib/active-session-context";
 import { computeStepStatuses } from "@/lib/pipeline-session";
+import type { LinearPayload } from "@/lib/pipeline-contracts";
 import dynamic from "next/dynamic";
+import { useEditor, EditorContent } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
 const TextShimmer = dynamic(
   () => import("@/components/ui/text-shimmer").then((m) => m.TextShimmer)
 );
@@ -168,9 +171,68 @@ function ArchitectureRenderer({ arch }: { arch: Record<string, string> }) {
   );
 }
 
+// ─── TipTap inline string editor ─────────────────────────────────────────────
+
+function TipTapStringEditor({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const lines = (value ?? "").split("\n").filter((l) => l.length > 0);
+  const initialContent = {
+    type: "doc",
+    content:
+      lines.length > 0
+        ? lines.map((line) => ({
+            type: "paragraph",
+            content: [{ type: "text", text: line }],
+          }))
+        : [{ type: "paragraph", content: [] }],
+  };
+
+  const editor = useEditor({
+    extensions: [StarterKit],
+    content: initialContent,
+    immediatelyRender: false,
+    onUpdate: ({ editor }) => {
+      onChange(editor.getText({ blockSeparator: "\n" }));
+    },
+  });
+
+  return (
+    <div className="tiptap-wrapper">
+      <EditorContent editor={editor} />
+    </div>
+  );
+}
+
 // ─── Section card renderer ────────────────────────────────────────────────────
 
-function SectionCard({ title, value, sectionKey }: { title: string; value: unknown; sectionKey: string }) {
+function SectionCard({
+  title, value, sectionKey, editing, onEditStart, onEditEnd, onUpdate, onScheduleSave,
+}: {
+  title: string; value: unknown; sectionKey: string;
+  editing: boolean;
+  onEditStart: () => void; onEditEnd: () => void;
+  onUpdate: (v: unknown) => void;
+  onScheduleSave?: (v: unknown) => void;
+}) {
+  const editTextareaStyle: React.CSSProperties = {
+    width: "100%", padding: "10px 12px", borderRadius: 8,
+    border: "1.5px solid #E8561B", fontSize: 13, color: "#0D0D0D", lineHeight: 1.7,
+    fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+    resize: "vertical" as const, outline: "none", background: "#FDFAF7",
+    boxSizing: "border-box",
+  };
+  const editMonoStyle: React.CSSProperties = {
+    ...editTextareaStyle,
+    fontSize: 12, lineHeight: 1.6,
+    fontFamily: "var(--font-mono, 'Courier New', monospace)",
+    minHeight: 200,
+  };
+
   return (
     <div
       style={{
@@ -181,18 +243,33 @@ function SectionCard({ title, value, sectionKey }: { title: string; value: unkno
         marginBottom: 12,
       }}
     >
-      <h3
-        style={{
-          fontFamily: "var(--font-instrument), Georgia, serif",
-          fontSize: 16,
-          fontWeight: 600,
-          color: "#0D0D0D",
-          marginBottom: 10,
-          letterSpacing: "-0.01em",
-        }}
-      >
-        {title}
-      </h3>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <h3
+          style={{
+            fontFamily: "var(--font-instrument), Georgia, serif",
+            fontSize: 16,
+            fontWeight: 600,
+            color: "#0D0D0D",
+            margin: 0,
+            letterSpacing: "-0.01em",
+          }}
+        >
+          {title}
+        </h3>
+        {typeof value !== "string" && (
+          <button
+            onClick={() => editing ? onEditEnd() : onEditStart()}
+            style={{
+              background: "none", border: "none", cursor: "pointer", padding: "2px 8px",
+              borderRadius: 6, fontSize: 11, fontWeight: 500,
+              color: editing ? "#E8561B" : "#9E9E9E",
+              fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+            }}
+          >
+            {editing ? "Done" : "Edit"}
+          </button>
+        )}
+      </div>
       <div
         style={{
           fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
@@ -201,12 +278,39 @@ function SectionCard({ title, value, sectionKey }: { title: string; value: unkno
           lineHeight: 1.7,
         }}
       >
-        {sectionKey === "goals" && Array.isArray(value) ? <GoalsRenderer items={value} /> :
-         sectionKey === "features" && Array.isArray(value) ? <FeaturesRenderer items={value} /> :
-         sectionKey === "risks" && Array.isArray(value) ? <RisksRenderer items={value} /> :
-         sectionKey === "success_metrics" && Array.isArray(value) ? <MetricsRenderer items={value} /> :
-         sectionKey === "architecture" && typeof value === "object" && !Array.isArray(value) ? <ArchitectureRenderer arch={value as Record<string, string>} /> :
-         renderValue(value)}
+        {typeof value === "string" ? (
+          <TipTapStringEditor
+            key={sectionKey}
+            value={value}
+            onChange={(newVal) => {
+              onUpdate(newVal);
+              onScheduleSave?.(newVal);
+            }}
+          />
+        ) : editing && Array.isArray(value) ? (
+          <textarea
+            defaultValue={JSON.stringify(value, null, 2)}
+            autoFocus
+            onBlur={e => {
+              try { onUpdate(JSON.parse(e.target.value)); onEditEnd(); } catch {}
+            }}
+            style={editMonoStyle}
+          />
+        ) : editing && typeof value === "object" && !Array.isArray(value) ? (
+          <textarea
+            defaultValue={JSON.stringify(value, null, 2)}
+            autoFocus
+            onBlur={e => {
+              try { onUpdate(JSON.parse(e.target.value)); onEditEnd(); } catch {}
+            }}
+            style={{ ...editMonoStyle, minHeight: 120 }}
+          />
+        ) : sectionKey === "goals" && Array.isArray(value) ? <GoalsRenderer items={value} /> :
+           sectionKey === "features" && Array.isArray(value) ? <FeaturesRenderer items={value} /> :
+           sectionKey === "risks" && Array.isArray(value) ? <RisksRenderer items={value} /> :
+           sectionKey === "success_metrics" && Array.isArray(value) ? <MetricsRenderer items={value} /> :
+           sectionKey === "architecture" && typeof value === "object" && !Array.isArray(value) ? <ArchitectureRenderer arch={value as Record<string, string>} /> :
+           renderValue(value)}
       </div>
     </div>
   );
@@ -217,25 +321,164 @@ function renderValue(val: unknown): React.ReactNode {
   if (typeof val === "string") return <p style={{ margin: 0 }}>{val}</p>;
   if (Array.isArray(val)) {
     return (
-      <ul style={{ margin: 0, paddingLeft: 18 }}>
-        {val.map((item, i) => (
-          <li key={i} style={{ marginBottom: 4 }}>
-            {typeof item === "object" && item !== null ? (
-              <span>
-                {item.title || item.name ? (
-                  <strong>{item.title ?? item.name}: </strong>
-                ) : null}
-                {item.description ?? JSON.stringify(item)}
-              </span>
-            ) : (
-              String(item)
-            )}
-          </li>
-        ))}
-      </ul>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {val.map((item, i) => {
+          if (typeof item !== "object" || item === null) {
+            return <div key={i} style={{ fontSize: 14, color: "#6B6B6B" }}>{String(item)}</div>;
+          }
+          const obj = item as Record<string, unknown>;
+
+          // Implementation plan phase card
+          if (obj.phase || obj.deliverables) {
+            const deliverables = Array.isArray(obj.deliverables) ? obj.deliverables : [];
+            return (
+              <div key={i} style={{ background: "#F8F4EF", borderRadius: 10, padding: "14px 16px", border: "1px solid #E4DDD4" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: "#0D0D0D" }}>
+                    {String(obj.phase ?? "")}
+                  </span>
+                  {obj.duration != null && (
+                    <span style={{ fontSize: 11, fontWeight: 500, padding: "2px 8px", borderRadius: 20, background: "rgba(232,86,27,0.10)", color: "#E8561B" }}>
+                      {String(obj.duration)}
+                    </span>
+                  )}
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 4 }}>
+                  {deliverables.map((d, di) => (
+                    <li key={di} style={{ fontSize: 13, color: "#3D3D3D", lineHeight: 1.6 }}>{String(d)}</li>
+                  ))}
+                </ul>
+              </div>
+            );
+          }
+
+          // Goals card
+          if (obj.goal || (obj.metric && !obj.baseline)) {
+            return (
+              <div key={i} style={{ background: "#FFFFFF", borderRadius: 10, padding: "14px 16px", border: "1px solid #E4DDD4" }}>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: "#0D0D0D", marginBottom: 8 }}>
+                  {String(obj.goal ?? obj.title ?? "")}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  {obj.metric != null && (
+                    <div>
+                      <span style={{ fontSize: 10.5, fontWeight: 600, color: "#9E9E9E", textTransform: "uppercase" as const, letterSpacing: "0.05em" }}>Metric</span>
+                      <p style={{ fontSize: 12.5, color: "#3D3D3D", margin: "3px 0 0" }}>{String(obj.metric)}</p>
+                    </div>
+                  )}
+                  {obj.target != null && (
+                    <div>
+                      <span style={{ fontSize: 10.5, fontWeight: 600, color: "#9E9E9E", textTransform: "uppercase" as const, letterSpacing: "0.05em" }}>Target</span>
+                      <p style={{ fontSize: 12.5, color: "#E8561B", fontWeight: 500, margin: "3px 0 0" }}>{String(obj.target)}</p>
+                    </div>
+                  )}
+                  {obj.timeline != null && (
+                    <div style={{ gridColumn: "1 / -1" }}>
+                      <span style={{ fontSize: 10.5, fontWeight: 600, color: "#9E9E9E", textTransform: "uppercase" as const, letterSpacing: "0.05em" }}>Timeline</span>
+                      <p style={{ fontSize: 12.5, color: "#6B6B6B", margin: "3px 0 0" }}>{String(obj.timeline)}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
+          // Risks card
+          if (obj.risk || obj.likelihood) {
+            const likelihood = String(obj.likelihood ?? "medium").toLowerCase();
+            const likelihoodColor = likelihood === "high" ? "#DC2626" : likelihood === "low" ? "#15803D" : "#D97706";
+            const likelihoodBg = likelihood === "high" ? "rgba(239,68,68,0.10)" : likelihood === "low" ? "rgba(34,197,94,0.10)" : "rgba(245,158,11,0.10)";
+            return (
+              <div key={i} style={{ background: "#FFFFFF", borderRadius: 10, padding: "14px 16px", border: "1px solid #E4DDD4" }}>
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 10, marginBottom: 8 }}>
+                  <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: likelihoodBg, color: likelihoodColor, textTransform: "uppercase" as const, letterSpacing: "0.05em", flexShrink: 0, marginTop: 1 }}>
+                    {String(obj.likelihood ?? "medium")}
+                  </span>
+                  <span style={{ fontSize: 13.5, fontWeight: 600, color: "#0D0D0D", lineHeight: 1.4 }}>{String(obj.risk ?? "")}</span>
+                </div>
+                {obj.mitigation != null && (
+                  <p style={{ fontSize: 13, color: "#6B6B6B", lineHeight: 1.6, margin: 0, paddingLeft: 4, borderLeft: "2px solid #E4DDD4" }}>
+                    ↳ {String(obj.mitigation)}
+                  </p>
+                )}
+              </div>
+            );
+          }
+
+          // Success metrics card
+          if (obj.metric && (obj.baseline || obj.target)) {
+            return (
+              <div key={i} style={{ background: "#FFFFFF", borderRadius: 10, padding: "14px 16px", border: "1px solid #E4DDD4" }}>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: "#0D0D0D", marginBottom: 8 }}>{String(obj.metric)}</div>
+                {obj.measurement != null && <p style={{ fontSize: 12.5, color: "#6B6B6B", margin: "0 0 10px", lineHeight: 1.5 }}>{String(obj.measurement)}</p>}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  {obj.baseline != null && (
+                    <div style={{ background: "#F8F4EF", borderRadius: 8, padding: "10px 12px" }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: "#9E9E9E", textTransform: "uppercase" as const, letterSpacing: "0.06em" }}>Baseline</span>
+                      <p style={{ fontSize: 12.5, color: "#3D3D3D", margin: "4px 0 0", lineHeight: 1.5 }}>{String(obj.baseline)}</p>
+                    </div>
+                  )}
+                  {obj.target != null && (
+                    <div style={{ background: "rgba(232,86,27,0.06)", borderRadius: 8, padding: "10px 12px" }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: "#E8561B", textTransform: "uppercase" as const, letterSpacing: "0.06em" }}>Target</span>
+                      <p style={{ fontSize: 12.5, color: "#E8561B", fontWeight: 600, margin: "4px 0 0", lineHeight: 1.5 }}>{String(obj.target)}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
+          // Features card
+          if (obj.title && (obj.description || obj.acceptance_criteria)) {
+            return (
+              <div key={i} style={{ background: "#FFFFFF", borderRadius: 10, padding: "14px 16px", border: "1px solid #E4DDD4" }}>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: "#0D0D0D", marginBottom: 6 }}>{String(obj.title)}</div>
+                {obj.linked_problem != null && (
+                  <span style={{ fontSize: 11, color: "#E8561B", fontWeight: 500, display: "block", marginBottom: 8 }}>
+                    Solves: {String(obj.linked_problem)}
+                  </span>
+                )}
+                {obj.description != null && <p style={{ fontSize: 13, color: "#3D3D3D", lineHeight: 1.6, margin: "0 0 10px" }}>{String(obj.description)}</p>}
+                {obj.acceptance_criteria != null && (
+                  <pre style={{ margin: 0, padding: "10px 12px", background: "#F8F4EF", borderRadius: 8, fontSize: 12, color: "#3D3D3D", whiteSpace: "pre-wrap", lineHeight: 1.6, fontFamily: "monospace", border: "1px solid #E4DDD4" }}>
+                    {String(obj.acceptance_criteria)}
+                  </pre>
+                )}
+              </div>
+            );
+          }
+
+          // Generic fallback
+          return (
+            <div key={i} style={{ fontSize: 14, color: "#3D3D3D", lineHeight: 1.7 }}>
+              {(obj.title != null || obj.name != null) ? (
+                <><strong>{String(obj.title ?? obj.name)}</strong>{obj.description != null ? `: ${String(obj.description)}` : ""}</>
+              ) : (
+                <span>{JSON.stringify(obj)}</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
     );
   }
   if (typeof val === "object") {
+    const obj = val as Record<string, unknown>;
+    const archKeys = ["frontend", "backend", "data"];
+    const isArchitecture = archKeys.some(k => k in obj);
+    if (isArchitecture) {
+      return (
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {archKeys.filter(k => obj[k]).map(k => (
+            <div key={k} style={{ background: "#F8F4EF", borderRadius: 10, padding: "14px 16px", border: "1px solid #E4DDD4" }}>
+              <span style={{ fontSize: 10.5, fontWeight: 700, color: "#9E9E9E", textTransform: "uppercase" as const, letterSpacing: "0.08em", display: "block", marginBottom: 8 }}>{k}</span>
+              <p style={{ fontSize: 13, color: "#3D3D3D", lineHeight: 1.7, margin: 0 }}>{String(obj[k])}</p>
+            </div>
+          ))}
+        </div>
+      );
+    }
     return <pre style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: 13 }}>{JSON.stringify(val, null, 2)}</pre>;
   }
   return String(val);
@@ -253,8 +496,19 @@ export default function PrdPage() {
   const [fromSession, setFromSession] = useState(false);
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
   const [showConfirmRegenerate, setShowConfirmRegenerate] = useState(false);
+  const [linearPayload, setLinearPayload] = useState<LinearPayload | null>(null);
+  const [linearPushing, setLinearPushing] = useState(false);
+  const [linearPushStatus, setLinearPushStatus] = useState<"success" | "error" | null>(null);
+  const [linearPushError, setLinearPushError] = useState<string | null>(null);
+  const [linearNotConnected, setLinearNotConnected] = useState(false);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const stepStatuses = computeStepStatuses(sessionDetail);
+  const regenCount = sessionDetail?.state?.state?.regeneration_counts?.["prd"] ?? 0;
+  const regenLimitReached = regenCount >= 3;
+  const regenLeft = Math.max(0, 3 - regenCount);
 
   // ── Load existing PRD from memory_entries on mount ──
   useEffect(() => {
@@ -263,12 +517,22 @@ export default function PrdPage() {
     setError(null);
     setFromSession(false);
     setSessionDetail(null);
+    setLinearPayload(null);
+    setLinearPushStatus(null);
+    setLinearPushError(null);
+    setLinearNotConnected(false);
     if (!activeSessionId) return;
     let cancelled = false;
 
-    // Load session detail for stepper
+    // Load session detail for stepper + linear_payload
     getSession(activeSessionId)
-      .then((d) => { if (!cancelled) setSessionDetail(d); })
+      .then((d) => {
+        if (!cancelled) {
+          setSessionDetail(d);
+          const lp = d?.state?.state?.outputs?.linear_payload as LinearPayload | undefined;
+          if (lp) setLinearPayload(lp);
+        }
+      })
       .catch(() => {});
 
     // Load PRD from memory_entries (separate from session state)
@@ -288,6 +552,32 @@ export default function PrdPage() {
 
     return () => { cancelled = true; };
   }, [activeSessionId]);
+
+  function updateSection(key: string, value: unknown) {
+    setPrd(prev => prev ? { ...prev, [key]: value } : prev);
+  }
+
+  function scheduleSave(updatedPrd: PrdData) {
+    if (!activeSessionId) return;
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    setSaveStatus("saving");
+    saveTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/pipeline/autosave", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            session_id: activeSessionId,
+            output_key: "prd",
+            updated_content: updatedPrd,
+          }),
+        });
+        setSaveStatus(res.ok ? "saved" : "error");
+      } catch {
+        setSaveStatus("error");
+      }
+    }, 1000);
+  }
 
   // ── Generate PRD ──
   async function handleGenerate() {
@@ -340,6 +630,38 @@ export default function PrdPage() {
     } finally {
       setGenerating(false);
       setLoadingPhase("");
+    }
+  }
+
+  // ── Push to Linear ──
+  async function handlePushToLinear() {
+    if (!linearPayload || linearPushing) return;
+    setLinearPushing(true);
+    setLinearPushStatus(null);
+    setLinearPushError(null);
+    setLinearNotConnected(false);
+    try {
+      const res = await fetch("/api/linear/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ linear_payload: linearPayload }),
+      });
+      if (!res.ok) {
+        const body = await res.json();
+        if (res.status === 401 && body.code === "linear_not_connected") {
+          setLinearNotConnected(true);
+          return;
+        }
+        setLinearPushError(body.error ?? res.statusText);
+        setLinearPushStatus("error");
+        return;
+      }
+      setLinearPushStatus("success");
+    } catch (err) {
+      setLinearPushError(err instanceof Error ? err.message : "Connection failed");
+      setLinearPushStatus("error");
+    } finally {
+      setLinearPushing(false);
     }
   }
 
@@ -421,6 +743,20 @@ export default function PrdPage() {
                 {qualityScore.score}/100
               </span>
             )}
+            {saveStatus !== "idle" && (
+              <span style={{
+                fontSize: 10.5, fontWeight: 500, letterSpacing: "0.02em",
+                color: saveStatus === "saving" ? "#9E9E9E" : saveStatus === "saved" ? "#15803D" : "#DC2626",
+                transition: "color 0.2s",
+              }}>
+                {saveStatus === "saving" ? "Saving..." : saveStatus === "saved" ? "Saved ✓" : "Save failed"}
+              </span>
+            )}
+            {activeSessionId && regenCount > 0 && (
+              <span style={{ fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(0,0,0,0.06)", color: regenLimitReached ? "#B91C1C" : "#6B6B6B", letterSpacing: "0.03em" }}>
+                {regenLeft}/3 Regenerations Left
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -448,9 +784,48 @@ export default function PrdPage() {
                   </svg>
                   Export as Markdown
                 </button>
+                {/* Push to Linear */}
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                  <button
+                    onClick={handlePushToLinear}
+                    disabled={linearPushing || !linearPayload}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 5,
+                      padding: "0.4rem 0.875rem", borderRadius: 8, fontSize: "0.8125rem", fontWeight: 500,
+                      background: linearPushStatus === "success" ? "rgba(232,86,27,0.08)" : "#0D0D0D",
+                      border: linearPushStatus === "success" ? "1.5px solid rgba(232,86,27,0.3)" : "1.5px solid #0D0D0D",
+                      color: linearPushStatus === "success" ? "#E8561B" : "#FFFFFF",
+                      cursor: (linearPushing || !linearPayload) ? "not-allowed" : "pointer",
+                      opacity: (linearPushing || !linearPayload) ? 0.6 : 1,
+                      fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                    }}
+                  >
+                    {linearPushing ? (
+                      <span style={{ width: 10, height: 10, borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", display: "inline-block", animation: "spin 0.7s linear infinite" }} />
+                    ) : (
+                      <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
+                        <circle cx="5.5" cy="5.5" r="4.5" stroke="currentColor" strokeWidth="1.2"/>
+                        <path d="M3.5 5.5h4M5.5 3.5l2 2-2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+                      </svg>
+                    )}
+                    {linearPushStatus === "success" ? "Pushed to Linear ✓" : "Push to Linear"}
+                  </button>
+                  {linearPushStatus === "error" && linearPushError && (
+                    <span style={{ fontSize: 11, color: "#DC2626" }}>{linearPushError}</span>
+                  )}
+                  {linearNotConnected && (
+                    <span style={{ fontSize: 11, color: "#6B6B6B" }}>
+                      Not connected —{" "}
+                      <a href="/settings/integrations" style={{ color: "#E8561B", fontWeight: 600, textDecoration: "none" }}>
+                        Connect ↗
+                      </a>
+                    </span>
+                  )}
+                </div>
                 <button
                   onClick={() => setShowConfirmRegenerate(true)}
-                  disabled={generating}
+                  disabled={generating || regenLimitReached}
+                  title={regenLimitReached ? "Limit reached. Use the editor." : undefined}
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
@@ -462,8 +837,8 @@ export default function PrdPage() {
                     background: "#FFFFFF",
                     border: "1.5px solid #E4DDD4",
                     color: "#6B6B6B",
-                    cursor: generating ? "not-allowed" : "pointer",
-                    opacity: generating ? 0.6 : 1,
+                    cursor: generating || regenLimitReached ? "not-allowed" : "pointer",
+                    opacity: generating || regenLimitReached ? 0.6 : 1,
                     fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
                   }}
                 >
@@ -474,13 +849,14 @@ export default function PrdPage() {
             {!prd && (
               <button
                 onClick={handleGenerate}
-                disabled={generating || !activeSessionId}
+                disabled={generating || !activeSessionId || regenLimitReached}
+                title={regenLimitReached ? "Limit reached. Use the editor." : undefined}
                 className="btn-dark"
                 style={{
                   fontSize: 13,
                   padding: "0.45rem 1rem",
-                  opacity: generating || !activeSessionId ? 0.6 : 1,
-                  cursor: generating || !activeSessionId ? "not-allowed" : "pointer",
+                  opacity: generating || !activeSessionId || regenLimitReached ? 0.6 : 1,
+                  cursor: generating || !activeSessionId || regenLimitReached ? "not-allowed" : "pointer",
                 }}
               >
                 {generating ? (
@@ -512,7 +888,15 @@ export default function PrdPage() {
                     animation: "spin 0.7s linear infinite",
                   }}
                 />
-                <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+                <style>{`
+                  @keyframes spin { to { transform: rotate(360deg); } }
+                  .tiptap-wrapper { border-radius: 6px; margin: -4px; padding: 4px; transition: background 0.15s; cursor: text; }
+                  .tiptap-wrapper:hover { background: rgba(232,86,27,0.03); }
+                  .tiptap-wrapper:focus-within { background: rgba(232,86,27,0.05); outline: none; }
+                  .tiptap { outline: none; }
+                  .tiptap p { margin: 0 0 0.4em 0; }
+                  .tiptap p:last-child { margin: 0; }
+                `}</style>
                 <TextShimmer duration={1.2}>
                   {loadingPhase || "Generating PRD..."}
                 </TextShimmer>
@@ -526,9 +910,10 @@ export default function PrdPage() {
                 <span style={{ fontSize: 13, color: "#6B6B6B", textAlign: "center", maxWidth: 400 }}>{error}</span>
                 <button
                   onClick={handleGenerate}
-                  disabled={!activeSessionId}
+                  disabled={!activeSessionId || regenLimitReached}
+                  title={regenLimitReached ? "Limit reached. Use the editor." : undefined}
                   className="btn-dark"
-                  style={{ fontSize: 13, padding: "0.4rem 1rem", marginTop: 8 }}
+                  style={{ fontSize: 13, padding: "0.4rem 1rem", marginTop: 8, opacity: regenLimitReached ? 0.6 : 1, cursor: regenLimitReached ? "not-allowed" : "pointer" }}
                 >
                   Try Again
                 </button>
@@ -552,6 +937,15 @@ export default function PrdPage() {
             className="flex-1 overflow-y-auto"
             style={{ padding: "24px 28px" }}
           >
+            <style>{`
+              @keyframes spin { to { transform: rotate(360deg); } }
+              .tiptap-wrapper { border-radius: 6px; margin: -4px; padding: 4px; transition: background 0.15s; cursor: text; }
+              .tiptap-wrapper:hover { background: rgba(232,86,27,0.03); }
+              .tiptap-wrapper:focus-within { background: rgba(232,86,27,0.05); }
+              .tiptap { outline: none; }
+              .tiptap p { margin: 0 0 0.4em 0; }
+              .tiptap p:last-child { margin: 0; }
+            `}</style>
             {/* Quality gaps banner */}
             {qualityScore && qualityScore.score < 70 && qualityScore.critical_gaps.length > 0 && (
               <div
@@ -578,7 +972,19 @@ export default function PrdPage() {
             {PRD_SECTIONS.map(({ key, title }) => {
               const val = prd[key];
               if (val == null) return null;
-              return <SectionCard key={key} title={title} value={val} sectionKey={key} />;
+              return (
+                <SectionCard
+                  key={key}
+                  title={title}
+                  value={val}
+                  sectionKey={key}
+                  editing={editingKey === key}
+                  onEditStart={() => setEditingKey(key)}
+                  onEditEnd={() => setEditingKey(null)}
+                  onUpdate={(v) => updateSection(key, v)}
+                  onScheduleSave={(v) => scheduleSave({ ...prd, [key]: v })}
+                />
+              );
             })}
           </div>
         )}

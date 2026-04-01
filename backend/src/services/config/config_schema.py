@@ -9,8 +9,16 @@ class ScoringConfig(BaseModel):
     weights: Optional[Dict[str, Any]] = None
 
 
+class BinaryCheck(BaseModel):
+    name: str
+    pass_condition: str
+    fail_condition: str
+    auto_pass_if_missing: bool = False
+
+
 class CriticConfig(BaseModel):
     criteria: List[str] = []
+    binary_checks: List[BinaryCheck] = Field(default_factory=list)
 
 
 class OutputSchema(BaseModel):
@@ -63,9 +71,11 @@ class AgentConfig(BaseModel):
     output_schema: Optional[OutputSchema] = None
 
     critic: Optional[CriticConfig] = None
+    binary_checks: List[BinaryCheck] = Field(default_factory=list)
     use_critic: Optional[bool] = False
     validate_evidence_chain: Optional[bool] = False
-    
+    thresholds: Optional[Dict[str, int]] = None
+
     model: Optional[str] = None
     temperature: Optional[float] = None
 

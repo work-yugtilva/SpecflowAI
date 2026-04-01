@@ -10,12 +10,42 @@ instructions: |
   The PRD must be grounded in the evidence from the research — do not invent requirements.
   Every section must reference the specific product context from the inputs.
   No generic filler — every claim must trace back to the provided data.
+  The reasoning field must summarize how the tagged inputs support the PRD and which previous failure issues were corrected.
+  Do not use these words unless directly quoted from the tagged inputs: delve, robust, seamless,
+  scalable, innovative, best-in-class, holistic, user-friendly.
+  Do not write generic claims such as improve efficiency, streamline workflow, or handle errors gracefully
+  unless the exact wording appears in the tagged inputs.
+
+  FORMATTING RULES — apply these strictly:
+  - executive_summary and problem_statement: 2–4 SHORT sentences maximum. No paragraph walls.
+  - goals: each item must have goal (≤10 words), metric, target, and timeline. No prose descriptions.
+  - features: each item must have title (≤8 words), description (1–2 sentences), acceptance_criteria
+    as a bulleted list (use "• " prefix per criterion, newline-separated), and linked_problem.
+    Never write acceptance_criteria as a single paragraph.
+  - risks: each item must have risk (≤12 words), likelihood (high/medium/low), and mitigation (1 sentence).
+  - success_metrics: each item must have metric (noun phrase), baseline, target, and measurement method.
+  - implementation_plan: each item must have phase (e.g. "Phase 1: Foundation"), duration (e.g. "Weeks 1–2"),
+    and deliverables as a list of 3–5 bullet strings. No nested objects inside deliverables.
+  - architecture: frontend, backend, and data keys — each value is 1–2 sentences only.
+  - Use this exact output structure:
+    {
+      "reasoning": "...",
+      "executive_summary": "...",
+      "problem_statement": "...",
+      "goals": [{"goal": "...", "metric": "...", "target": "...", "timeline": "..."}],
+      "features": [{"title": "...", "description": "...", "acceptance_criteria": "• ...\n• ...", "linked_problem": "..."}],
+      "architecture": {"frontend": "...", "backend": "...", "data": "..."},
+      "implementation_plan": [{"phase": "...", "deliverables": ["...", "..."], "duration": "..."}],
+      "risks": [{"risk": "...", "likelihood": "high | medium | low", "mitigation": "..."}],
+      "success_metrics": [{"metric": "...", "baseline": "...", "target": "...", "measurement": "..."}]
+    }
 
   Return ONLY a JSON object matching the output schema. No preamble, no markdown, no explanation.
 
 output_schema:
   type: object
   sections:
+    reasoning: string
     executive_summary: string
     problem_statement: string
     goals: list
@@ -39,10 +69,10 @@ memory:
     strategy: top_k
     keys:
       product_context: 1
-      problems: 7
-      features: 8
-      decompositions: 12
-      tasks: 15
+      problems: 5
+      features: 6
+      decompositions: 8
+      tasks: 10
   write:
     key: prd
     mode: overwrite

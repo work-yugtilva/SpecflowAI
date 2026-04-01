@@ -16,12 +16,17 @@ instructions: |
 
   If a field is not mentioned in the inputs, leave it as an empty string.
   Do NOT invent information not present in the inputs.
+  The reasoning field must name which tagged inputs support the final object.
+  Do not use these words unless they appear in the tagged inputs: delve, robust, seamless,
+  scalable, innovative, best-in-class, holistic, user-friendly.
+  Do not add any claim that is not present in the tagged inputs.
 
   Return ONLY a JSON object. No preamble. No markdown. No explanation.
 
 output_schema:
   type: object
   sections:
+    reasoning: string
     product_name: string
     product_description: string
     target_user: string

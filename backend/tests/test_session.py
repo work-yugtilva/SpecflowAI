@@ -51,7 +51,10 @@ async def test_create_session_with_metadata(client):
         )
     assert response.status_code == 200
     mock_sm.create_session.assert_called_once_with(
-        session_name="Meta Session", metadata={"key": "value"}
+        session_name="Meta Session",
+        project_id=None,
+        metadata={"key": "value"},
+        user_id="test-user-id",
     )
 
 

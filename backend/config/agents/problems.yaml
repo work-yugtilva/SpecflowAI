@@ -4,12 +4,20 @@ instructions: |
   Identify between 3 and 7 specific, distinct user problems grounded in the research context above.
   Each problem must be something a real user encounters — not a feature request.
   Every problem must reference evidence from the research context.
+  The reasoning field must explicitly cite which tagged inputs justify the problem set before the items array.
+  Do not use these words unless directly quoted from the tagged inputs: delve, robust, seamless,
+  scalable, innovative, best-in-class, holistic, user-friendly.
+  Do not write generic claims such as improve efficiency, streamline workflow, or handle errors gracefully
+  unless the exact wording appears in the tagged inputs.
 
-  Return ONLY a JSON array of problem objects. No preamble, no markdown, no explanation.
+  Return ONLY a JSON object with a top-level reasoning field and an items array of problem objects.
+  No preamble, no markdown, no explanation.
   Every problem title must be 10 words or fewer and must not contain IDs, timestamps, or technical identifiers.
 
 output_schema:
   type: list
+  sections:
+    reasoning: string
   fields:
     id: string
     title: string
@@ -19,7 +27,6 @@ output_schema:
     confidence: number
     acceptance_criteria: string
     research_evidence: string
-  sections: null
   groups: null
 
 max_retries: 2

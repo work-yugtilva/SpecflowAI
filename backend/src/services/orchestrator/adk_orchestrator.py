@@ -9,7 +9,7 @@
 
 import json
 import logging
-from typing import Any, Optional
+from typing import Any, Callable, Coroutine, Optional
 
 from google.adk.agents import BaseAgent as GoogleBaseAgent, SequentialAgent
 from google.adk.events import Event, EventActions
@@ -100,6 +100,7 @@ class ADKOrchestrator:
         session_id: str,
         completed_steps: Optional[set] = None,
         prior_state: Optional[dict] = None,
+        progress_callback: Optional[Callable[[dict], Coroutine]] = None,
     ) -> dict:
         """
         Execute the pipeline (or resume from completed_steps).
@@ -132,12 +133,24 @@ class ADKOrchestrator:
             state=initial_state,
         )
 
-        async for _ in self._runner.run_async(
+        async for event in self._runner.run_async(
             user_id=session_id,
             session_id=session_id,
             new_message=Content(parts=[Part(text="run")]),
         ):
-            pass  # drain events; outputs accumulate in session state via state_delta
+            # Intercept step completion events to fire progress callbacks.
+            # Each _SpecFlowStep yields exactly one Event with state_delta containing
+            # the step's output key when it finishes.
+            if (
+                progress_callback
+                and event.actions
+                and event.actions.state_delta
+            ):
+                for out_key in self._step_output_keys.values():
+                    if out_key in event.actions.state_delta:
+                        await progress_callback(
+                            {"type": "step_complete", "step": out_key}
+                        )
 
         final_session = await self._runner.session_service.get_session(
             app_name="specflow",

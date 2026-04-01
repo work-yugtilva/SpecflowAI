@@ -14,21 +14,22 @@ class FeaturesAgent(BaseAgent):
     def build_prompt(self, task: str, context: dict = None, memory: dict = None) -> str:
         ctx = context or {}
         mem = memory or {}
-        product_context = ctx.get("product_context") or ctx.get("context", {})
-        ingest = ctx.get("ingest", [])
-        problems = self._unwrap(ctx.get("problems") or mem.get("problems", []))
-        if not isinstance(problems, list):
-            problems = [problems] if problems else []
+        product_context = self._unwrap(
+            ctx.get("product_context") or ctx.get("context") or mem.get("product_context", {})
+        )
+        ingest = self._unwrap(ctx.get("ingest") or mem.get("ingest", []))
+        problems = self._clip_list(
+            self._unwrap(ctx.get("problems") or mem.get("problems", [])),
+            7,
+        )
 
-        slice_ = {
+        prompt_context = {
             "product_context": product_context,
-            "ingest": ingest,
-            "problems": problems,
+            "research_context": ingest,
+            "prior_problems": problems,
         }
 
-        enriched_task = (
-            f"{self.instructions}\n\n{task}\n\n"
-            f"IMPORTANT: There are {len(problems)} validated problems. "
-            f"Return 4-8 features covering ALL of them."
-        )
-        return super().build_prompt(enriched_task, context=slice_, memory=None)
+        if ctx.get("previous_attempt_failure"):
+            prompt_context["previous_attempt_failure"] = ctx["previous_attempt_failure"]
+
+        return super().build_prompt(task, context=prompt_context, memory=None)

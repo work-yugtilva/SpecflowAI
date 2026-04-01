@@ -1,7 +1,6 @@
 # services/agents/product_context_agent.py
 
 from services.agents.base_agent import BaseAgent
-import json
 
 
 class ProductContextAgent(BaseAgent):
@@ -15,17 +14,17 @@ class ProductContextAgent(BaseAgent):
         product_context = ctx.get("product_context") or ctx.get("context", {})
         ingest = ctx.get("ingest", [])
 
-        slice_ = {
-            "product_context": product_context,
-            "ingest": ingest,
+        prompt_context = {
+            "existing_product_context": product_context,
+            "research_context": ingest,
         }
 
-        enriched_task = (
-            f"{self.instructions}\n\n{task}\n\n"
-            f"IMPORTANT: Extract only what is explicitly stated. "
-            f"You have {len(ingest)} research input(s). "
-            f"Return a single JSON object with exactly these keys: "
-            f"product_name, product_description, target_user, core_workflow, "
-            f"constraints, competitors, goals, raw_summary."
+        if ctx.get("previous_attempt_failure"):
+            prompt_context["previous_attempt_failure"] = ctx["previous_attempt_failure"]
+
+        prompt_task = (
+            f"{task}\n\n"
+            f"Extract only what is explicitly stated. You have {len(ingest)} research input(s). "
+            "Do not infer missing product details beyond the tagged context."
         )
-        return super().build_prompt(enriched_task, context=slice_, memory=None)
+        return super().build_prompt(prompt_task, context=prompt_context, memory=None)

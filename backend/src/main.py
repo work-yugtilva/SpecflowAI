@@ -12,12 +12,16 @@ from services.config.load_env import load_root_env
 
 load_root_env()
 
-from fastapi import FastAPI, HTTPException, Request
+from dataclasses import dataclass
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 import asyncio
 from pydantic import BaseModel
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 from services.pipeline import Pipeline
 from services.session.session_manager import SessionManager
@@ -27,6 +31,53 @@ from services.db.models.pipeline import PipelineRun, PIPELINE_STATUS_ORPHANED, P
 from services.agent_factory import AgentFactory
 from services.memory.memory_repository import MemoryRepository
 from services.memory.memory_schemas import MemoryEntry
+from services.job_registry import create_job, get_job
+from services.db.supabase_client import get_user_supabase_client, verify_supabase_jwt
+
+
+# ---------------------------------------------------------------------------
+# Auth helpers
+# ---------------------------------------------------------------------------
+
+_bearer_scheme = HTTPBearer(auto_error=False)
+
+
+@dataclass
+class AuthContext:
+    user_id: str
+    client: Any  # User-scoped Supabase client (anon key + JWT → RLS enforced)
+
+
+async def get_auth_context(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
+) -> Optional[AuthContext]:
+    """
+    FastAPI dependency: extracts Bearer JWT from Authorization header.
+    Returns AuthContext(user_id, user-scoped-client) when a valid JWT is present.
+    Invalid or missing credentials return None so callers can choose whether
+    the route is public or protected.
+    """
+    if not credentials:
+        return None
+    jwt = credentials.credentials
+    try:
+        user_id = verify_supabase_jwt(jwt)
+        client = get_user_supabase_client(jwt)
+        return AuthContext(user_id=user_id, client=client)
+    except Exception:
+        return None
+
+
+async def require_auth_context(
+    auth: Optional[AuthContext] = Depends(get_auth_context),
+) -> AuthContext:
+    if auth is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return auth
 
 
 # ---------------------------------------------------------------------------
@@ -52,7 +103,36 @@ logging.getLogger().setLevel(logging.INFO)
 # App
 # ---------------------------------------------------------------------------
 
-app = FastAPI(title="SpecFlow Pipeline API", version="1.0.0")
+def _is_production() -> bool:
+    return os.environ.get("NODE_ENV", "").lower() == "production"
+
+
+def _build_allowed_hosts() -> list[str]:
+    hosts = {"localhost", "127.0.0.1", "test"}
+    raw_hosts = os.environ.get("ALLOWED_HOSTS", "")
+    for host in raw_hosts.split(","):
+        cleaned = host.strip()
+        if cleaned:
+            hosts.add(cleaned)
+
+    for env_name in ("FRONTEND_URL", "NEXT_PUBLIC_PIPELINE_URL", "NEXT_PUBLIC_EXPRESS_API_URL"):
+        value = os.environ.get(env_name)
+        if not value:
+            continue
+        parsed = urlparse(value)
+        if parsed.hostname:
+            hosts.add(parsed.hostname)
+
+    return sorted(hosts)
+
+
+app = FastAPI(
+    title="SpecFlow Pipeline API",
+    version="1.0.0",
+    docs_url=None if _is_production() else "/docs",
+    redoc_url=None if _is_production() else "/redoc",
+    openapi_url=None if _is_production() else "/openapi.json",
+)
 
 LOCAL_ORIGINS = [
     "http://localhost",
@@ -70,6 +150,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=_build_allowed_hosts())
 
 
 # NOTE: This handler catches all unguarded ValueErrors across the application.
@@ -151,11 +232,11 @@ async def run_pipeline(req: RunRequest):
 # ---------------------------------------------------------------------------
 
 @app.get("/sessions")
-async def list_sessions():
+async def list_sessions(auth: AuthContext = Depends(require_auth_context)):
     """Return all sessions ordered by created_at DESC."""
     try:
         print(f"[session] Listing sessions")
-        sm = SessionManager()
+        sm = SessionManager(client=auth.client)
         print(f"[session] SessionManager instantiated")
         sessions = await sm.list_sessions()
         print(f"[session] Found {len(sessions)} sessions")
@@ -168,16 +249,17 @@ async def list_sessions():
 
 
 @app.post("/session/create")
-async def create_session(req: CreateSessionRequest):
+async def create_session(req: CreateSessionRequest, auth: AuthContext = Depends(require_auth_context)):
     """Create a new session. Returns session_id to use in subsequent /session/{id}/run calls."""
     try:
         print(f"[session] Creating session: {req.session_name}")
-        sm = SessionManager()
+        sm = SessionManager(client=auth.client)
         print(f"[session] SessionManager instantiated")
         session = await sm.create_session(
             session_name=req.session_name,
             project_id=req.project_id,
             metadata=req.metadata,
+            user_id=auth.user_id,
         )
         print(f"[session] Session created: {session.id}")
         return {
@@ -194,7 +276,7 @@ async def create_session(req: CreateSessionRequest):
 
 
 @app.post("/session/{session_id}/run")
-async def run_session(session_id: str, req: SessionRunRequest):
+async def run_session(session_id: str, req: SessionRunRequest, auth: AuthContext = Depends(require_auth_context)):
     """
     Run the pipeline (or a single step) for an existing session.
 
@@ -205,7 +287,7 @@ async def run_session(session_id: str, req: SessionRunRequest):
     Returns the full output data and current session state snapshot.
     """
     try:
-        sm = SessionManager()
+        sm = SessionManager(client=auth.client)
         session = await sm.load_session(session_id)
 
         # Only block full-pipeline re-runs on completed sessions.
@@ -217,6 +299,16 @@ async def run_session(session_id: str, req: SessionRunRequest):
                 detail=f"Session {session_id} is already completed.",
             )
 
+        # Check regeneration limit for single-step re-runs (3 per step).
+        if req.step is not None:
+            pre_state = await sm.get_current_state(session_id)
+            regen_counts = (pre_state or {}).get("regeneration_counts", {})
+            if regen_counts.get(req.step, 0) >= 3:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Regeneration limit reached. Please edit the document manually.",
+                )
+
         pipeline = Pipeline()
         result = await pipeline.run(
             input_data=req.input_data,
@@ -224,9 +316,22 @@ async def run_session(session_id: str, req: SessionRunRequest):
             session_id=session_id,
             session_manager=sm,
             step=req.step,
+            user_id=auth.user_id,
         )
 
         current_state = await sm.get_current_state(session_id)
+
+        # Increment regeneration counter after a successful single-step run.
+        if req.step is not None:
+            regen_counts = current_state.get("regeneration_counts", {})
+            regen_counts[req.step] = regen_counts.get(req.step, 0) + 1
+            current_state["regeneration_counts"] = regen_counts
+            await sm.update_state(
+                session_id,
+                current_state,
+                step=current_state.get("last_completed_step", req.step),
+            )
+
         return {
             "success": True,
             "data": result,
@@ -245,18 +350,162 @@ async def run_session(session_id: str, req: SessionRunRequest):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+@app.post("/session/{session_id}/run/async", status_code=202)
+async def run_session_async(session_id: str, req: SessionRunRequest, auth: AuthContext = Depends(require_auth_context)):
+    """
+    Non-blocking pipeline start. Immediately returns {job_id} with 202 Accepted
+    and runs the pipeline as a background asyncio.Task.
+
+    Subscribe to GET /session/{session_id}/run/stream/{job_id} for SSE progress events.
+    """
+    try:
+        sm = SessionManager(client=auth.client)
+        session = await sm.load_session(session_id)
+
+        if session.status == SESSION_STATUS_COMPLETED and req.step is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Session {session_id} is already completed.",
+            )
+
+        if req.step is not None:
+            pre_state = await sm.get_current_state(session_id)
+            regen_counts = (pre_state or {}).get("regeneration_counts", {})
+            if regen_counts.get(req.step, 0) >= 3:
+                raise HTTPException(
+                    status_code=403,
+                    detail="Regeneration limit reached. Please edit the document manually.",
+                )
+
+        job = create_job(session_id)
+
+        async def _run_bg():
+            job.status = "running"
+            try:
+                async def _cb(event: dict):
+                    await job.queue.put(event)
+
+                pipeline = Pipeline()
+                result = await pipeline.run(
+                    input_data=req.input_data,
+                    project_id=session.project_id,
+                    session_id=session_id,
+                    session_manager=sm,
+                    step=req.step,
+                    progress_callback=_cb,
+                    user_id=auth.user_id,
+                )
+
+                current_state = await sm.get_current_state(session_id)
+
+                if req.step is not None:
+                    regen_counts = current_state.get("regeneration_counts", {})
+                    regen_counts[req.step] = regen_counts.get(req.step, 0) + 1
+                    current_state["regeneration_counts"] = regen_counts
+                    await sm.update_state(
+                        session_id,
+                        current_state,
+                        step=current_state.get("last_completed_step", req.step),
+                    )
+
+                await job.queue.put({
+                    "type": "complete",
+                    "data": result,
+                    "session_state": current_state,
+                })
+                job.status = "completed"
+            except HTTPException as e:
+                await job.queue.put({"type": "error", "message": e.detail, "status_code": e.status_code})
+                job.status = "failed"
+            except ValueError as e:
+                msg = str(e)
+                await job.queue.put({"type": "error", "message": msg})
+                job.status = "failed"
+            except Exception as e:
+                import traceback
+                traceback.print_exc()
+                await job.queue.put({"type": "error", "message": "Internal server error"})
+                job.status = "failed"
+            finally:
+                await job.queue.put(None)  # sentinel — tells SSE generator to close
+
+        asyncio.create_task(_run_bg())
+        return {"job_id": job.job_id, "status": "queued"}
+
+    except HTTPException:
+        raise
+    except ValueError as e:
+        msg = str(e)
+        if msg.startswith("INCOMPLETE_CONTEXT:"):
+            raise
+        raise HTTPException(status_code=404, detail=msg)
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.get("/session/{session_id}/run/stream/{job_id}")
+async def stream_run(session_id: str, job_id: str, auth: AuthContext = Depends(require_auth_context)):
+    """
+    SSE stream for a background pipeline job started via POST /session/{id}/run/async.
+
+    Events:
+      {"type": "connected"}                          — immediate on subscribe
+      {"type": "step_complete", "step": "problems"}  — after each step finishes
+      {"type": "complete", "data": {...}, "session_state": {...}} — pipeline done
+      {"type": "error", "message": "..."}            — on failure
+      {"type": "heartbeat"}                          — every 25s to keep connection alive
+    """
+    sm = SessionManager(client=auth.client)
+    await sm.load_session(session_id)
+
+    job = get_job(job_id)
+    if not job or job.session_id != session_id:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    async def _generate():
+        yield f"data: {json.dumps({'type': 'connected'})}\n\n"
+        while True:
+            try:
+                event = await asyncio.wait_for(job.queue.get(), timeout=25.0)
+            except asyncio.TimeoutError:
+                yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
+                continue
+            if event is None:  # sentinel
+                break
+            yield f"data: {json.dumps(event)}\n\n"
+            if event.get("type") in ("complete", "error"):
+                break
+
+    return StreamingResponse(
+        _generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.post("/session/{session_id}/prd")
-async def generate_prd(session_id: str):
+async def generate_prd(session_id: str, auth: AuthContext = Depends(require_auth_context)):
     """
     Generate a PRD for an existing session using the accumulated pipeline outputs.
     Reads problems, features, decompositions, tasks from session state and runs PRDAgent.
     Returns 422 if any prerequisite step output is missing.
     """
     try:
-        sm = SessionManager()
+        sm = SessionManager(client=auth.client)
         await sm.load_session(session_id)
 
         current_state = await sm.get_current_state(session_id)
+
+        # Check regeneration limit for PRD (3 regenerations max).
+        regen_counts = (current_state or {}).get("regeneration_counts", {})
+        if regen_counts.get("prd", 0) >= 3:
+            raise HTTPException(
+                status_code=403,
+                detail="Regeneration limit reached. Please edit the document manually.",
+            )
+
         outputs = (current_state or {}).get("outputs", {})
 
         context = {
@@ -275,10 +524,13 @@ async def generate_prd(session_id: str):
 
         agent = AgentFactory.create("prd")
         result, quality = await agent.run(context)
+        result = Pipeline._strip_reasoning_field(result)
+        quality = Pipeline._strip_reasoning_field(quality)
 
         # Persist to memory
         entry = MemoryEntry(
             session_id=session_id,
+            user_id=auth.user_id,
             agent_name="prd",
             memory_key="prd",
             content=result if isinstance(result, dict) else {"data": result},
@@ -286,6 +538,15 @@ async def generate_prd(session_id: str):
         )
         memory_repo = MemoryRepository()
         await memory_repo.save_for_session(entry)
+
+        # Increment PRD regeneration counter.
+        regen_counts["prd"] = regen_counts.get("prd", 0) + 1
+        current_state["regeneration_counts"] = regen_counts
+        await sm.update_state(
+            session_id,
+            current_state,
+            step=current_state.get("last_completed_step", "prd"),
+        )
 
         return {"success": True, "prd": result, "quality_score": quality}
     except HTTPException:
@@ -299,14 +560,21 @@ async def generate_prd(session_id: str):
 
 
 @app.post("/session/{session_id}/prd/stream")
-async def generate_prd_stream(session_id: str):
+async def generate_prd_stream(session_id: str, auth: AuthContext = Depends(require_auth_context)):
     """SSE streaming PRD generation. Sends phase updates then final result."""
 
     async def event_stream():
         try:
-            sm = SessionManager()
+            sm = SessionManager(client=auth.client)
             await sm.load_session(session_id)
             current_state = await sm.get_current_state(session_id)
+
+            # Check regeneration limit for PRD (3 regenerations max).
+            regen_counts = (current_state or {}).get("regeneration_counts", {})
+            if regen_counts.get("prd", 0) >= 3:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Regeneration limit reached. Please edit the document manually.'})}\n\n"
+                return
+
             outputs = (current_state or {}).get("outputs", {})
 
             context = {
@@ -346,11 +614,14 @@ async def generate_prd_stream(session_id: str):
 
             result = result_container["result"]
             quality = result_container["quality"]
+            result = Pipeline._strip_reasoning_field(result)
+            quality = Pipeline._strip_reasoning_field(quality)
 
             yield f"data: {json.dumps({'type': 'phase', 'phase': 'Quality check...', 'progress': 90})}\n\n"
 
             entry = MemoryEntry(
                 session_id=session_id,
+                user_id=auth.user_id,
                 agent_name="prd",
                 memory_key="prd",
                 content=result if isinstance(result, dict) else {"data": result},
@@ -358,6 +629,15 @@ async def generate_prd_stream(session_id: str):
             )
             memory_repo = MemoryRepository()
             await memory_repo.save_for_session(entry)
+
+            # Increment PRD regeneration counter.
+            regen_counts["prd"] = regen_counts.get("prd", 0) + 1
+            current_state["regeneration_counts"] = regen_counts
+            await sm.update_state(
+                session_id,
+                current_state,
+                step=current_state.get("last_completed_step", "prd"),
+            )
 
             yield f"data: {json.dumps({'type': 'complete', 'prd': result, 'quality_score': quality, 'progress': 100})}\n\n"
 
@@ -377,10 +657,10 @@ async def generate_prd_stream(session_id: str):
 
 
 @app.get("/session/{session_id}/prd")
-async def get_prd(session_id: str):
+async def get_prd(session_id: str, auth: AuthContext = Depends(require_auth_context)):
     """Load stored PRD from memory_entries for a session."""
     try:
-        memory_repo = MemoryRepository()
+        memory_repo = MemoryRepository(client=auth.client)
         entry = await memory_repo.get_by_session_and_key(session_id, "prd")
         if not entry:
             raise HTTPException(status_code=404, detail="No PRD found for this session")
@@ -394,12 +674,12 @@ async def get_prd(session_id: str):
 
 
 @app.get("/session/{session_id}/prd/export")
-async def export_prd_markdown(session_id: str):
+async def export_prd_markdown(session_id: str, auth: AuthContext = Depends(require_auth_context)):
     """
     Export the session's PRD as a downloadable markdown file.
     """
     try:
-        memory_repo = MemoryRepository()
+        memory_repo = MemoryRepository(client=auth.client)
         entry = await memory_repo.get_by_session_and_key(session_id, "prd")
         if not entry:
             raise HTTPException(status_code=404, detail="No PRD found for this session")
@@ -427,12 +707,71 @@ async def export_prd_markdown(session_id: str):
             lines.append(f"## {title}\n")
             if isinstance(val, list):
                 for item in val:
-                    if isinstance(item, dict):
-                        lines.append(f"- **{item.get('title', item.get('name', ''))}**: {item.get('description', json.dumps(item))}")
-                    else:
+                    if not isinstance(item, dict):
                         lines.append(f"- {item}")
+                        continue
+
+                    if key == "implementation_plan":
+                        phase = item.get("phase", "")
+                        duration = item.get("duration", "")
+                        deliverables = item.get("deliverables", [])
+                        lines.append(f"\n### {phase}" + (f" ({duration})" if duration else ""))
+                        for d in deliverables:
+                            lines.append(f"- {d}")
+
+                    elif key == "goals":
+                        goal = item.get("goal", item.get("title", ""))
+                        metric = item.get("metric", "")
+                        target = item.get("target", "")
+                        timeline = item.get("timeline", "")
+                        lines.append(f"\n**{goal}**")
+                        if metric: lines.append(f"- Metric: {metric}")
+                        if target: lines.append(f"- Target: {target}")
+                        if timeline: lines.append(f"- Timeline: {timeline}")
+
+                    elif key == "features":
+                        title = item.get("title", "")
+                        description = item.get("description", "")
+                        ac = item.get("acceptance_criteria", "")
+                        linked = item.get("linked_problem", "")
+                        lines.append(f"\n**{title}**")
+                        if description: lines.append(description)
+                        if linked: lines.append(f"*Solves: {linked}*")
+                        if ac: lines.append(f"\n```\n{ac}\n```")
+
+                    elif key == "risks":
+                        risk = item.get("risk", "")
+                        likelihood = item.get("likelihood", "").upper()
+                        mitigation = item.get("mitigation", "")
+                        lines.append(f"\n**{likelihood}: {risk}**")
+                        if mitigation: lines.append(f"↳ {mitigation}")
+
+                    elif key == "success_metrics":
+                        metric = item.get("metric", "")
+                        baseline = item.get("baseline", "")
+                        target = item.get("target", "")
+                        measurement = item.get("measurement", "")
+                        lines.append(f"\n**{metric}**")
+                        if baseline: lines.append(f"- Baseline: {baseline}")
+                        if target: lines.append(f"- Target: {target}")
+                        if measurement: lines.append(f"- Measurement: {measurement}")
+
+                    else:
+                        title = item.get("title", item.get("name", ""))
+                        description = item.get("description", "")
+                        if title and description:
+                            lines.append(f"- **{title}**: {description}")
+                        elif title:
+                            lines.append(f"- {title}")
+                        else:
+                            lines.append(f"- {json.dumps(item)}")
+
             elif isinstance(val, str):
                 lines.append(val)
+            elif isinstance(val, dict):
+                for sub_key, sub_val in val.items():
+                    lines.append(f"\n**{sub_key.upper()}**")
+                    lines.append(str(sub_val))
             else:
                 lines.append(json.dumps(val, indent=2))
             lines.append("")
@@ -453,10 +792,10 @@ async def export_prd_markdown(session_id: str):
 
 
 @app.get("/session/{session_id}")
-async def get_session(session_id: str):
+async def get_session(session_id: str, auth: AuthContext = Depends(require_auth_context)):
     """Get a session with its current state and full event log."""
     try:
-        sm = SessionManager()
+        sm = SessionManager(client=auth.client)
         full = await sm.get_full_session(session_id)
         return full
     except ValueError as e:
@@ -470,10 +809,10 @@ async def get_session(session_id: str):
 # ---------------------------------------------------------------------------
 
 @app.get("/pipelines/orphaned")
-async def list_orphaned_pipelines():
+async def list_orphaned_pipelines(auth: AuthContext = Depends(require_auth_context)):
     """List pipeline runs not attached to any session."""
     try:
-        repo = PipelineRepository()
+        repo = PipelineRepository(client=auth.client)
         runs = await repo.list_orphaned()
         return {"pipelines": [r.model_dump() for r in runs]}
     except Exception as e:
@@ -481,10 +820,13 @@ async def list_orphaned_pipelines():
 
 
 @app.post("/pipelines/attach")
-async def attach_pipeline_to_session(req: AttachPipelineRequest):
+async def attach_pipeline_to_session(
+    req: AttachPipelineRequest,
+    auth: AuthContext = Depends(require_auth_context),
+):
     """Attach an orphaned pipeline run to a session."""
     try:
-        repo = PipelineRepository()
+        repo = PipelineRepository(client=auth.client)
         run = await repo.get(req.pipeline_id)
         if run is None:
             raise HTTPException(status_code=404, detail="Pipeline run not found")
@@ -497,10 +839,10 @@ async def attach_pipeline_to_session(req: AttachPipelineRequest):
 
 
 @app.get("/pipelines/{session_id}")
-async def list_session_pipelines(session_id: str):
+async def list_session_pipelines(session_id: str, auth: AuthContext = Depends(require_auth_context)):
     """List all pipeline runs for a session."""
     try:
-        repo = PipelineRepository()
+        repo = PipelineRepository(client=auth.client)
         runs = await repo.list_by_session(session_id)
         return {"pipelines": [r.model_dump() for r in runs]}
     except Exception as e:

@@ -5,11 +5,19 @@ instructions: |
   Decompose the product features into between 6 and 12 concrete technical components.
   Each component must map to a specific layer (ui, backend, or system) and directly address a user problem.
   Every component must reference evidence from the research.
+  The reasoning field must explicitly cite which tagged inputs justify the component set before the items array.
+  Do not use these words unless directly quoted from the tagged inputs: delve, robust, seamless,
+  scalable, innovative, best-in-class, holistic, user-friendly.
+  Do not write generic claims such as improve efficiency, streamline workflow, or handle errors gracefully
+  unless the exact wording appears in the tagged inputs.
 
-  Return ONLY a JSON array of decomposition objects. No preamble, no markdown, no explanation.
+  Return ONLY a JSON object with a top-level reasoning field and an items array of decomposition objects.
+  No preamble, no markdown, no explanation.
 
 output_schema:
   type: list
+  sections:
+    reasoning: string
   fields:
     id: string
     title: string
@@ -19,7 +27,6 @@ output_schema:
     priority: string
     acceptance_criteria: string
     research_evidence: string
-  sections: null
   groups: null
 
 max_retries: 2
@@ -46,7 +53,8 @@ memory:
   read:
     strategy: top_k
     keys:
-      features: 5
+      problems: 4
+      features: 8
   write:
     key: decompose
     mode: overwrite

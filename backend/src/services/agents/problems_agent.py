@@ -13,17 +13,18 @@ class ProblemsAgent(BaseAgent):
 
     def build_prompt(self, task: str, context: dict = None, memory: dict = None) -> str:
         ctx = context or {}
-        product_context = ctx.get("product_context") or ctx.get("context", {})
-        ingest = ctx.get("ingest", [])
+        mem = memory or {}
+        product_context = self._unwrap(
+            ctx.get("product_context") or ctx.get("context") or mem.get("product_context", {})
+        )
+        ingest = self._unwrap(ctx.get("ingest") or mem.get("ingest", []))
 
-        slice_ = {
+        prompt_context = {
             "product_context": product_context,
-            "ingest": ingest,
+            "research_context": ingest,
         }
 
-        enriched_task = (
-            f"{self.instructions}\n\n{task}\n\n"
-            f"IMPORTANT: You have {len(ingest)} research inputs. "
-            f"Return 3-7 problems covering all of them."
-        )
-        return super().build_prompt(enriched_task, context=slice_, memory=None)
+        if ctx.get("previous_attempt_failure"):
+            prompt_context["previous_attempt_failure"] = ctx["previous_attempt_failure"]
+
+        return super().build_prompt(task, context=prompt_context, memory=None)

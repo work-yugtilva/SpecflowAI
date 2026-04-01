@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 @pytest.mark.asyncio
@@ -180,3 +180,95 @@ def test_validate_output_excludes_uuid_only_title():
     # The UUID-only item should not appear in output
     for item in result["flagged"]:
         assert "bebc4a35" not in (item.get("title") or "")
+
+
+def test_strip_reasoning_field_removes_top_level_reasoning():
+    from services.pipeline import Pipeline
+
+    result = Pipeline._strip_reasoning_field({
+        "reasoning": "Internal trace",
+        "executive_summary": "Ship it",
+    })
+
+    assert result == {"executive_summary": "Ship it"}
+
+
+@pytest.mark.asyncio
+async def test_persist_step_memory_strips_reasoning_before_save():
+    from services.pipeline import Pipeline
+
+    pipeline = Pipeline.__new__(Pipeline)
+    pipeline.memory_repo = AsyncMock()
+
+    await pipeline._persist_step_memory(
+        project_id="proj-1",
+        agent_name="prd",
+        memory_key="prd",
+        content={"reasoning": "Internal only", "executive_summary": "Draft"},
+        session_id="sess-1",
+        user_id="user-1",
+    )
+
+    saved_entry = pipeline.memory_repo.save_for_session.await_args.args[0]
+    assert saved_entry.content == {"executive_summary": "Draft"}
+
+
+@pytest.mark.asyncio
+async def test_run_step_with_quality_retry_passes_feedback_once():
+    from services.agents.base_agent import BaseAgent
+    from services.pipeline import Pipeline
+
+    pipeline = Pipeline.__new__(Pipeline)
+    pipeline._finalize_agent_output = MagicMock(side_effect=lambda *_args: _args[2])
+    pipeline._run_quality_gate_async = AsyncMock(side_effect=[
+        {
+            "score": 40,
+            "passed": False,
+            "critical_issues": ["Missing evidence"],
+            "items": [
+                {
+                    "index": 0,
+                    "binary_checks": {"evidence_cited": False},
+                    "quality_issues": ["Task must cite tagged evidence."],
+                }
+            ],
+        },
+        {
+            "score": 90,
+            "passed": True,
+            "critical_issues": [],
+            "items": [],
+        },
+    ])
+
+    agent = BaseAgent("tasks", {"max_retries": 2})
+    agent.execute_async = AsyncMock(side_effect=[
+        [{"id": "t1", "title": "Implement feature", "acceptance_criteria": "Feature works"}],
+        [{"id": "t1", "title": "Implement feature", "acceptance_criteria": "Feature works"}],
+    ])
+
+    output, qg_result = await pipeline._run_step_with_quality_retry(
+        agent=agent,
+        step_task="Generate tasks",
+        base_context={"problems": [{"title": "Problem 1"}]},
+        memory_slice={},
+        session=None,
+        out_key="tasks",
+        state={},
+    )
+
+    assert output == [{"id": "t1", "title": "Implement feature", "acceptance_criteria": "Feature works"}]
+    assert qg_result["passed"] is True
+    assert agent.execute_async.await_count == 2
+
+    retry_context = agent.execute_async.await_args_list[1].args[1]
+    assert retry_context["previous_attempt_failure"]["source"] == "quality_gate"
+    assert retry_context["previous_attempt_failure"]["score"] == 40
+    assert retry_context["previous_attempt_failure"]["critical_issues"] == ["Missing evidence"]
+    assert retry_context["previous_attempt_failure"]["item_failures"] == [
+        {
+            "index": 0,
+            "failed_checks": ["evidence_cited"],
+            "quality_issues": ["Task must cite tagged evidence."],
+        }
+    ]

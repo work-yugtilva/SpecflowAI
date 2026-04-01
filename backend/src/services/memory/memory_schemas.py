@@ -30,6 +30,7 @@ class MemoryEntry(BaseModel):
     id: Optional[str] = Field(default_factory=lambda: str(uuid.uuid4()))
     project_id: Optional[str] = None    # project scope key; None for session-scoped entries
     session_id: Optional[str] = None    # session scope key; None for project-scoped entries
+    user_id: Optional[str] = None       # Supabase auth user UUID; required for RLS (added in migration 011)
     agent_name: str
     memory_key: str
     content: Dict[str, Any] = {}

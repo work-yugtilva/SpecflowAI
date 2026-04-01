@@ -6,7 +6,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Coroutine, Optional
 
 # backend/src/services/pipeline.py -> parents[2] == backend/
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]
@@ -219,6 +219,8 @@ class Pipeline:
         session_id: str = None,
         session_manager=None,
         step: str = None,
+        progress_callback: Optional[Callable[[dict], Coroutine]] = None,
+        user_id: Optional[str] = None,
     ) -> dict:
         """
         Execute the agent pipeline.
@@ -348,56 +350,53 @@ class Pipeline:
             agent_session = {"id": session_id, "state": {}} if session_id else None
 
             try:
-                result = await agent.execute_async(
-                    single_step_cfg["task"], state, memory=memory_slice, session=agent_session
+                output, qg_result = await self._run_step_with_quality_retry(
+                    agent=agent,
+                    step_task=single_step_cfg["task"],
+                    base_context=state,
+                    memory_slice=memory_slice,
+                    session=agent_session,
+                    out_key=single_out_key,
+                    state=state,
                 )
-                state[single_out_key] = result  # structured output enforces correct shape
+                state[single_out_key] = self._strip_reasoning_field(output)
 
-                if single_out_key == "features" and isinstance(state.get(single_out_key), list):
-                    _score_features(state[single_out_key])
+                if qg_result is not None:
+                    state[f"{single_out_key}_quality"] = self._strip_reasoning_field(qg_result)
+                    if session_id and session_manager and event_tracking_on:
+                        await session_manager.append_event(
+                            session_id,
+                            "quality_gate",
+                            {
+                                "step": single_out_key,
+                                "score": qg_result["score"],
+                                "passed": qg_result["passed"],
+                            },
+                        )
 
                 output = state[single_out_key]
-                _schema = agent.config.get("output_schema") or {}
-                _validation = validate_output(single_agent_name, output, _schema)
-                if not _validation["valid"]:
-                    _flagged_count = sum(1 for x in _validation["flagged"] if isinstance(x, dict) and x.get("quality_flag"))
-                    logger.warning("[validate_output] %s: %d item(s) flagged — %s", single_agent_name, _flagged_count, _validation["issues"][:5])
-                    output = _validation["flagged"]
-                    state[single_out_key] = output
-
-                # Quality gate (non-blocking)
-                if single_out_key in ("problems", "features", "decompositions", "tasks"):
-                    try:
-                        from services.agents.quality_gate_agent import QualityGateAgent
-                        from services.config.config_manager import ConfigManager as _QGConfigManager
-                        _qg_config = _QGConfigManager.load_agent("quality_gate").model_dump()
-                        _qg_agent = QualityGateAgent("quality_gate", _qg_config)
-                        _research_ctx = {
-                            "ingest": state.get("ingest", []),
-                            "product_context": state.get("product_context", {}),
-                        }
-                        _qg_result = _qg_agent.evaluate(single_out_key, output, _research_ctx)
-                        logger.info("[pipeline] quality_gate step=%s score=%d passed=%s", single_out_key, _qg_result["score"], _qg_result["passed"])
-                        state[f"{single_out_key}_quality"] = _qg_result
-                        if session_id and session_manager and event_tracking_on:
-                            await session_manager.append_event(session_id, "quality_gate", {"step": single_out_key, "score": _qg_result["score"], "passed": _qg_result["passed"]})
-                    except Exception as _qg_err:
-                        logger.warning("[pipeline] quality_gate failed for %s: %s", single_out_key, _qg_err)
 
                 await memory_manager.write_from_agent(agent_memory_config, single_agent_name, output)
 
                 if session_id and session_manager and persistence_on:
-                    await self._persist_step_memory(project_id or "", single_agent_name, single_out_key, output, session_id=session_id)
+                    await self._persist_step_memory(project_id or "", single_agent_name, single_out_key, output, session_id=session_id, user_id=user_id)
                 elif project_id:
                     await self._persist_step_memory(project_id, single_agent_name, single_out_key, output)
+
+                if progress_callback:
+                    await progress_callback({"type": "step_complete", "step": single_out_key})
 
                 steps_run_this_call.append(single_agent_name)
                 completed_steps.add(single_agent_name)
 
                 if session_id and session_manager and persistence_on:
+                    _quality_keys = [f"{key}_quality" for key in ("problems", "features", "decompositions", "tasks")]
                     snapshot = {
                         "last_completed_step": single_agent_name,
-                        "outputs": {key: state[key] for s in self.pipeline_config["steps"] for key in [s.get("output_key")] if key and key in state},
+                        "outputs": {
+                            **{key: state[key] for s in self.pipeline_config["steps"] for key in [s.get("output_key")] if key and key in state},
+                            **{k: state[k] for k in _quality_keys if k in state},
+                        },
                     }
                     await session_manager.update_state(session_id, snapshot, single_agent_name)
 
@@ -428,6 +427,7 @@ class Pipeline:
                     session_id=session_id or "anon",
                     completed_steps=completed_steps,
                     prior_state=prior_state,
+                    progress_callback=progress_callback,
                 )
             except Exception as e:
                 if session_id and session_manager:
@@ -448,43 +448,50 @@ class Pipeline:
                 if raw is None:
                     continue
 
-                data = raw  # structured output enforces correct shape
-
-                # Score
-                if out_key == "features" and isinstance(data, list):
-                    _score_features(data)
-
-                state[out_key] = data
-
-                # Validate
                 agent = AgentFactory.create(agent_name)
                 logger.info("[dispatch] step=%s agent_class=%s", agent_name, type(agent).__name__)
-                _schema = agent.config.get("output_schema") or {}
-                _validation = validate_output(agent_name, data, _schema)
-                if not _validation["valid"]:
-                    _flagged_count = sum(1 for x in _validation["flagged"] if isinstance(x, dict) and x.get("quality_flag"))
-                    logger.warning("[validate_output] %s: %d item(s) flagged — %s", agent_name, _flagged_count, _validation["issues"][:5])
-                    data = _validation["flagged"]
-                    state[out_key] = data
+                data = self._finalize_agent_output(agent_name, out_key, raw, agent)
+                state[out_key] = self._strip_reasoning_field(data)
 
-                # Quality gate (non-blocking)
-                if out_key in ("problems", "features", "decompositions", "tasks"):
-                    try:
-                        from services.agents.quality_gate_agent import QualityGateAgent as _QGAgent
-                        from services.config.config_manager import ConfigManager as _QGCfg
-                        _qg_config = _QGCfg.load_agent("quality_gate").model_dump()
-                        _qg_agent = _QGAgent("quality_gate", _qg_config)
-                        _research_ctx = {
-                            "ingest": state.get("ingest", []),
-                            "product_context": state.get("product_context", {}),
+                qg_result = None
+                try:
+                    qg_result = await self._run_quality_gate_async(out_key, state[out_key], state)
+                    if (
+                        qg_result is not None
+                        and not qg_result.get("passed", False)
+                        and getattr(agent, "max_retries", 0) > 0
+                    ):
+                        memory_raw = agent.config.get("memory") if isinstance(agent.config, dict) else None
+                        agent_memory_config = None
+                        if memory_raw:
+                            from services.memory.memory_schemas import MemoryConfig
+                            agent_memory_config = MemoryConfig(**memory_raw)
+                        memory_slice = await memory_manager.read_for_agent(agent_memory_config)
+                        memory_slice = {
+                            key: self._unwrap_persisted_content(value)
+                            for key, value in memory_slice.items()
                         }
-                        _qg_result = _qg_agent.evaluate(out_key, data, _research_ctx)
-                        logger.info("[pipeline] quality_gate step=%s score=%d passed=%s", out_key, _qg_result["score"], _qg_result["passed"])
-                        state[f"{out_key}_quality"] = _qg_result
+                        retried_output, qg_result = await self._run_step_with_quality_retry(
+                            agent=agent,
+                            step_task=step_cfg["task"],
+                            base_context=state,
+                            memory_slice=memory_slice,
+                            session={"id": session_id, "state": {}} if session_id else None,
+                            out_key=out_key,
+                            state=state,
+                        )
+                        state[out_key] = self._strip_reasoning_field(retried_output)
+
+                    if qg_result is not None:
+                        state[f"{out_key}_quality"] = self._strip_reasoning_field(qg_result)
                         if session_id and session_manager and event_tracking_on:
-                            await session_manager.append_event(session_id, "quality_gate", {"step": out_key, "score": _qg_result["score"], "passed": _qg_result["passed"]})
-                    except Exception as _qg_err:
-                        logger.warning("[pipeline] quality_gate failed for %s: %s", out_key, _qg_err)
+                            await session_manager.append_event(
+                                session_id,
+                                "quality_gate",
+                                {"step": out_key, "score": qg_result["score"], "passed": qg_result["passed"]},
+                            )
+                except Exception as _qg_err:
+                    logger.warning("[pipeline] quality_gate failed for %s: %s", out_key, _qg_err)
 
                 # Memory write
                 agent_memory_config = None
@@ -497,7 +504,7 @@ class Pipeline:
 
                 # Persist to database
                 if session_id and session_manager and persistence_on:
-                    await self._persist_step_memory(project_id or "", agent_name, out_key, data, session_id=session_id)
+                    await self._persist_step_memory(project_id or "", agent_name, out_key, data, session_id=session_id, user_id=user_id)
                 elif project_id:
                     await self._persist_step_memory(project_id, agent_name, out_key, data)
 
@@ -506,9 +513,13 @@ class Pipeline:
 
                 # Session snapshot
                 if session_id and session_manager and persistence_on:
+                    _quality_keys = [f"{key}_quality" for key in ("problems", "features", "decompositions", "tasks")]
                     snapshot = {
                         "last_completed_step": agent_name,
-                        "outputs": {key: state[key] for s in self.pipeline_config["steps"] for key in [s.get("output_key")] if key and key in state},
+                        "outputs": {
+                            **{key: state[key] for s in self.pipeline_config["steps"] for key in [s.get("output_key")] if key and key in state},
+                            **{k: state[k] for k in _quality_keys if k in state},
+                        },
                     }
                     await session_manager.update_state(session_id, snapshot, agent_name)
 
@@ -535,6 +546,110 @@ class Pipeline:
     # -------------------------------------------------------------------------
     # Private helpers
     # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _strip_reasoning_field(content: Any) -> Any:
+        if isinstance(content, dict) and "reasoning" in content:
+            return {key: value for key, value in content.items() if key != "reasoning"}
+        return content
+
+    def _finalize_agent_output(self, agent_name: str, out_key: str, data: Any, agent) -> Any:
+        data = self._strip_reasoning_field(data)
+
+        if out_key == "features" and isinstance(data, list):
+            _score_features(data)
+
+        _schema = agent.config.get("output_schema") or {}
+        _validation = validate_output(agent_name, data, _schema)
+        if not _validation["valid"]:
+            _flagged_count = sum(
+                1 for x in _validation["flagged"]
+                if isinstance(x, dict) and x.get("quality_flag")
+            )
+            logger.warning(
+                "[validate_output] %s: %d item(s) flagged — %s",
+                agent_name,
+                _flagged_count,
+                _validation["issues"][:5],
+            )
+            data = _validation["flagged"]
+
+        return self._strip_reasoning_field(data)
+
+    async def _run_quality_gate_async(self, out_key: str, output: Any, state: dict) -> Optional[dict]:
+        """Async version of _run_quality_gate — uses evaluate_async to avoid blocking the event loop."""
+        if out_key not in ("problems", "features", "decompositions", "tasks"):
+            return None
+
+        from services.agents.quality_gate_agent import QualityGateAgent
+
+        _qg_config = ConfigManager.load_agent("quality_gate").model_dump()
+        _qg_agent = QualityGateAgent("quality_gate", _qg_config)
+        _research_ctx = {
+            "ingest": state.get("ingest", []),
+            "product_context": state.get("product_context", {}),
+        }
+        result = await _qg_agent.evaluate_async(out_key, output, _research_ctx)
+        return self._strip_reasoning_field(result)
+
+    async def _run_step_with_quality_retry(
+        self,
+        agent,
+        step_task: str,
+        base_context: dict,
+        memory_slice: dict,
+        session: Optional[dict],
+        out_key: str,
+        state: dict,
+    ) -> tuple[Any, Optional[dict]]:
+        attempt = 1
+        context = dict(base_context or {})
+
+        while True:
+            result = await agent.execute_async(
+                step_task,
+                context,
+                memory=memory_slice,
+                session=session,
+            )
+            data = self._finalize_agent_output(agent.name, out_key, result, agent)
+
+            qg_result = None
+            try:
+                qg_result = await self._run_quality_gate_async(out_key, data, state)
+                if qg_result is not None:
+                    logger.info(
+                        "[pipeline] quality_gate step=%s score=%d passed=%s",
+                        out_key,
+                        qg_result["score"],
+                        qg_result["passed"],
+                    )
+            except Exception as qg_err:
+                logger.warning("[pipeline] quality_gate failed for %s: %s", out_key, qg_err)
+
+            should_retry = (
+                qg_result is not None
+                and not qg_result.get("passed", False)
+                and attempt == 1
+                and getattr(agent, "max_retries", 0) > 0
+            )
+            if not should_retry:
+                return data, qg_result
+
+            feedback = agent.build_failure_feedback(
+                source="quality_gate",
+                attempt=attempt,
+                score=qg_result.get("score"),
+                critical_issues=qg_result.get("critical_issues", []),
+                item_results=qg_result.get("items", []),
+            )
+            context = {**dict(base_context or {}), "previous_attempt_failure": feedback}
+            attempt += 1
+            logger.info(
+                "[pipeline] retrying step=%s once with quality feedback score=%s",
+                out_key,
+                qg_result.get("score"),
+            )
 
     def _steps_completed_before(
         self,
@@ -572,12 +687,15 @@ class Pipeline:
         memory_key: str,
         content,
         session_id: str = None,
+        user_id: str = None,
     ) -> None:
         """Persist a single step's output to the database."""
+        content = self._strip_reasoning_field(content)
         if session_id:
             # Session-scoped memory: do NOT set project_id to avoid constraint conflicts
             entry = MemoryEntry(
                 session_id=session_id,
+                user_id=user_id,
                 agent_name=agent_name,
                 memory_key=memory_key,
                 content=content if isinstance(content, dict) else {"data": content},

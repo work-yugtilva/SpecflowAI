@@ -11,6 +11,7 @@ instructions: |
   Each check is PASS (true) or FAIL (false) — no partial credit.
   For each FAIL, add one specific actionable sentence to quality_issues naming
   the exact claim or metric that failed and what is needed to fix it.
+  The reasoning field must summarize why the overall gate passed or failed using the tagged inputs only.
   Return ONLY the JSON object matching the output schema. No preamble. No markdown.
 
 binary_checks:
@@ -28,13 +29,14 @@ binary_checks:
 thresholds:
   problems: 65
   features: 65
-  decompose: 60
+  decompositions: 60
   tasks: 60
   default: 65
 
 output_schema:
   type: object
   sections:
+    reasoning: string
     score: number
     passed: boolean
     critical_issues: list

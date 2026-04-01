@@ -16,27 +16,32 @@ interface LinearPayload {
 }
 
 export async function POST(req: NextRequest) {
-  // Resolve API key: prefer OAuth token from user_integrations, fall back to env var
   const supabase = await createClient();
   const {
     data: { user },
+    error: userError,
   } = await supabase.auth.getUser();
-
-  let apiKey: string | undefined;
-  if (user) {
-    const { data: integration } = await supabase
-      .from("user_integrations")
-      .select("access_token")
-      .eq("user_id", user.id)
-      .eq("provider", "linear")
-      .single();
-    apiKey = integration?.access_token ?? undefined;
+  if (userError || !user) {
+    return NextResponse.json(
+      { success: false, error: "Unauthorized" },
+      { status: 401 }
+    );
   }
 
-  if (!apiKey) {
-    apiKey = process.env.LINEAR_API_KEY;
+  const { data: integration, error: integrationError } = await supabase
+    .from("user_integrations")
+    .select("access_token")
+    .eq("user_id", user.id)
+    .eq("provider", "linear")
+    .maybeSingle();
+  if (integrationError) {
+    return NextResponse.json(
+      { success: false, error: integrationError.message },
+      { status: 500 }
+    );
   }
 
+  const apiKey = integration?.access_token ?? undefined;
   if (!apiKey) {
     return NextResponse.json(
       {

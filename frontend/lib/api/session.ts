@@ -32,6 +32,7 @@ export interface SessionRunResponse {
   session_state: {
     last_completed_step?: string;
     outputs?: Partial<PipelineOutputs>;
+    regeneration_counts?: Partial<Record<string, number>>;
   } | null;
 }
 
@@ -49,6 +50,7 @@ export interface SessionStateSnapshot {
   state: {
     last_completed_step?: string;
     outputs?: Partial<PipelineOutputs>;
+    regeneration_counts?: Partial<Record<string, number>>;
   };
   step: string | null;
 }
@@ -132,6 +134,67 @@ export async function runSession(
     body: JSON.stringify(body),
   });
   return handleResponse<SessionRunResponse>(res);
+}
+
+// ─── Async pipeline run + SSE stream ─────────────────────────────────────────
+
+export interface AsyncRunStarted {
+  job_id: string;
+  status: string;
+}
+
+export type RunStreamEvent =
+  | { type: "connected" }
+  | { type: "heartbeat" }
+  | { type: "phase"; phase: string; progress?: number }
+  | { type: "step_complete"; step: string }
+  | { type: "complete"; data: PipelineOutputs; session_state: SessionRunResponse["session_state"] }
+  | { type: "error"; message: string; status_code?: number };
+
+/** Start a background pipeline run. Returns the job_id immediately (202). */
+export async function startSessionRunAsync(
+  sessionId: string,
+  inputData: Record<string, unknown>,
+  step?: string
+): Promise<AsyncRunStarted> {
+  const body: Record<string, unknown> = { input_data: inputData };
+  if (step) body.step = step;
+  const res = await fetch(`${API_BASE}/${sessionId}/run/async`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  return handleResponse<AsyncRunStarted>(res);
+}
+
+/** Subscribe to SSE events for a background pipeline job. Async generator. */
+export async function* subscribeToRunStream(
+  sessionId: string,
+  jobId: string
+): AsyncGenerator<RunStreamEvent> {
+  const res = await fetch(`${API_BASE}/${sessionId}/run/stream/${jobId}`);
+  if (!res.ok || !res.body) {
+    throw new Error(`Stream connect failed: ${res.status}`);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop() ?? "";
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        try {
+          yield JSON.parse(line.slice(6)) as RunStreamEvent;
+        } catch {
+          // skip malformed SSE line
+        }
+      }
+    }
+  }
 }
 
 // Note: listOrphanedPipelines, attachPipelineToSession, listSessionPipelines are

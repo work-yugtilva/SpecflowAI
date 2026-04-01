@@ -121,6 +121,9 @@ export default function DecomposePage() {
   } = useOrphanedPipeline();
 
   const stepStatuses = computeStepStatuses(sessionDetail);
+  const regenCount = sessionDetail?.state?.state?.regeneration_counts?.["decompose"] ?? 0;
+  const regenLimitReached = regenCount >= 3;
+  const regenLeft = Math.max(0, 3 - regenCount);
 
   useEffect(() => {
     setDecomposition(null);
@@ -267,6 +270,11 @@ export default function DecomposePage() {
             {qualityScore && (
               <QualityBadge score={qualityScore.score} passed={qualityScore.passed} />
             )}
+            {activeSessionId && regenCount > 0 && (
+              <span style={{ fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(0,0,0,0.06)", color: regenLimitReached ? "#B91C1C" : "#6B6B6B", letterSpacing: "0.03em" }}>
+                {regenLeft}/3 Regenerations Left
+              </span>
+            )}
             {dm && (
               <span
                 style={{
@@ -303,7 +311,8 @@ export default function DecomposePage() {
             )}
             <button
               onClick={handleGenerate}
-              disabled={generating || !activeSessionId}
+              disabled={generating || !activeSessionId || regenLimitReached}
+              title={regenLimitReached ? "Limit reached. Use the editor." : undefined}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -312,10 +321,10 @@ export default function DecomposePage() {
                 borderRadius: 8,
                 fontSize: "0.8125rem",
                 fontWeight: 500,
-                background: generating || !activeSessionId ? "#F8F4EF" : "#FFFFFF",
+                background: generating || !activeSessionId || regenLimitReached ? "#F8F4EF" : "#FFFFFF",
                 border: "1.5px solid #E4DDD4",
-                color: generating || !activeSessionId ? "#9E9E9E" : "#0D0D0D",
-                cursor: generating || !activeSessionId ? "not-allowed" : "pointer",
+                color: generating || !activeSessionId || regenLimitReached ? "#9E9E9E" : "#0D0D0D",
+                cursor: generating || !activeSessionId || regenLimitReached ? "not-allowed" : "pointer",
                 fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
                 transition: "background 150ms ease, border-color 150ms ease",
               }}

@@ -10,3 +10,4 @@ anthropic>=0.40.0
 instructor>=1.5.0
 fastapi>=0.110.0
 uvicorn[standard]>=0.27.0
+json-repair>=0.30.0

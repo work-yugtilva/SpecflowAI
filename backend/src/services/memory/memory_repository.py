@@ -8,6 +8,15 @@ from services.memory.memory_schemas import MemoryEntry
 TABLE = "memory_entries"
 
 
+def _is_missing_user_id_column_error(error: Exception) -> bool:
+    message = str(error)
+    return (
+        "PGRST204" in message
+        and "'user_id' column" in message
+        and f"'{TABLE}'" in message
+    )
+
+
 class MemoryRepository:
     """
     Persistence layer for memory entries.
@@ -15,8 +24,16 @@ class MemoryRepository:
     All queries are dynamic — no hardcoded keys or agent names.
     """
 
-    def __init__(self):
-        self.client = get_supabase_client()
+    def __init__(self, client=None):
+        self.client = client or get_supabase_client()
+
+    @staticmethod
+    def _without_user_id(data: dict) -> dict:
+        if "user_id" not in data:
+            return data
+        sanitized = dict(data)
+        sanitized.pop("user_id", None)
+        return sanitized
 
     async def save(self, entry: MemoryEntry) -> MemoryEntry:
         """
@@ -32,8 +49,20 @@ class MemoryRepository:
             return self.client.table(TABLE).upsert(
                 data, on_conflict="project_id,memory_key"
             ).execute()
+        try:
+            result = await run_sync(_upsert)
+        except Exception as exc:
+            if not _is_missing_user_id_column_error(exc):
+                raise
 
-        result = await run_sync(_upsert)
+            fallback_data = self._without_user_id(data)
+
+            def _fallback_upsert():
+                return self.client.table(TABLE).upsert(
+                    fallback_data, on_conflict="project_id,memory_key"
+                ).execute()
+
+            result = await run_sync(_fallback_upsert)
 
         rows = rows_from_result(result)
         if rows:
@@ -140,8 +169,20 @@ class MemoryRepository:
             return self.client.table(TABLE).upsert(
                 data, on_conflict="session_id,memory_key"
             ).execute()
+        try:
+            result = await run_sync(_upsert)
+        except Exception as exc:
+            if not _is_missing_user_id_column_error(exc):
+                raise
 
-        result = await run_sync(_upsert)
+            fallback_data = self._without_user_id(data)
+
+            def _fallback_upsert():
+                return self.client.table(TABLE).upsert(
+                    fallback_data, on_conflict="session_id,memory_key"
+                ).execute()
+
+            result = await run_sync(_fallback_upsert)
 
         rows = rows_from_result(result)
         if rows:

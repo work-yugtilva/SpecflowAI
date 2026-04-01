@@ -17,8 +17,8 @@ class SessionRepository:
     wrapped in run_sync (thread pool).
     """
 
-    def __init__(self):
-        self.client = get_supabase_client()
+    def __init__(self, client=None):
+        self.client = client or get_supabase_client()
 
     # -------------------------------------------------------------------------
     # sessions table
