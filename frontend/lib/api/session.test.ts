@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { createSession, runSession, getLastSessionMode } from "../api/session";
+import { createSession, runSession, getSession, startSessionRunAsync, getLastSessionMode } from "../api/session";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -45,6 +45,66 @@ describe("createSession", () => {
     vi.stubGlobal("fetch", mockFetchNonOk(503, { detail: "Service Unavailable" }));
 
     await expect(createSession("test")).rejects.toThrow("Service Unavailable");
+  });
+});
+
+// ─── getSession ──────────────────────────────────────────────────────────────
+
+describe("getSession", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("returns session detail on success", async () => {
+    vi.stubGlobal("fetch", mockFetchOk({
+      session: { id: "sess-abc", session_name: "My Session", status: "active",
+                 metadata: {}, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" },
+      state: null,
+      events: [],
+    }));
+
+    const result = await getSession("sess-abc");
+    expect(result.session.id).toBe("sess-abc");
+  });
+
+  it("throws when session not found", async () => {
+    vi.stubGlobal("fetch", mockFetchNonOk(404, { detail: "Session not found" }));
+
+    await expect(getSession("bad-id")).rejects.toThrow("Session not found");
+  });
+});
+
+// ─── startSessionRunAsync ─────────────────────────────────────────────────────
+
+describe("startSessionRunAsync", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("returns job_id on 202 accepted", async () => {
+    vi.stubGlobal("fetch", mockFetchOk({ job_id: "abc12345", status: "queued" }));
+
+    const result = await startSessionRunAsync("sess-1", { context: {} }, "problems");
+    expect(result.job_id).toBe("abc12345");
+    expect(result.status).toBe("queued");
+  });
+
+  it("includes step in request body when provided", async () => {
+    const mockFetch = mockFetchOk({ job_id: "j1", status: "queued" });
+    vi.stubGlobal("fetch", mockFetch);
+
+    await startSessionRunAsync("sess-1", {}, "features");
+
+    const body = JSON.parse(mockFetch.mock.calls[0][1].body as string);
+    expect(body.step).toBe("features");
+  });
+
+  it("throws on non-ok response", async () => {
+    vi.stubGlobal("fetch", mockFetchNonOk(503, { detail: "Service overloaded" }));
+
+    await expect(startSessionRunAsync("sess-1", {})).rejects.toThrow("Service overloaded");
   });
 });
 
