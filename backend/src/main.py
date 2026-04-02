@@ -16,6 +16,10 @@ from dataclasses import dataclass
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+from slowapi.middleware import SlowAPIMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 import asyncio
@@ -61,7 +65,7 @@ async def get_auth_context(
         return None
     jwt = credentials.credentials
     try:
-        user_id = verify_supabase_jwt(jwt)
+        user_id = await verify_supabase_jwt(jwt)
         client = get_user_supabase_client(jwt)
         return AuthContext(user_id=user_id, client=client)
     except Exception:
@@ -97,6 +101,7 @@ _handler = logging.StreamHandler()
 _handler.setFormatter(_JsonFormatter())
 logging.getLogger().addHandler(_handler)
 logging.getLogger().setLevel(logging.INFO)
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -126,6 +131,12 @@ def _build_allowed_hosts() -> list[str]:
     return sorted(hosts)
 
 
+MAX_REQUEST_BODY_BYTES = 512 * 1024  # 512 KB
+RATE_LIMIT_AI      = "10/minute"   # AI-triggering endpoints
+RATE_LIMIT_DEFAULT = "60/minute"   # All other endpoints
+
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(
     title="SpecFlow Pipeline API",
     version="1.0.0",
@@ -133,6 +144,7 @@ app = FastAPI(
     redoc_url=None if _is_production() else "/redoc",
     openapi_url=None if _is_production() else "/openapi.json",
 )
+app.state.limiter = limiter
 
 LOCAL_ORIGINS = [
     "http://localhost",
@@ -143,6 +155,37 @@ LOCAL_ORIGINS = [
     "http://127.0.0.1:3001",
 ]
 
+
+class RequestBodySizeLimitMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        # Fast path: Content-Length header present
+        content_length = request.headers.get("content-length")
+        if content_length is not None:
+            if int(content_length) > MAX_REQUEST_BODY_BYTES:
+                return JSONResponse(
+                    status_code=413,
+                    content={"error": "Request body too large"},
+                )
+            return await call_next(request)
+
+        # Slow path: no Content-Length — stream and count actual bytes
+        body = b""
+        async for chunk in request.stream():
+            body += chunk
+            if len(body) > MAX_REQUEST_BODY_BYTES:
+                return JSONResponse(
+                    status_code=413,
+                    content={"error": "Request body too large"},
+                )
+
+        # Replay the consumed body for downstream handlers
+        async def _receive():
+            return {"type": "http.request", "body": body, "more_body": False}
+
+        request._receive = _receive
+        return await call_next(request)
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=LOCAL_ORIGINS,
@@ -150,6 +193,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(RequestBodySizeLimitMiddleware)
+app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=_build_allowed_hosts())
 
 
@@ -204,12 +249,14 @@ PIPELINE_PORT = int(os.environ.get("PIPELINE_PORT", "8001"))
 
 
 @app.get("/health")
-async def health():
+@limiter.limit(RATE_LIMIT_DEFAULT)
+async def health(request: Request):
     return {"status": "ok", "service": "specflow-pipeline"}
 
 
 @app.post("/run")
-async def run_pipeline(req: RunRequest):
+@limiter.limit(RATE_LIMIT_AI)
+async def run_pipeline(request: Request, req: RunRequest, auth: AuthContext = Depends(require_auth_context)):
     try:
         print(f"[pipeline] Starting run | project_id={req.project_id}")
         pipeline = Pipeline()
@@ -232,7 +279,8 @@ async def run_pipeline(req: RunRequest):
 # ---------------------------------------------------------------------------
 
 @app.get("/sessions")
-async def list_sessions(auth: AuthContext = Depends(require_auth_context)):
+@limiter.limit(RATE_LIMIT_DEFAULT)
+async def list_sessions(request: Request, auth: AuthContext = Depends(require_auth_context)):
     """Return all sessions ordered by created_at DESC."""
     try:
         print(f"[session] Listing sessions")
@@ -245,11 +293,12 @@ async def list_sessions(auth: AuthContext = Depends(require_auth_context)):
         import traceback
         print(f"[session] Error listing sessions: {e}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post("/session/create")
-async def create_session(req: CreateSessionRequest, auth: AuthContext = Depends(require_auth_context)):
+@limiter.limit(RATE_LIMIT_DEFAULT)
+async def create_session(request: Request, req: CreateSessionRequest, auth: AuthContext = Depends(require_auth_context)):
     """Create a new session. Returns session_id to use in subsequent /session/{id}/run calls."""
     try:
         print(f"[session] Creating session: {req.session_name}")
@@ -272,11 +321,12 @@ async def create_session(req: CreateSessionRequest, auth: AuthContext = Depends(
         import traceback
         print(f"[session] Error creating session: {e}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post("/session/{session_id}/run")
-async def run_session(session_id: str, req: SessionRunRequest, auth: AuthContext = Depends(require_auth_context)):
+@limiter.limit(RATE_LIMIT_AI)
+async def run_session(request: Request, session_id: str, req: SessionRunRequest, auth: AuthContext = Depends(require_auth_context)):
     """
     Run the pipeline (or a single step) for an existing session.
 
@@ -351,7 +401,8 @@ async def run_session(session_id: str, req: SessionRunRequest, auth: AuthContext
 
 
 @app.post("/session/{session_id}/run/async", status_code=202)
-async def run_session_async(session_id: str, req: SessionRunRequest, auth: AuthContext = Depends(require_auth_context)):
+@limiter.limit(RATE_LIMIT_DEFAULT)
+async def run_session_async(request: Request, session_id: str, req: SessionRunRequest, auth: AuthContext = Depends(require_auth_context)):
     """
     Non-blocking pipeline start. Immediately returns {job_id} with 202 Accepted
     and runs the pipeline as a background asyncio.Task.
@@ -446,7 +497,8 @@ async def run_session_async(session_id: str, req: SessionRunRequest, auth: AuthC
 
 
 @app.get("/session/{session_id}/run/stream/{job_id}")
-async def stream_run(session_id: str, job_id: str, auth: AuthContext = Depends(require_auth_context)):
+@limiter.limit(RATE_LIMIT_DEFAULT)
+async def stream_run(request: Request, session_id: str, job_id: str, auth: AuthContext = Depends(require_auth_context)):
     """
     SSE stream for a background pipeline job started via POST /session/{id}/run/async.
 
@@ -486,7 +538,8 @@ async def stream_run(session_id: str, job_id: str, auth: AuthContext = Depends(r
 
 
 @app.post("/session/{session_id}/prd")
-async def generate_prd(session_id: str, auth: AuthContext = Depends(require_auth_context)):
+@limiter.limit(RATE_LIMIT_AI)
+async def generate_prd(request: Request, session_id: str, auth: AuthContext = Depends(require_auth_context)):
     """
     Generate a PRD for an existing session using the accumulated pipeline outputs.
     Reads problems, features, decompositions, tasks from session state and runs PRDAgent.
@@ -536,7 +589,7 @@ async def generate_prd(session_id: str, auth: AuthContext = Depends(require_auth
             content=result if isinstance(result, dict) else {"data": result},
             metadata={"quality_score": quality},
         )
-        memory_repo = MemoryRepository()
+        memory_repo = MemoryRepository(client=auth.client)
         await memory_repo.save_for_session(entry)
 
         # Increment PRD regeneration counter.
@@ -552,7 +605,8 @@ async def generate_prd(session_id: str, auth: AuthContext = Depends(require_auth
     except HTTPException:
         raise
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        logger.error("generate_prd failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=404, detail="Internal server error")
     except Exception:
         import traceback
         traceback.print_exc()
@@ -560,7 +614,8 @@ async def generate_prd(session_id: str, auth: AuthContext = Depends(require_auth
 
 
 @app.post("/session/{session_id}/prd/stream")
-async def generate_prd_stream(session_id: str, auth: AuthContext = Depends(require_auth_context)):
+@limiter.limit(RATE_LIMIT_AI)
+async def generate_prd_stream(request: Request, session_id: str, auth: AuthContext = Depends(require_auth_context)):
     """SSE streaming PRD generation. Sends phase updates then final result."""
 
     async def event_stream():
@@ -627,7 +682,7 @@ async def generate_prd_stream(session_id: str, auth: AuthContext = Depends(requi
                 content=result if isinstance(result, dict) else {"data": result},
                 metadata={"quality_score": quality},
             )
-            memory_repo = MemoryRepository()
+            memory_repo = MemoryRepository(client=auth.client)
             await memory_repo.save_for_session(entry)
 
             # Increment PRD regeneration counter.
@@ -644,7 +699,7 @@ async def generate_prd_stream(session_id: str, auth: AuthContext = Depends(requi
         except Exception as e:
             import traceback
             traceback.print_exc()
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Internal server error'})}\n\n"
 
     return StreamingResponse(
         event_stream(),
@@ -657,7 +712,8 @@ async def generate_prd_stream(session_id: str, auth: AuthContext = Depends(requi
 
 
 @app.get("/session/{session_id}/prd")
-async def get_prd(session_id: str, auth: AuthContext = Depends(require_auth_context)):
+@limiter.limit(RATE_LIMIT_DEFAULT)
+async def get_prd(request: Request, session_id: str, auth: AuthContext = Depends(require_auth_context)):
     """Load stored PRD from memory_entries for a session."""
     try:
         memory_repo = MemoryRepository(client=auth.client)
@@ -674,7 +730,8 @@ async def get_prd(session_id: str, auth: AuthContext = Depends(require_auth_cont
 
 
 @app.get("/session/{session_id}/prd/export")
-async def export_prd_markdown(session_id: str, auth: AuthContext = Depends(require_auth_context)):
+@limiter.limit(RATE_LIMIT_DEFAULT)
+async def export_prd_markdown(request: Request, session_id: str, auth: AuthContext = Depends(require_auth_context)):
     """
     Export the session's PRD as a downloadable markdown file.
     """
@@ -792,14 +849,16 @@ async def export_prd_markdown(session_id: str, auth: AuthContext = Depends(requi
 
 
 @app.get("/session/{session_id}")
-async def get_session(session_id: str, auth: AuthContext = Depends(require_auth_context)):
+@limiter.limit(RATE_LIMIT_DEFAULT)
+async def get_session(request: Request, session_id: str, auth: AuthContext = Depends(require_auth_context)):
     """Get a session with its current state and full event log."""
     try:
         sm = SessionManager(client=auth.client)
         full = await sm.get_full_session(session_id)
         return full
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        logger.error("get_session failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=404, detail="Internal server error")
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -809,7 +868,8 @@ async def get_session(session_id: str, auth: AuthContext = Depends(require_auth_
 # ---------------------------------------------------------------------------
 
 @app.get("/pipelines/orphaned")
-async def list_orphaned_pipelines(auth: AuthContext = Depends(require_auth_context)):
+@limiter.limit(RATE_LIMIT_DEFAULT)
+async def list_orphaned_pipelines(request: Request, auth: AuthContext = Depends(require_auth_context)):
     """List pipeline runs not attached to any session."""
     try:
         repo = PipelineRepository(client=auth.client)
@@ -820,7 +880,9 @@ async def list_orphaned_pipelines(auth: AuthContext = Depends(require_auth_conte
 
 
 @app.post("/pipelines/attach")
+@limiter.limit(RATE_LIMIT_DEFAULT)
 async def attach_pipeline_to_session(
+    request: Request,
     req: AttachPipelineRequest,
     auth: AuthContext = Depends(require_auth_context),
 ):
@@ -839,7 +901,8 @@ async def attach_pipeline_to_session(
 
 
 @app.get("/pipelines/{session_id}")
-async def list_session_pipelines(session_id: str, auth: AuthContext = Depends(require_auth_context)):
+@limiter.limit(RATE_LIMIT_DEFAULT)
+async def list_session_pipelines(request: Request, session_id: str, auth: AuthContext = Depends(require_auth_context)):
     """List all pipeline runs for a session."""
     try:
         repo = PipelineRepository(client=auth.client)
