@@ -22,6 +22,7 @@ Screenshot*.png
 
 # Local artifacts / nested copies
 output/
+autoresearch/
 everything-claude-code/
 
 # Test & coverage (Vitest, pytest, coverage.py)
