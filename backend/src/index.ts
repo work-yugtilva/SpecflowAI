@@ -23,8 +23,6 @@ const HOSTED_ORIGIN_PATTERNS = [
   /^https:\/\/[a-z0-9-]+\.loca\.lt$/i,
   /^https:\/\/[a-z0-9-]+\.ngrok-free\.app$/i,
   /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/i,
-  // Production marketing / app (override via FRONTEND_URL for other domains)
-  /^https:\/\/(www\.)?specflowai\.com$/i,
 ];
 
 function buildAllowedOrigins(): string[] {

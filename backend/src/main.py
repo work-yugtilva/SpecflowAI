@@ -197,12 +197,8 @@ def _build_allowed_origins() -> list[str]:
 
 
 def _build_allowed_origin_regex() -> str:
-    # Vercel previews + tunnels + production app domain (specflowai.com)
     return (
-        r"^https:\/\/("
-        r"[a-z0-9-]+\.(vercel\.app|loca\.lt|ngrok-free\.app|trycloudflare\.com)"
-        r"|(www\.)?specflowai\.com"
-        r")$"
+        r"^https:\/\/[a-z0-9-]+\.(vercel\.app|loca\.lt|ngrok-free\.app|trycloudflare\.com)$"
     )
 
 

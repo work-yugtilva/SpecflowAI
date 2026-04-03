@@ -1,9 +1,6 @@
 node_modules/
 .DS_Store
 .env
-
-# Vercel CLI local link (do not commit)
-.vercel/
 .env.local
 dist/
 build/
@@ -22,7 +19,6 @@ Screenshot*.png
 
 # Local artifacts / nested copies
 output/
-autoresearch/
 everything-claude-code/
 
 # Test & coverage (Vitest, pytest, coverage.py)
