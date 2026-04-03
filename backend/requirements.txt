@@ -11,3 +11,7 @@ instructor>=1.5.0
 fastapi>=0.110.0
 uvicorn[standard]>=0.27.0
 json-repair>=0.30.0
+slowapi>=0.1.9,<0.2.0
+sentry-sdk[fastapi]>=2.0.0
+google-adk>=1.15.0
+google-genai>=1.36.0

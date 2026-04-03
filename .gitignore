@@ -1,6 +1,9 @@
 node_modules/
 .DS_Store
 .env
+
+# Vercel CLI local link (do not commit)
+.vercel/
 .env.local
 dist/
 build/
@@ -20,4 +23,35 @@ Screenshot*.png
 # Local artifacts / nested copies
 output/
 everything-claude-code/
+
+# Test & coverage (Vitest, pytest, coverage.py)
+coverage/
+htmlcov/
+.nyc_output/
+.coverage
+.coverage.*
+*.cover
+.pytest_cache/
+.tox/
+
+# Python tooling caches
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+.eggs/
+
+# Virtual environments (local Python)
+.venv/
+venv/
+ENV/
+
+# Playwright / E2E artifacts
+playwright-report/
+test-results/
+.playwright/
+
+# OS / editor noise
+Thumbs.db
+*.swp
+*~
 

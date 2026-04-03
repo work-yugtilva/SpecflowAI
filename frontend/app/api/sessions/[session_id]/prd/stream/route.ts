@@ -16,11 +16,13 @@ export async function POST(
 ) {
   try {
     const authHeaders = await getRequiredAuthHeader();
+    const body = await req.text();
     return await proxySse(
       `${BACKEND_URL}/session/${params.session_id}/prd/stream`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders },
+        body: body || undefined,
       }
     );
   } catch (error) {

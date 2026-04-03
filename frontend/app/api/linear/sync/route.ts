@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 const LINEAR_API = "https://api.linear.app/graphql";
+const ALLOWED_OPERATIONS = new Set([
+  "IssueCreate",
+  "IssueLabelCreate",
+  "ProjectCreate",
+]);
 
 interface MutationObject {
   operation: string;
@@ -84,6 +89,15 @@ export async function POST(req: NextRequest) {
   }> = [];
 
   for (const mutation_obj of mutations) {
+    if (!ALLOWED_OPERATIONS.has(mutation_obj.operation)) {
+      results.push({
+        operation: mutation_obj.operation,
+        success: false,
+        errors: ["Operation not allowed"],
+      });
+      continue;
+    }
+
     try {
       const res = await fetch(LINEAR_API, {
         method: "POST",

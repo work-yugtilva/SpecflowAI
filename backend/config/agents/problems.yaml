@@ -29,6 +29,12 @@ output_schema:
     research_evidence: string
   groups: null
 
+# Structured output (reasoning + items) + Instructor retries need more headroom than the
+# default 2048 — same ceiling as features/decompose/tasks.
+token_control:
+  max_output_tokens: 8192
+  retries: 2
+
 max_retries: 2
 use_critic: true
 

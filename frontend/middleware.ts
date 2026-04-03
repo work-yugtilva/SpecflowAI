@@ -8,7 +8,6 @@ import {
 
 const PROTECTED_PATHS = [
   "/dashboard",
-  "/ingest",
   "/problems",
   "/features",
   "/decompose",

@@ -4,11 +4,11 @@ import Image from "next/image";
 import { useState } from "react";
 
 const navLinks = [
-  { label: "Product", hasDropdown: true },
-  { label: "Docs", hasDropdown: true },
-  { label: "Resources", hasDropdown: true },
-  { label: "Pricing", hasDropdown: false },
-  { label: "Blog", hasDropdown: false },
+  { label: "Product", hasDropdown: true, href: "#" },
+  { label: "Docs", hasDropdown: true, href: "#" },
+  { label: "Resources", hasDropdown: true, href: "#" },
+  { label: "Pricing", hasDropdown: false, href: "/pricing" },
+  { label: "Blog", hasDropdown: false, href: "#" },
 ];
 
 export default function Navbar() {
@@ -52,7 +52,7 @@ export default function Navbar() {
           {navLinks.map((link) => (
             <a
               key={link.label}
-              href="#"
+              href={link.href}
               className="nav-link px-3 py-1.5 rounded-md hover:bg-black/5"
             >
               {link.label}
@@ -111,7 +111,7 @@ export default function Navbar() {
           {navLinks.map((link) => (
             <a
               key={link.label}
-              href="#"
+              href={link.href}
               className="nav-link py-2 text-[15px]"
               onClick={() => setMobileOpen(false)}
             >

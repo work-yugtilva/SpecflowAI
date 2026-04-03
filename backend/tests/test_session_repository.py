@@ -99,13 +99,13 @@ async def test_list_sessions_returns_empty():
 @pytest.mark.asyncio
 async def test_get_session_returns_session():
     row = _session_row(id="sess-abc", session_name="My Session")
-    chain = _chain(row)  # maybe_single returns dict
-    chain.execute.return_value.data = row
+    chain = _chain(row)  # limit(1) returns list of one row
+    chain.execute.return_value.data = [row]
     repo = _make_repo()
     (repo.client.table.return_value
         .select.return_value
         .eq.return_value
-        .maybe_single.return_value) = chain
+        .limit.return_value) = chain
 
     result = await repo.get_session("sess-abc")
     assert result is not None
@@ -115,12 +115,12 @@ async def test_get_session_returns_session():
 @pytest.mark.asyncio
 async def test_get_session_returns_none_when_not_found():
     chain = MagicMock()
-    chain.execute.return_value = _result(None)
+    chain.execute.return_value = _result([])
     repo = _make_repo()
     (repo.client.table.return_value
         .select.return_value
         .eq.return_value
-        .maybe_single.return_value) = chain
+        .limit.return_value) = chain
 
     result = await repo.get_session("nonexistent")
     assert result is None
@@ -148,12 +148,12 @@ async def test_update_session_status_calls_update():
 @pytest.mark.asyncio
 async def test_get_state_returns_none_when_missing():
     chain = MagicMock()
-    chain.execute.return_value = _result(None)
+    chain.execute.return_value = _result([])
     repo = _make_repo()
     (repo.client.table.return_value
         .select.return_value
         .eq.return_value
-        .maybe_single.return_value) = chain
+        .limit.return_value) = chain
 
     result = await repo.get_state("sess-1")
     assert result is None
@@ -164,12 +164,12 @@ async def test_get_state_returns_session_state():
     row = {"id": "st1", "session_id": "sess-1", "state": {"last": "tasks"}, "step": "tasks",
            "created_at": None, "updated_at": None}
     chain = MagicMock()
-    chain.execute.return_value = _result(row)
+    chain.execute.return_value = _result([row])
     repo = _make_repo()
     (repo.client.table.return_value
         .select.return_value
         .eq.return_value
-        .maybe_single.return_value) = chain
+        .limit.return_value) = chain
 
     result = await repo.get_state("sess-1")
     assert result is not None

@@ -2,9 +2,11 @@
 
 import os
 import httpx
+import asyncio
 from supabase import create_client, Client
 
 from services.config.load_env import load_root_env
+from services.db.supabase_async import first_row_from_result
 
 load_root_env()
 
@@ -37,10 +39,11 @@ def get_supabase_client() -> Client:
     return _client
 
 
-def verify_supabase_jwt(jwt: str) -> str:
+async def verify_supabase_jwt(jwt: str) -> str:
     """
     Verify a Supabase access token against the Auth API and return the user id.
     This avoids trusting unsigned JWT payload fields inside request handlers.
+    Uses async httpx to avoid blocking the event loop.
     """
     url = _read_supabase_url()
     key = _read_supabase_anon_key()
@@ -50,14 +53,15 @@ def verify_supabase_jwt(jwt: str) -> str:
             "SUPABASE_ANON_KEY in the repo root .env."
         )
 
-    response = httpx.get(
-        f"{url.rstrip('/')}/auth/v1/user",
-        headers={
-            "apikey": key,
-            "Authorization": f"Bearer {jwt}",
-        },
-        timeout=5.0,
-    )
+    async with httpx.AsyncClient() as client:
+        response = await client.get(
+            f"{url.rstrip('/')}/auth/v1/user",
+            headers={
+                "apikey": key,
+                "Authorization": f"Bearer {jwt}",
+            },
+            timeout=5.0,
+        )
     if response.status_code != 200:
         raise ValueError("Invalid or expired token")
 
@@ -94,7 +98,7 @@ def get_user_integration(user_id: str, provider: str) -> dict | None:
         .select("*")
         .eq("user_id", user_id)
         .eq("provider", provider)
-        .maybe_single()
+        .limit(1)
         .execute()
     )
-    return result.data if result else None
+    return first_row_from_result(result)

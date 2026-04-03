@@ -62,7 +62,7 @@ class PipelineRepository:
                 self.client.table(PIPELINES_TABLE)
                 .select("*")
                 .eq("id", pipeline_id)
-                .maybe_single()
+                .limit(1)
                 .execute()
             )
 

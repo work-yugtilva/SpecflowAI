@@ -46,26 +46,3 @@ export async function verifyAuth(
   }
 }
 
-export function optionalAuth(
-  req: AuthRequest,
-  res: Response,
-  next: NextFunction
-) {
-  try {
-    const token = req.headers.authorization?.replace('Bearer ', '');
-
-    if (token) {
-      const supabase = getSupabaseClient();
-      supabase.auth.getUser(token).then(({ data: { user } }) => {
-        if (user) {
-          req.user = { id: user.id, email: user.email || '' };
-        }
-        next();
-      });
-    } else {
-      next();
-    }
-  } catch (error) {
-    next();
-  }
-}

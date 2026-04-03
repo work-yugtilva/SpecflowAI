@@ -95,7 +95,7 @@ class MemoryRepository:
                 .select("*")
                 .eq("project_id", project_id)
                 .eq("memory_key", key)
-                .maybe_single()
+                .limit(1)
                 .execute()
             )
 
@@ -215,7 +215,7 @@ class MemoryRepository:
                 .select("*")
                 .eq("session_id", session_id)
                 .eq("memory_key", key)
-                .maybe_single()
+                .limit(1)
                 .execute()
             )
 

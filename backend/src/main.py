@@ -10,7 +10,40 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from services.config.load_env import load_root_env
 
+REQUIRED_ENV_VARS = [
+    "ANTHROPIC_API_KEY",
+    "SUPABASE_URL",
+    "SUPABASE_SERVICE_ROLE_KEY",
+    "SUPABASE_ANON_KEY",
+]
+
+
+def validate_required_env() -> None:
+    missing = []
+    for var in REQUIRED_ENV_VARS:
+        if var == "SUPABASE_URL":
+            if not (os.environ.get("SUPABASE_URL") or os.environ.get("NEXT_PUBLIC_SUPABASE_URL")):
+                missing.append("SUPABASE_URL (or NEXT_PUBLIC_SUPABASE_URL)")
+        else:
+            if not os.environ.get(var):
+                missing.append(var)
+    if missing:
+        raise RuntimeError(
+            f"Missing required environment variables: {', '.join(missing)}"
+        )
+
+
 load_root_env()
+validate_required_env()
+
+import sentry_sdk
+
+if dsn := os.environ.get("SENTRY_DSN"):
+    sentry_sdk.init(
+        dsn=dsn,
+        traces_sample_rate=0.1,
+        environment=os.environ.get("NODE_ENV", "development"),
+    )
 
 from dataclasses import dataclass
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -36,7 +69,9 @@ from services.agent_factory import AgentFactory
 from services.memory.memory_repository import MemoryRepository
 from services.memory.memory_schemas import MemoryEntry
 from services.job_registry import create_job, get_job
-from services.db.supabase_client import get_user_supabase_client, verify_supabase_jwt
+from services.db.supabase_client import get_supabase_client, get_user_supabase_client, verify_supabase_jwt
+from services.plan.plan_service import PlanService
+from sentry_sdk.integrations.asgi import SentryAsgiMiddleware
 
 
 # ---------------------------------------------------------------------------
@@ -113,7 +148,15 @@ def _is_production() -> bool:
 
 
 def _build_allowed_hosts() -> list[str]:
-    hosts = {"localhost", "127.0.0.1", "test"}
+    hosts = {
+        "localhost",
+        "127.0.0.1",
+        "test",
+        "*.vercel.app",
+        "*.loca.lt",
+        "*.ngrok-free.app",
+        "*.trycloudflare.com",
+    }
     raw_hosts = os.environ.get("ALLOWED_HOSTS", "")
     for host in raw_hosts.split(","):
         cleaned = host.strip()
@@ -129,6 +172,38 @@ def _build_allowed_hosts() -> list[str]:
             hosts.add(parsed.hostname)
 
     return sorted(hosts)
+
+
+def _build_allowed_origins() -> list[str]:
+    origins = set(LOCAL_ORIGINS)
+    raw_origins = os.environ.get("ALLOWED_ORIGINS", "")
+
+    for origin in raw_origins.split(","):
+        cleaned = origin.strip()
+        if cleaned:
+            origins.add(cleaned)
+
+    for env_name in (
+        "FRONTEND_URL",
+        "NEXT_PUBLIC_SITE_URL",
+        "NEXT_PUBLIC_APP_URL",
+        "URL",
+    ):
+        value = os.environ.get(env_name)
+        if value:
+            origins.add(value.strip())
+
+    return sorted(origins)
+
+
+def _build_allowed_origin_regex() -> str:
+    # Vercel previews + tunnels + production app domain (specflowai.com)
+    return (
+        r"^https:\/\/("
+        r"[a-z0-9-]+\.(vercel\.app|loca\.lt|ngrok-free\.app|trycloudflare\.com)"
+        r"|(www\.)?specflowai\.com"
+        r")$"
+    )
 
 
 MAX_REQUEST_BODY_BYTES = 512 * 1024  # 512 KB
@@ -161,38 +236,59 @@ class RequestBodySizeLimitMiddleware(BaseHTTPMiddleware):
         # Fast path: Content-Length header present
         content_length = request.headers.get("content-length")
         if content_length is not None:
-            if int(content_length) > MAX_REQUEST_BODY_BYTES:
-                return JSONResponse(
-                    status_code=413,
-                    content={"error": "Request body too large"},
-                )
+            try:
+                if int(content_length) > MAX_REQUEST_BODY_BYTES:
+                    return JSONResponse(
+                        status_code=413,
+                        content={"error": "Request body too large"},
+                    )
+            except ValueError:
+                pass  # Invalid content-length header, let it through
             return await call_next(request)
 
         # Slow path: no Content-Length — stream and count actual bytes
+        # Only do this for requests that might have a body (POST, PUT, PATCH)
+        if request.method not in ("POST", "PUT", "PATCH"):
+            return await call_next(request)
+
         body = b""
-        async for chunk in request.stream():
-            body += chunk
-            if len(body) > MAX_REQUEST_BODY_BYTES:
-                return JSONResponse(
-                    status_code=413,
-                    content={"error": "Request body too large"},
-                )
+        try:
+            async for chunk in request.stream():
+                body += chunk
+                if len(body) > MAX_REQUEST_BODY_BYTES:
+                    return JSONResponse(
+                        status_code=413,
+                        content={"error": "Request body too large"},
+                    )
+        except Exception:
+            # If we can't read the body, let downstream handle it
+            return await call_next(request)
 
-        # Replay the consumed body for downstream handlers
-        async def _receive():
-            return {"type": "http.request", "body": body, "more_body": False}
+        # Replay the consumed body for downstream handlers using a proper async generator
+        body_sent = False
 
-        request._receive = _receive
+        async def receive():
+            nonlocal body_sent
+            if not body_sent:
+                body_sent = True
+                return {"type": "http.request", "body": body, "more_body": False}
+            # This shouldn't normally be called again, but return disconnect if it is
+            return {"type": "http.disconnect"}
+
+        # Replace the receive callable in the scope
+        request.scope["receive"] = receive
         return await call_next(request)
 
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=LOCAL_ORIGINS,
+    allow_origins=_build_allowed_origins(),
+    allow_origin_regex=_build_allowed_origin_regex(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(SentryAsgiMiddleware)
 app.add_middleware(RequestBodySizeLimitMiddleware)
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=_build_allowed_hosts())
@@ -268,6 +364,25 @@ async def run_pipeline(request: Request, req: RunRequest, auth: AuthContext = De
     except Exception as e:
         import traceback
         print(f"[pipeline] Error: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+# ---------------------------------------------------------------------------
+# Routes — User Plan
+# ---------------------------------------------------------------------------
+
+@app.get("/user/plan")
+@limiter.limit(RATE_LIMIT_DEFAULT)
+async def get_user_plan(request: Request, auth: AuthContext = Depends(require_auth_context)):
+    """Return the authenticated user's plan and current usage."""
+    try:
+        plan_svc = PlanService()
+        return await plan_svc.get_user_plan(auth.user_id)
+    except HTTPException:
+        raise
+    except Exception:
+        import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Internal server error")
 
@@ -359,6 +474,10 @@ async def run_session(request: Request, session_id: str, req: SessionRunRequest,
                     detail="Regeneration limit reached. Please edit the document manually.",
                 )
 
+        # Enforce plan-based run limits before spending API credit.
+        plan_svc = PlanService()
+        await plan_svc.check_limit(auth.user_id, is_full_run=(req.step is None))
+
         pipeline = Pipeline()
         result = await pipeline.run(
             input_data=req.input_data,
@@ -368,6 +487,9 @@ async def run_session(request: Request, session_id: str, req: SessionRunRequest,
             step=req.step,
             user_id=auth.user_id,
         )
+
+        # Record usage after a successful run.
+        await plan_svc.record_usage(auth.user_id, is_full_run=(req.step is None))
 
         current_state = await sm.get_current_state(session_id)
 
@@ -428,9 +550,21 @@ async def run_session_async(request: Request, session_id: str, req: SessionRunRe
                     detail="Regeneration limit reached. Please edit the document manually.",
                 )
 
+        # Enforce plan-based run limits before queuing the background job.
+        plan_svc = PlanService()
+        await plan_svc.check_limit(auth.user_id, is_full_run=(req.step is None))
+
+        # Capture is_full_run for the closure below.
+        _is_full_run = req.step is None
+        _user_id_for_plan = auth.user_id
+
         job = create_job(session_id)
 
         async def _run_bg():
+            # Use service-role client for all DB operations inside the background task.
+            # The user's JWT (auth.client) expires during long-running pipeline runs.
+            # Authorization was already verified above before this task was queued.
+            bg_sm = SessionManager(client=get_supabase_client())
             job.status = "running"
             try:
                 async def _cb(event: dict):
@@ -441,19 +575,22 @@ async def run_session_async(request: Request, session_id: str, req: SessionRunRe
                     input_data=req.input_data,
                     project_id=session.project_id,
                     session_id=session_id,
-                    session_manager=sm,
+                    session_manager=bg_sm,
                     step=req.step,
                     progress_callback=_cb,
                     user_id=auth.user_id,
                 )
 
-                current_state = await sm.get_current_state(session_id)
+                # Record usage after a successful background run.
+                await plan_svc.record_usage(_user_id_for_plan, is_full_run=_is_full_run)
+
+                current_state = await bg_sm.get_current_state(session_id)
 
                 if req.step is not None:
                     regen_counts = current_state.get("regeneration_counts", {})
                     regen_counts[req.step] = regen_counts.get(req.step, 0) + 1
                     current_state["regeneration_counts"] = regen_counts
-                    await sm.update_state(
+                    await bg_sm.update_state(
                         session_id,
                         current_state,
                         step=current_state.get("last_completed_step", req.step),

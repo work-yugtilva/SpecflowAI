@@ -20,7 +20,7 @@ def _make_client(rows=None):
     chain.execute.return_value = result
     client = MagicMock()
     client.table.return_value.upsert.return_value = chain
-    client.table.return_value.select.return_value.eq.return_value.eq.return_value.maybe_single.return_value = chain
+    client.table.return_value.select.return_value.eq.return_value.eq.return_value.limit.return_value = chain
     client.table.return_value.select.return_value.eq.return_value.order.return_value = chain
     client.table.return_value.delete.return_value.eq.return_value.eq.return_value = chain
     return client
@@ -182,7 +182,7 @@ async def test_get_by_session_and_key_returns_entry():
            "agent_name": "prd", "content": {"title": "PRD"}, "metadata": {},
            "user_id": None, "project_id": None, "created_at": None, "updated_at": None}
     result_mock = MagicMock()
-    result_mock.data = row  # maybe_single returns a dict, not a list
+    result_mock.data = [row]
     chain = MagicMock()
     chain.execute.return_value = result_mock
     client = MagicMock()
@@ -190,7 +190,7 @@ async def test_get_by_session_and_key_returns_entry():
         .select.return_value
         .eq.return_value
         .eq.return_value
-        .maybe_single.return_value) = chain
+        .limit.return_value) = chain
 
     repo = MemoryRepository(client=client)
     entry = await repo.get_by_session_and_key("sess-1", "prd")
@@ -201,7 +201,7 @@ async def test_get_by_session_and_key_returns_entry():
 @pytest.mark.asyncio
 async def test_get_by_session_and_key_returns_none_when_missing():
     result_mock = MagicMock()
-    result_mock.data = None
+    result_mock.data = []
     chain = MagicMock()
     chain.execute.return_value = result_mock
     client = MagicMock()
@@ -209,7 +209,7 @@ async def test_get_by_session_and_key_returns_none_when_missing():
         .select.return_value
         .eq.return_value
         .eq.return_value
-        .maybe_single.return_value) = chain
+        .limit.return_value) = chain
 
     repo = MemoryRepository(client=client)
     entry = await repo.get_by_session_and_key("sess-1", "nonexistent")

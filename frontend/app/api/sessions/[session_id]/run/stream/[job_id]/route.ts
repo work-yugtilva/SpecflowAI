@@ -9,6 +9,8 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_PIPELINE_URL ?? "http://localhost:80
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+/** Allow long pipeline steps without the route cutting off the SSE proxy (e.g. Vercel). */
+export const maxDuration = 300;
 
 export async function GET(
   _req: NextRequest,

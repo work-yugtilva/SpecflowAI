@@ -1,6 +1,8 @@
 import '@/lib/loadRootEnv.js';
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { errorHandler, notFoundHandler } from '@/middleware/errorHandler.js';
 import contextRoutes from '@/routes/context.js';
@@ -8,7 +10,6 @@ import researchRoutes from '@/routes/research.js';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 const LOCAL_ORIGINS = [
   'http://localhost',
   'http://127.0.0.1',
@@ -17,12 +18,46 @@ const LOCAL_ORIGINS = [
   'http://localhost:3001',
   'http://127.0.0.1:3001',
 ];
+const HOSTED_ORIGIN_PATTERNS = [
+  /^https:\/\/[a-z0-9-]+\.vercel\.app$/i,
+  /^https:\/\/[a-z0-9-]+\.loca\.lt$/i,
+  /^https:\/\/[a-z0-9-]+\.ngrok-free\.app$/i,
+  /^https:\/\/[a-z0-9-]+\.trycloudflare\.com$/i,
+  // Production marketing / app (override via FRONTEND_URL for other domains)
+  /^https:\/\/(www\.)?specflowai\.com$/i,
+];
+
+function buildAllowedOrigins(): string[] {
+  const configured = [
+    process.env.FRONTEND_URL,
+    process.env.NEXT_PUBLIC_SITE_URL,
+    process.env.NEXT_PUBLIC_APP_URL,
+    process.env.URL,
+  ]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+
+  return Array.from(new Set([...configured, ...LOCAL_ORIGINS]));
+}
+
+function isAllowedOrigin(origin: string | undefined, allowedOrigins: Set<string>) {
+  if (!origin) return true;
+  if (allowedOrigins.has(origin)) return true;
+  return HOSTED_ORIGIN_PATTERNS.some((pattern) => pattern.test(origin));
+}
 
 // Middleware
 app.disable('x-powered-by');
+const allowedOrigins = new Set(buildAllowedOrigins());
 app.use(
   cors({
-    origin: [FRONTEND_URL, ...LOCAL_ORIGINS],
+    origin(origin, callback) {
+      if (isAllowedOrigin(origin, allowedOrigins)) {
+        callback(null, true);
+        return;
+      }
+      callback(new Error(`Origin ${origin ?? 'unknown'} is not allowed by CORS`));
+    },
     credentials: true,
   })
 );
@@ -75,12 +110,23 @@ app.get('/', (req: Request, res: Response) => {
 app.use(notFoundHandler);
 app.use(errorHandler);
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`
+function startServer() {
+  app.listen(PORT, () => {
+    console.log(`
 ╔════════════════════════════════════════╗
 ║   SpecFlow Backend Server              ║
 ║   Running on http://localhost:${PORT}    ║
 ╚════════════════════════════════════════╝
   `);
-});
+  });
+}
+
+const isDirectExecution =
+  process.argv[1] != null &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+
+if (isDirectExecution) {
+  startServer();
+}
+
+export default app;

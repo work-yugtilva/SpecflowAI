@@ -1,0 +1,13 @@
+iteration	finding_id	severity	owasp	stride	file	line	title	status	description
+0	BASELINE	INFO	-	-	-	-	Baseline established	baseline	Stack: Next.js 14 + FastAPI + Supabase + Anthropic SDK + Linear OAuth
+1	C1	Critical	A01	S,E	backend/src/main.py	211	Unauthenticated /run endpoint	FIXED	POST /run had no auth dependency — added require_auth_context
+2	C2	Critical	A02	I	backend/.env	-	Real credentials exposed in audit session	MANUAL	Supabase service role key + anon key + Anthropic API key — rotate immediately
+3	H1	High	A03	T,E	frontend/app/api/linear/sync/route.ts	95	GraphQL injection via Linear sync	FIXED	Client-controlled mutation string passed to Linear API — added operation whitelist
+4	H2	High	A05	D	backend/src/services/db/supabase_client.py	53	Synchronous httpx.get blocks event loop	FIXED	Replaced with httpx.AsyncClient + await
+5	H3	High	A05	D	backend/src/main.py	all POST	No request body size limit	OPEN	FastAPI has no max body size — Express backend has 1MB limit
+6	H4	High	A01	S,D	frontend/app/api/pipeline/run/route.ts	76	Frontend /api/pipeline/run has no auth	FIXED	Added Supabase auth check before USE_LOCAL gate
+7	M1	Medium	A09	I	backend/src/main.py	248,275,647	Error messages leaked to clients	FIXED	Replaced str(e) with generic message in session list, create, PRD stream
+8	M2	Medium	A05	D	backend/src/main.py	all	No rate limiting	OPEN	No per-IP or per-user rate limiting on any FastAPI endpoint
+9	M3	Medium	A01	E	backend/src/services/memory/memory_repository.py	28	MemoryRepository defaults to service-role client	OPEN	generate_prd + generate_prd_stream use MemoryRepository() without user client
+10	L1	Low	A07	S	backend/src/middleware/auth.ts	49	optionalAuth silent error path	OPEN	Unused middleware — low risk; convert to async/await if ever used
+11	I1	Info	-	-	backend/src/index.ts	22	Express backend has strong security defaults	POSITIVE	Security headers, 1MB limit, x-powered-by disabled

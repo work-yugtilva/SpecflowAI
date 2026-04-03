@@ -1,0 +1,16 @@
+iteration	action	metric_before	metric_after	delta	decision	commit	notes
+0	baseline	81	81	0	baseline	d703ad4	Fixed limiter ordering bug (NameError): 17 errors → 0; 64→81 passing. Frontend: 20 passing.
+1	middleware tests	81	86	+5	keep	1e448b9	5 body size limit middleware tests
+2	memory_repository tests	86	99	+13	keep	73d5ca2	13 MemoryRepository session-scoped tests
+3	research_repository tests	99	107	+8	keep	3232ec0	8 ResearchRepository tests (was 0%)
+4	supabase_async helpers	107	118	+11	keep	cb30570	11 rows_from_result/first_row tests
+5	job_registry tests	118	124	+6	keep	f28f138	6 job_registry tests
+6	memory_store tests	124	138	+14	keep	15d78a2	14 MemoryStore async KV tests
+7	frontend utils+session	138	138	+0be	keep	b161ff9	+10 frontend: cn(), getSession, startSessionRunAsync
+8	pipeline_repository	138	152	+14	keep	fd5f954	14 PipelineRepository tests (was 25%)
+9	session-scoped-storage	152	152	+0be	keep	a263eca	+9 frontend: scopedStorageKey, read/write/remove
+10	pipeline-session	152	152	+0be	keep	19c6ac2	+10 frontend: computeStepStatuses, getNextStep
+11	auth-errors	152	152	+0be	keep	eb554ea	+10 frontend: formatAuthErrorMessage (was 0%)
+12	memory_manager	152	166	+14	keep	b695205	14 MemoryManager read/write strategy tests
+13	context_compressor	166	184	+18	keep	bfbc313	18 compress() all-strategy tests (was 4%)
+14	session_repository	184	197	+13	keep	2691142	15 SessionRepository tests (was 25%)

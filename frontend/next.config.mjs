@@ -14,16 +14,22 @@ if (fs.existsSync(rootEnvPath)) {
     [{ path: ".env", contents: fs.readFileSync(rootEnvPath, "utf8") }],
     path.dirname(rootEnvPath)
   );
-} else {
-  process.env.__NEXT_PROCESSED_ENV = "true";
 }
 
 const bundleAnalyzer = withBundleAnalyzer({
   enabled: process.env.ANALYZE === "true",
 });
 
+function joinDefined(values) {
+  return values
+    .map((value) => value?.trim())
+    .filter(Boolean)
+    .join(" ");
+}
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  poweredByHeader: false,
   async headers() {
     return [
       {
@@ -35,6 +41,24 @@ const nextConfig = {
           {
             key: "Permissions-Policy",
             value: "camera=(), microphone=(), geolocation=()",
+          },
+          {
+            key: "Content-Security-Policy",
+            value: [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+              "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+              "font-src 'self' https://fonts.gstatic.com",
+              `img-src 'self' data: blob: ${process.env.NEXT_PUBLIC_SUPABASE_URL ?? ""}`,
+              `connect-src 'self' ${joinDefined([
+                process.env.NEXT_PUBLIC_SUPABASE_URL,
+                process.env.NEXT_PUBLIC_PIPELINE_URL,
+                process.env.NEXT_PUBLIC_EXPRESS_API_URL,
+                process.env.NEXT_PUBLIC_CONTEXT_API_URL,
+                process.env.NEXT_PUBLIC_BACKEND_URL,
+              ])} wss:`,
+              "frame-ancestors 'none'",
+            ].join("; "),
           },
         ],
       },

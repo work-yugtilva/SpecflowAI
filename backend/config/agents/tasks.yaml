@@ -44,8 +44,9 @@ critic:
       pass_condition: "Each task has a non-empty layer field matching one of: frontend, backend, api, infrastructure"
       fail_condition: "layer is missing, blank, or does not match the allowed values"
 
+# 8–15 tasks × long fields + reasoning + Instructor — needs more than 8k output.
 token_control:
-  max_output_tokens: 8192
+  max_output_tokens: 16384
   retries: 2
 
 memory:

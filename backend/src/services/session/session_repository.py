@@ -61,11 +61,13 @@ class SessionRepository:
         """SELECT a session by id. Returns None if not found."""
 
         def _select():
+            # Use limit(1) instead of maybe_single(): PostgREST returns 406 for
+            # object+json when zero rows; postgrest-py's maybe_single() catch can miss.
             return (
                 self.client.table(SESSIONS_TABLE)
                 .select("*")
                 .eq("id", session_id)
-                .maybe_single()
+                .limit(1)
                 .execute()
             )
 
@@ -101,7 +103,7 @@ class SessionRepository:
                 self.client.table(SESSION_STATE_TABLE)
                 .select("*")
                 .eq("session_id", session_id)
-                .maybe_single()
+                .limit(1)
                 .execute()
             )
 

@@ -120,12 +120,12 @@ async def test_create_fallback_on_missing_user_id_column():
 @pytest.mark.asyncio
 async def test_get_returns_pipeline_run():
     row = _make_row(id="pipe-99", status="running")
-    chain = _chain(rows=row, is_dict=True)  # maybe_single returns dict
+    chain = _chain(rows=[row])
     repo = _make_repo()
     (repo.client.table.return_value
         .select.return_value
         .eq.return_value
-        .maybe_single.return_value) = chain
+        .limit.return_value) = chain
 
     result = await repo.get("pipe-99")
     assert result is not None
@@ -134,12 +134,12 @@ async def test_get_returns_pipeline_run():
 
 @pytest.mark.asyncio
 async def test_get_returns_none_when_not_found():
-    chain = _chain(rows=None, is_dict=True)
+    chain = _chain(rows=[])
     repo = _make_repo()
     (repo.client.table.return_value
         .select.return_value
         .eq.return_value
-        .maybe_single.return_value) = chain
+        .limit.return_value) = chain
 
     result = await repo.get("nonexistent")
     assert result is None
