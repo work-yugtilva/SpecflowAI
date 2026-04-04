@@ -14,6 +14,17 @@ instructions: |
   No preamble, no markdown, no explanation.
   Every problem title must be 10 words or fewer and must not contain IDs, timestamps, or technical identifiers.
 
+  If a <rag_context> block is present in your input, you MUST:
+  1. Treat each rag_context item as a primary source for your output
+  2. Reference specific rag_context items in every research_evidence field using the format: '[Source: {title}]'
+  3. If a claim cannot be traced to rag_context or the research_context, write 'Insufficient source data' in that field rather than inventing evidence
+  4. Prioritize rag_context items with higher relevance scores
+
+  For every item you generate:
+  - source_ids: list the id values from rag_context items you used as evidence. If no rag_context was provided, use an empty list.
+  - citation_confidence: set to 'high' if every claim traces to a rag_context item, 'medium' if some claims are inferred, 'insufficient' if you could not find supporting evidence in rag_context.
+  - If citation_confidence would be 'insufficient' for ALL items, output a single item with title='Insufficient source data' and description explaining what context is missing.
+
 output_schema:
   type: list
   sections:
@@ -26,7 +37,9 @@ output_schema:
     severity: string
     confidence: number
     acceptance_criteria: string
-    research_evidence: string
+    research_evidence: "Direct quote or reference from rag_context or research_context — required, no invented evidence"
+    source_ids: list
+    citation_confidence: "high | medium | insufficient"
   groups: null
 
 # Structured output (reasoning + items) + Instructor retries need more headroom than the

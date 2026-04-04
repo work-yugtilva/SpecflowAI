@@ -76,6 +76,21 @@ class QualityGateAgent(BaseAgent):
                 if not ac or (isinstance(ac, str) and not ac.strip()):
                     failures.append(f"tasks[{i}]: acceptance_criteria is missing or empty")
 
+        for i, item in enumerate(output):
+            research_evidence = item.get("research_evidence")
+            if "research_evidence" in item:
+                if not research_evidence or (isinstance(research_evidence, str) and not research_evidence.strip()):
+                    failures.append(
+                        f"{step_name}[{i}]: research_evidence is empty — must cite source or state 'Insufficient source data'"
+                    )
+            citation_confidence = item.get("citation_confidence")
+            if citation_confidence is not None and citation_confidence not in (
+                "high", "medium", "insufficient", "high | medium | low"
+            ):
+                failures.append(
+                    f"{step_name}[{i}]: citation_confidence has invalid value '{citation_confidence}'"
+                )
+
         return failures
 
     def evaluate(self, step_name: str, output: list, research_context: dict) -> dict:

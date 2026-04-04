@@ -11,6 +11,7 @@ from typing import Any, Callable, Coroutine, Optional
 # backend/src/services/pipeline.py -> parents[2] == backend/
 _BACKEND_ROOT = Path(__file__).resolve().parents[2]
 from services.agent_factory import AgentFactory
+from services.rag.retrieval_service import RetrievalService
 from services.config.config_manager import ConfigManager
 from services.memory.memory_store import MemoryStore
 from services.memory.memory_manager import MemoryManager
@@ -212,6 +213,9 @@ class Pipeline:
         from services.orchestrator.adk_orchestrator import ADKOrchestrator
         self.orchestrator = ADKOrchestrator(self.pipeline_config)
 
+        self._retrieval_service: RetrievalService | None = None
+        self._retrieval_service = RetrievalService()
+
     async def run(
         self,
         input_data: dict,
@@ -349,6 +353,19 @@ class Pipeline:
             memory_slice = {k: self._unwrap_persisted_content(v) for k, v in memory_slice.items()}
             agent_session = {"id": session_id, "state": {}} if session_id else None
 
+            _RAG_ELIGIBLE = {"problems", "features", "decompose", "tasks"}
+            if single_agent_name in _RAG_ELIGIBLE:
+                try:
+                    state = await self._enrich_context_with_rag(
+                        single_agent_name, state, user_id, session_id
+                    )
+                except Exception as _rag_err:
+                    logger.warning(
+                        "[pipeline] RAG enrichment failed for step %s: %s",
+                        single_agent_name,
+                        _rag_err,
+                    )
+
             try:
                 output, qg_result = await self._run_step_with_quality_retry(
                     agent=agent,
@@ -378,6 +395,8 @@ class Pipeline:
 
                 await memory_manager.write_from_agent(agent_memory_config, single_agent_name, output)
 
+                output = self._strip_insufficient_items(output)
+                state[single_out_key] = output
                 if session_id and session_manager and persistence_on:
                     await self._persist_step_memory(project_id or "", single_agent_name, single_out_key, output, session_id=session_id, user_id=user_id)
                 elif project_id:
@@ -503,6 +522,8 @@ class Pipeline:
                 await memory_manager.write_from_agent(agent_memory_config, agent_name, data)
 
                 # Persist to database
+                data = self._strip_insufficient_items(data)
+                state[out_key] = data
                 if session_id and session_manager and persistence_on:
                     await self._persist_step_memory(project_id or "", agent_name, out_key, data, session_id=session_id, user_id=user_id)
                 elif project_id:
@@ -546,6 +567,44 @@ class Pipeline:
     # -------------------------------------------------------------------------
     # Private helpers
     # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _extract_citation_metadata(content: Any) -> tuple[Any, dict]:
+        """
+        Extract citation metadata from a list of items for storage in MemoryEntry.metadata.
+        Does NOT modify the content — source_ids stay in session state outputs.
+        Returns (content, citation_metadata_dict).
+        """
+        if not isinstance(content, list):
+            return content, {}
+        citations_map: dict = {}
+        for idx, item in enumerate(content):
+            if isinstance(item, dict):
+                source_ids = item.get("source_ids")
+                if isinstance(source_ids, list):
+                    citations_map[idx] = source_ids
+        total_cited = sum(1 for ids in citations_map.values() if ids)
+        return content, {"citations": citations_map, "total_cited": total_cited}
+
+    @staticmethod
+    def _strip_insufficient_items(content: Any) -> Any:
+        """
+        Filter out items where title == 'Insufficient source data'.
+        Returns filtered list, or original content if not a list.
+        """
+        if not isinstance(content, list):
+            return content
+        filtered = [
+            item for item in content
+            if not (isinstance(item, dict) and item.get("title") == "Insufficient source data")
+        ]
+        stripped_count = len(content) - len(filtered)
+        if stripped_count:
+            logger.warning(
+                "[pipeline] stripped %d 'Insufficient source data' item(s) before persist",
+                stripped_count,
+            )
+        return filtered
 
     @staticmethod
     def _strip_reasoning_field(content: Any) -> Any:
@@ -651,6 +710,34 @@ class Pipeline:
                 qg_result.get("score"),
             )
 
+    async def _enrich_context_with_rag(
+        self,
+        step_name: str,
+        context: dict,
+        user_id: str = None,
+        session_id: str = None,
+    ) -> dict:
+        """Enrich agent context with semantically relevant research_entries via pgvector.
+
+        Returns context unchanged if no results are found or retrieval fails.
+        """
+        results = await self._retrieval_service.retrieve_for_step(
+            step_name, context, user_id=user_id, session_id=session_id
+        )
+        logger.debug("[_enrich_context_with_rag] step=%s results=%d", step_name, len(results))
+        if not results:
+            return context
+        rag_context = [
+            {
+                "title": r["title"],
+                "content": r["content"],
+                "source": r["type"],
+                "relevance": round(r["similarity"], 3),
+            }
+            for r in results
+        ]
+        return {**context, "rag_context": rag_context}
+
     def _steps_completed_before(
         self,
         last_completed_agent: Optional[str],
@@ -691,6 +778,7 @@ class Pipeline:
     ) -> None:
         """Persist a single step's output to the database."""
         content = self._strip_reasoning_field(content)
+        content, citation_metadata = self._extract_citation_metadata(content)
         if session_id:
             # Session-scoped memory: do NOT set project_id to avoid constraint conflicts
             entry = MemoryEntry(
@@ -699,6 +787,7 @@ class Pipeline:
                 agent_name=agent_name,
                 memory_key=memory_key,
                 content=content if isinstance(content, dict) else {"data": content},
+                metadata=citation_metadata,
             )
             await self.memory_repo.save_for_session(entry)
         else:
@@ -708,6 +797,7 @@ class Pipeline:
                 agent_name=agent_name,
                 memory_key=memory_key,
                 content=content if isinstance(content, dict) else {"data": content},
+                metadata=citation_metadata,
             )
             await self.memory_repo.save(entry)
 

@@ -19,6 +19,7 @@ import {
   adaptProblems,
   describeProblemsEmptyState,
 } from "@/lib/pipeline-contracts";
+import { CitationBadge } from "@/components/pipeline/CitationBadge";
 import type { ProblemViewModel as Problem } from "@/lib/pipeline-contracts";
 import type { PipelineInput } from "@/lib/pipeline-types";
 import { TextShimmer } from "@/components/ui/text-shimmer";
@@ -425,6 +426,7 @@ export default function ProblemsPage() {
                         style={{ marginBottom: 7 }}
                       >
                         <ImpactBadge impact={p.impact} />
+                        <CitationBadge sourceIds={p.source_ids ?? []} confidence={p.citation_confidence as "high" | "medium" | "insufficient" | undefined} />
                         {p.tags.slice(0, 2).map((tag) => (
                           <span
                             key={tag}

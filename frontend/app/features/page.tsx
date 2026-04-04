@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
 import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
 import { QualityBadge } from "@/components/pipeline/QualityBadge";
+import { CitationBadge } from "@/components/pipeline/CitationBadge";
 import { getSession } from "@/lib/api/session";
 import type { SessionDetail } from "@/lib/api/session";
 import {
@@ -449,6 +450,7 @@ export default function FeaturesPage() {
                           styles={EFFORT_STYLES[f.effort]}
                           prefix="Effort"
                         />
+                        <CitationBadge sourceIds={f.source_ids ?? []} confidence={f.citation_confidence as "high" | "medium" | "insufficient" | undefined} />
                         <span
                           style={{
                             marginLeft: "auto",

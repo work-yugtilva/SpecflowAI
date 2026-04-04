@@ -244,6 +244,13 @@ export default function ResearchPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [formError, setFormError] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [showSlackModal, setShowSlackModal] = useState(false);
+  const [slackChannels, setSlackChannels] = useState<Array<{ id: string; name: string }>>([]);
+  const [slackChannelsLoading, setSlackChannelsLoading] = useState(false);
+  const [slackSelectedIds, setSlackSelectedIds] = useState<Set<string>>(new Set());
+  const [slackImporting, setSlackImporting] = useState(false);
+  const [slackImportMsg, setSlackImportMsg] = useState<string | null>(null);
+  const [slackNotConnected, setSlackNotConnected] = useState(false);
 
   const selectedEntry = entries.find((e) => e.id === selectedId) ?? null;
 
@@ -278,6 +285,95 @@ export default function ResearchPage() {
     setShowModal(false);
     setEditingId(null);
     setFormError(false);
+  }
+
+  async function openSlackModal() {
+    setSlackNotConnected(false);
+    setSlackImportMsg(null);
+    setSlackChannelsLoading(true);
+    setSlackChannels([]);
+    setSlackSelectedIds(new Set());
+
+    try {
+      const res = await fetch("/api/slack/channels");
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { code?: string };
+        if (body.code === "slack_not_connected") setSlackNotConnected(true);
+        return;
+      }
+      const data = (await res.json()) as {
+        channels?: Array<{ id: string; name: string }>;
+      };
+      setSlackChannels(data.channels ?? []);
+      setShowSlackModal(true);
+    } catch {
+      /* ignore */
+    } finally {
+      setSlackChannelsLoading(false);
+    }
+  }
+
+  function closeSlackModal() {
+    setShowSlackModal(false);
+    setSlackSelectedIds(new Set());
+  }
+
+  function toggleSlackChannel(id: string) {
+    setSlackSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleSlackImport() {
+    if (slackSelectedIds.size === 0) return;
+    setSlackImporting(true);
+    let totalImported = 0;
+
+    for (const channel of slackChannels.filter((c) =>
+      slackSelectedIds.has(c.id)
+    )) {
+      try {
+        const res = await fetch("/api/slack/ingest", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            channel_id: channel.id,
+            channel_name: channel.name,
+            ...(activeSessionId ? { session_id: activeSessionId } : {}),
+          }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { imported?: number };
+          totalImported += data.imported ?? 0;
+        } else {
+          const body = (await res.json().catch(() => ({}))) as { code?: string };
+          if (body.code === "slack_not_connected") {
+            setSlackNotConnected(true);
+            closeSlackModal();
+            setSlackImporting(false);
+            return;
+          }
+        }
+      } catch {
+        /* per-channel failure, continue */
+      }
+    }
+
+    fetchResearchEntries(researchScope, activeSessionId ?? undefined)
+      .then((remoteEntries) => {
+        setEntries(remoteEntries);
+        if (remoteEntries.length > 0) setSelectedId(remoteEntries[0].id);
+      })
+      .catch(() => {});
+
+    setSlackImporting(false);
+    closeSlackModal();
+    const label = totalImported === 1 ? "1 message" : `${totalImported} messages`;
+    setSlackImportMsg(`Imported ${label}`);
+    setTimeout(() => setSlackImportMsg(null), 3000);
   }
 
   async function handleSave() {
@@ -394,46 +490,80 @@ export default function ResearchPage() {
             )}
           </div>
 
-          {/* Add Research */}
-          <button
-            onClick={openAdd}
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              padding: "0.4rem 0.875rem",
-              borderRadius: 8,
-              fontSize: "0.8125rem",
-              fontWeight: 500,
-              background: "#0D0D0D",
-              color: "#FFFFFF",
-              border: "none",
-              cursor: "pointer",
-              fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
-              transition: "background 150ms ease",
-            }}
-            onMouseEnter={(e) =>
-              (e.currentTarget.style.background = "#2A2A2A")
-            }
-            onMouseLeave={(e) =>
-              (e.currentTarget.style.background = "#0D0D0D")
-            }
-          >
-            <svg
-              width="13"
-              height="13"
-              viewBox="0 0 13 13"
-              fill="none"
+          {/* Top-bar actions */}
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            {/* Import from Slack */}
+            <button
+              onClick={openSlackModal}
+              disabled={slackChannelsLoading}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "0.4rem 0.875rem",
+                borderRadius: 8,
+                fontSize: "0.8125rem",
+                fontWeight: 500,
+                background: "#FFFFFF",
+                color: slackChannelsLoading ? "#B0A89E" : "#6B6B6B",
+                border: "1px solid #E4DDD4",
+                cursor: slackChannelsLoading ? "not-allowed" : "pointer",
+                fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                transition: "background 150ms ease, color 150ms ease",
+              }}
+              onMouseEnter={(e) => {
+                if (!slackChannelsLoading)
+                  e.currentTarget.style.background = "#F8F4EF";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "#FFFFFF";
+              }}
             >
-              <path
-                d="M6.5 1.5v10M1.5 6.5h10"
-                stroke="#FFFFFF"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-              />
-            </svg>
-            Add Research
-          </button>
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                <line x1="4" y1="1.5" x2="3.3" y2="11.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                <line x1="9" y1="1.5" x2="8.3" y2="11.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                <line x1="1.5" y1="4.5" x2="11.5" y2="4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+                <line x1="1.2" y1="8.5" x2="11.2" y2="8.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+              {slackChannelsLoading ? "Loading…" : "Import from Slack"}
+            </button>
+
+            {/* Add Research */}
+            <button
+              onClick={openAdd}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                padding: "0.4rem 0.875rem",
+                borderRadius: 8,
+                fontSize: "0.8125rem",
+                fontWeight: 500,
+                background: "#0D0D0D",
+                color: "#FFFFFF",
+                border: "none",
+                cursor: "pointer",
+                fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                transition: "background 150ms ease",
+              }}
+              onMouseEnter={(e) =>
+                (e.currentTarget.style.background = "#2A2A2A")
+              }
+              onMouseLeave={(e) =>
+                (e.currentTarget.style.background = "#0D0D0D")
+              }
+            >
+              <svg width="13" height="13" viewBox="0 0 13 13" fill="none">
+                <path
+                  d="M6.5 1.5v10M1.5 6.5h10"
+                  stroke="#FFFFFF"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+                />
+              </svg>
+              Add Research
+            </button>
+          </div>
         </header>
 
         {syncError && (
@@ -447,6 +577,59 @@ export default function ResearchPage() {
             }}
           >
             {syncError}
+          </div>
+        )}
+
+        {slackNotConnected && (
+          <div
+            style={{
+              padding: "10px 20px",
+              background: "rgba(74,21,75,0.05)",
+              borderBottom: "1px solid rgba(74,21,75,0.12)",
+              color: "#6B6B6B",
+              fontSize: 12.5,
+              display: "flex",
+              alignItems: "center",
+              gap: 4,
+            }}
+          >
+            Connect Slack in{" "}
+            <Link
+              href="/settings/integrations"
+              style={{ color: "#E8561B", fontWeight: 500, textDecoration: "none" }}
+            >
+              Settings → Integrations
+            </Link>{" "}
+            to import messages.
+            <button
+              onClick={() => setSlackNotConnected(false)}
+              style={{
+                marginLeft: "auto",
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                color: "#9E9E9E",
+                fontSize: 14,
+                lineHeight: 1,
+                padding: "0 4px",
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        )}
+
+        {slackImportMsg && (
+          <div
+            style={{
+              padding: "10px 20px",
+              background: "rgba(22,163,74,0.07)",
+              borderBottom: "1px solid rgba(22,163,74,0.18)",
+              color: "#15803D",
+              fontSize: 12.5,
+            }}
+          >
+            {slackImportMsg}
           </div>
         )}
 
@@ -1056,6 +1239,220 @@ export default function ResearchPage() {
           </Link>
         </div>
       </div>
+
+      {/* ── Slack Channel Picker Modal ── */}
+      {showSlackModal && (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.35)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 50,
+            padding: "20px",
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeSlackModal();
+          }}
+        >
+          <div
+            style={{
+              background: "#FFFFFF",
+              borderRadius: 16,
+              width: "100%",
+              maxWidth: 480,
+              maxHeight: "80vh",
+              overflowY: "auto",
+              padding: "24px 28px",
+              fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+              boxShadow:
+                "0 20px 60px rgba(0,0,0,0.15), 0 4px 16px rgba(0,0,0,0.08)",
+            }}
+          >
+            {/* Modal header */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 20,
+              }}
+            >
+              <h3
+                style={{
+                  fontSize: 16,
+                  fontWeight: 600,
+                  color: "#0D0D0D",
+                  margin: 0,
+                  letterSpacing: "-0.015em",
+                }}
+              >
+                Import from Slack
+              </h3>
+              <button
+                onClick={closeSlackModal}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 6,
+                  background: "#F8F4EF",
+                  border: "none",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  cursor: "pointer",
+                  color: "#6B6B6B",
+                  flexShrink: 0,
+                }}
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                  <path
+                    d="M2 2l10 10M12 2L2 12"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+            </div>
+
+            {slackChannels.length === 0 ? (
+              <p style={{ fontSize: 13, color: "#9E9E9E", margin: 0 }}>
+                No channels found.
+              </p>
+            ) : (
+              <>
+                <p
+                  style={{
+                    fontSize: 12.5,
+                    color: "#6B6B6B",
+                    marginTop: 0,
+                    marginBottom: 14,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  Select channels to import the latest messages as research entries.
+                </p>
+
+                {/* Channel list */}
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 2,
+                    marginBottom: 20,
+                  }}
+                >
+                  {slackChannels.slice(0, 20).map((channel) => {
+                    const checked = slackSelectedIds.has(channel.id);
+                    return (
+                      <label
+                        key={channel.id}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          padding: "8px 10px",
+                          borderRadius: 8,
+                          cursor: "pointer",
+                          background: checked
+                            ? "rgba(232,86,27,0.05)"
+                            : "transparent",
+                          border: checked
+                            ? "1px solid rgba(232,86,27,0.18)"
+                            : "1px solid transparent",
+                          transition: "background 120ms ease",
+                          userSelect: "none",
+                        }}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleSlackChannel(channel.id)}
+                          style={{ accentColor: "#E8561B", cursor: "pointer" }}
+                        />
+                        <span
+                          style={{
+                            fontSize: 13,
+                            color: "#0D0D0D",
+                            fontWeight: checked ? 500 : 400,
+                          }}
+                        >
+                          # {channel.name}
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+
+                {/* Actions */}
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "flex-end",
+                    gap: 8,
+                  }}
+                >
+                  <button
+                    onClick={closeSlackModal}
+                    style={{
+                      padding: "0.5rem 1rem",
+                      borderRadius: 8,
+                      fontSize: "0.875rem",
+                      fontWeight: 500,
+                      background: "#FFFFFF",
+                      border: "1.5px solid #E4DDD4",
+                      color: "#6B6B6B",
+                      cursor: "pointer",
+                      fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSlackImport}
+                    disabled={slackSelectedIds.size === 0 || slackImporting}
+                    style={{
+                      padding: "0.5rem 1.125rem",
+                      borderRadius: 8,
+                      fontSize: "0.875rem",
+                      fontWeight: 500,
+                      background:
+                        slackSelectedIds.size === 0 || slackImporting
+                          ? "#C8C2BB"
+                          : "#0D0D0D",
+                      color: "#FFFFFF",
+                      border: "none",
+                      cursor:
+                        slackSelectedIds.size === 0 || slackImporting
+                          ? "not-allowed"
+                          : "pointer",
+                      fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                      transition: "background 150ms ease",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (slackSelectedIds.size > 0 && !slackImporting)
+                        e.currentTarget.style.background = "#2A2A2A";
+                    }}
+                    onMouseLeave={(e) => {
+                      if (slackSelectedIds.size > 0 && !slackImporting)
+                        e.currentTarget.style.background = "#0D0D0D";
+                    }}
+                  >
+                    {slackImporting
+                      ? "Importing…"
+                      : slackSelectedIds.size > 0
+                      ? `Import Selected (${slackSelectedIds.size})`
+                      : "Import Selected"}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Modal ── */}
       {showModal && (

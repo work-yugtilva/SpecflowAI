@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
 import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
 import { QualityBadge } from "@/components/pipeline/QualityBadge";
+import { CitationBadge } from "@/components/pipeline/CitationBadge";
 import { getSession } from "@/lib/api/session";
 import type { SessionDetail } from "@/lib/api/session";
 import {
@@ -912,6 +913,7 @@ export default function TasksPage() {
                               >
                                 {task.priority}
                               </span>
+                              <CitationBadge sourceIds={task.source_ids ?? []} confidence={task.citation_confidence as "high" | "medium" | "insufficient" | undefined} />
                             </button>
                           );
                         })}

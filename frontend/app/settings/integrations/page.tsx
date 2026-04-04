@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "@/components/ui/sidebar";
 import LinearIntegrationCard from "./_components/LinearIntegrationCard";
+import SlackIntegrationCard from "./_components/SlackIntegrationCard";
 
 export default async function IntegrationsPage() {
   const supabase = await createClient();
@@ -8,20 +9,35 @@ export default async function IntegrationsPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  let connected = false;
-  let workspaceInfo: Record<string, unknown> = {};
+  let linearConnected = false;
+  let linearWorkspaceInfo: Record<string, unknown> = {};
+  let slackConnected = false;
+  let slackWorkspaceInfo: Record<string, unknown> = {};
 
   if (user) {
-    const { data } = await supabase
-      .from("user_integrations")
-      .select("workspace_info")
-      .eq("user_id", user.id)
-      .eq("provider", "linear")
-      .single();
+    const [linearResult, slackResult] = await Promise.all([
+      supabase
+        .from("user_integrations")
+        .select("workspace_info")
+        .eq("user_id", user.id)
+        .eq("provider", "linear")
+        .single(),
+      supabase
+        .from("user_integrations")
+        .select("workspace_info")
+        .eq("user_id", user.id)
+        .eq("provider", "slack")
+        .single(),
+    ]);
 
-    if (data) {
-      connected = true;
-      workspaceInfo = (data.workspace_info as Record<string, unknown>) ?? {};
+    if (linearResult.data) {
+      linearConnected = true;
+      linearWorkspaceInfo = (linearResult.data.workspace_info as Record<string, unknown>) ?? {};
+    }
+
+    if (slackResult.data) {
+      slackConnected = true;
+      slackWorkspaceInfo = (slackResult.data.workspace_info as Record<string, unknown>) ?? {};
     }
   }
 
@@ -88,7 +104,7 @@ export default async function IntegrationsPage() {
               output.
             </p>
 
-            {/* Section label */}
+            {/* Communication section */}
             <div
               style={{
                 fontSize: 11,
@@ -99,12 +115,32 @@ export default async function IntegrationsPage() {
                 marginBottom: 10,
               }}
             >
+              Communication
+            </div>
+
+            <SlackIntegrationCard
+              connected={slackConnected}
+              workspaceInfo={slackWorkspaceInfo}
+            />
+
+            {/* Project Management section */}
+            <div
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                letterSpacing: "0.06em",
+                textTransform: "uppercase",
+                color: "#9E9E9E",
+                marginBottom: 10,
+                marginTop: 28,
+              }}
+            >
               Project Management
             </div>
 
             <LinearIntegrationCard
-              connected={connected}
-              workspaceInfo={workspaceInfo}
+              connected={linearConnected}
+              workspaceInfo={linearWorkspaceInfo}
             />
           </div>
         </div>

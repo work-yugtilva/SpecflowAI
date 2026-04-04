@@ -64,6 +64,8 @@ export interface ProblemViewModel {
     primary: string;
     secondary?: string;
   };
+  source_ids?: string[];
+  citation_confidence?: string;
 }
 
 export interface FeatureViewModel {
@@ -78,6 +80,8 @@ export interface FeatureViewModel {
   score: number;
   reasoning: string;
   successMetrics: string[];
+  source_ids?: string[];
+  citation_confidence?: string;
 }
 
 export interface UIComponentViewModel {
@@ -136,6 +140,8 @@ export interface TaskViewModel {
   dependencies: string[];
   qualityFlag?: string;
   qualityIssues?: string[];
+  source_ids?: string[];
+  citation_confidence?: string;
 }
 
 type SessionStateLike = Record<string, unknown> | null | undefined;
@@ -397,6 +403,8 @@ export function adaptProblems(
           (typeof rootCause.secondary === "string" && rootCause.secondary) ||
           (typeof record.secondary === "string" ? record.secondary : undefined),
       },
+      source_ids: Array.isArray(record.source_ids) ? record.source_ids.map(String) : undefined,
+      citation_confidence: typeof record.citation_confidence === "string" ? record.citation_confidence : undefined,
     };
   });
 }
@@ -588,6 +596,8 @@ export function adaptFeatures(
       score: Number(attrs.score ?? item.score ?? 70),
       reasoning: reasoningText,
       successMetrics,
+      source_ids: Array.isArray(item.source_ids) ? item.source_ids.map(String) : undefined,
+      citation_confidence: typeof item.citation_confidence === "string" ? item.citation_confidence : undefined,
     };
   });
 }
@@ -937,6 +947,8 @@ export function adaptTasks(
       qualityIssues: Array.isArray(item.quality_issues)
         ? (item.quality_issues as unknown[]).map(String)
         : undefined,
+      source_ids: Array.isArray(item.source_ids) ? item.source_ids.map(String) : undefined,
+      citation_confidence: typeof item.citation_confidence === "string" ? item.citation_confidence : undefined,
     };
   });
 }

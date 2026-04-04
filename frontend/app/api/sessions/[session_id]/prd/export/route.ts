@@ -12,8 +12,9 @@ export async function GET(
   ) {
   try {
     const authHeaders = await getRequiredAuthHeader();
+    const view = req.nextUrl.searchParams.get("view") ?? "full";
     const res = await fetch(
-      `${BACKEND_URL}/session/${params.session_id}/prd/export`,
+      `${BACKEND_URL}/session/${params.session_id}/prd/export?view=${view}`,
       { headers: authHeaders }
     );
     if (!res.ok) {

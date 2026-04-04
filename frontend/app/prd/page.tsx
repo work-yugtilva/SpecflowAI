@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
 import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
 import { getSession } from "@/lib/api/session";
@@ -36,6 +37,34 @@ const PRD_SECTIONS: { key: string; title: string }[] = [
   { key: "risks", title: "Risks" },
   { key: "success_metrics", title: "Success Metrics" },
 ];
+
+// ─── Section visibility per view mode ────────────────────────────────────────
+
+const SECTION_VISIBILITY: Record<"full" | "engineering" | "executive", string[]> = {
+  full: ["executive_summary", "problem_statement", "goals", "features", "architecture", "implementation_plan", "risks", "success_metrics"],
+  engineering: ["features", "architecture", "implementation_plan"],
+  executive: ["executive_summary", "problem_statement", "goals", "risks", "success_metrics"],
+};
+
+// ─── View mode metadata ───────────────────────────────────────────────────────
+
+const VIEW_MODE_META: Record<"full" | "engineering" | "executive", { label: string; description: string; audience: string | null }> = {
+  full: {
+    label: "Full PRD",
+    description: "Complete spec — all sections visible",
+    audience: null,
+  },
+  engineering: {
+    label: "Engineering View",
+    description: "Architecture, implementation plan, and feature specs only",
+    audience: "For your engineering team",
+  },
+  executive: {
+    label: "Executive View",
+    description: "Summary, goals, risks, and success metrics only",
+    audience: "For stakeholders and leadership",
+  },
+};
 
 // ─── Quality badge color ──────────────────────────────────────────────────────
 
@@ -486,8 +515,10 @@ function renderValue(val: unknown): React.ReactNode {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function PrdPage() {
+function PrdPage() {
   const { activeSessionId } = useActiveSession();
+  const searchParams = useSearchParams();
+  const router = useRouter();
   const [prd, setPrd] = useState<PrdData | null>(null);
   const [qualityScore, setQualityScore] = useState<QualityScore | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -501,6 +532,11 @@ export default function PrdPage() {
   const [linearPushStatus, setLinearPushStatus] = useState<"success" | "error" | null>(null);
   const [linearPushError, setLinearPushError] = useState<string | null>(null);
   const [linearNotConnected, setLinearNotConnected] = useState(false);
+  const urlView = searchParams.get("view");
+  const [viewMode, setViewMode] = useState<"full" | "engineering" | "executive">(
+    urlView === "engineering" || urlView === "executive" ? urlView : "full"
+  );
+  const [copied, setCopied] = useState(false);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -552,6 +588,15 @@ export default function PrdPage() {
 
     return () => { cancelled = true; };
   }, [activeSessionId]);
+
+  // Sync viewMode to URL without navigation
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (viewMode === "full") params.delete("view");
+    else params.set("view", viewMode);
+    const newUrl = params.toString() ? `?${params.toString()}` : window.location.pathname;
+    router.replace(newUrl, { scroll: false });
+  }, [viewMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function updateSection(key: string, value: unknown) {
     setPrd(prev => prev ? { ...prev, [key]: value } : prev);
@@ -669,7 +714,7 @@ export default function PrdPage() {
   async function handleExportMarkdown() {
     if (!activeSessionId) return;
     try {
-      const res = await fetch(`/api/sessions/${activeSessionId}/prd/export`);
+      const res = await fetch(`/api/sessions/${activeSessionId}/prd/export?view=${viewMode}`);
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         setError(body.detail ?? body.error ?? "Export failed");
@@ -680,7 +725,12 @@ export default function PrdPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `prd-${activeSessionId.slice(0, 8)}.md`;
+      const shortId = activeSessionId.slice(0, 8);
+      a.download = viewMode === "engineering"
+        ? `prd-engineering-${shortId}.md`
+        : viewMode === "executive"
+        ? `prd-executive-${shortId}.md`
+        : `prd-${shortId}.md`;
       a.click();
       URL.revokeObjectURL(url);
     } catch {
@@ -759,9 +809,58 @@ export default function PrdPage() {
             )}
           </div>
 
+          {/* View mode toggle */}
+          <div style={{ display: "flex", border: "1px solid #E4DDD4", borderRadius: 8, overflow: "hidden" }}>
+            {(["full", "engineering", "executive"] as const).map((mode) => (
+              <button
+                key={mode}
+                onClick={() => setViewMode(mode)}
+                style={{
+                  fontSize: 12,
+                  fontWeight: 500,
+                  padding: "5px 12px",
+                  border: "none",
+                  cursor: "pointer",
+                  background: viewMode === mode ? "#0D0D0D" : "#FFFFFF",
+                  color: viewMode === mode ? "#FFFFFF" : "#6B6B6B",
+                  fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                }}
+              >
+                {mode === "full" ? "Full" : mode === "engineering" ? "Engineering" : "Exec"}
+              </button>
+            ))}
+          </div>
+
           <div className="flex items-center gap-2">
             {prd && (
               <>
+                <button
+                  onClick={() => {
+                    navigator.clipboard.writeText(window.location.href);
+                    setCopied(true);
+                    setTimeout(() => setCopied(false), 2000);
+                  }}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                    padding: "0.4rem 0.875rem",
+                    borderRadius: 8,
+                    fontSize: "0.8125rem",
+                    fontWeight: 500,
+                    background: "#FFFFFF",
+                    border: "1.5px solid #E4DDD4",
+                    color: "#6B6B6B",
+                    cursor: "pointer",
+                    fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                  }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ opacity: 0.5 }}>
+                    <path d="M4.5 7.5a2.5 2.5 0 003.536-3.536L6.5 2.43A2.5 2.5 0 002.964 5.965" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                    <path d="M7.5 4.5A2.5 2.5 0 003.964 8.036L5.5 9.57A2.5 2.5 0 009.036 6.035" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
+                  </svg>
+                  {copied ? "Copied!" : "Copy Link"}
+                </button>
                 <button
                   onClick={handleExportMarkdown}
                   style={{
@@ -926,7 +1025,11 @@ export default function PrdPage() {
                 </svg>
                 <span style={{ fontSize: 13, color: "#6B6B6B" }}>
                   {activeSessionId
-                    ? "No PRD generated yet. Run all pipeline steps first, then generate."
+                    ? viewMode === "engineering"
+                      ? "No PRD yet. Generate the full PRD first, then switch to Engineering view."
+                      : viewMode === "executive"
+                      ? "No PRD yet. Generate the full PRD first, then switch to Executive view."
+                      : "No PRD generated yet. Run all pipeline steps first, then generate."
                     : "Select a session in Sessions to get started."}
                 </span>
               </div>
@@ -968,8 +1071,36 @@ export default function PrdPage() {
               </div>
             )}
 
+            {/* View mode context banner */}
+            {viewMode !== "full" && (
+              <div
+                style={{
+                  background: "rgba(232,86,27,0.06)",
+                  border: "1px solid rgba(232,86,27,0.15)",
+                  borderRadius: 10,
+                  padding: "10px 16px",
+                  marginBottom: 16,
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: "#0D0D0D" }}>
+                    {VIEW_MODE_META[viewMode].label}
+                  </span>
+                  {VIEW_MODE_META[viewMode].audience && (
+                    <span style={{ fontSize: 12, color: "#E8561B" }}>
+                      {VIEW_MODE_META[viewMode].audience}
+                    </span>
+                  )}
+                </div>
+                <span style={{ fontSize: 12, color: "#6B6B6B" }}>
+                  {VIEW_MODE_META[viewMode].description}
+                </span>
+              </div>
+            )}
+
             {/* Section cards */}
             {PRD_SECTIONS.map(({ key, title }) => {
+              if (!SECTION_VISIBILITY[viewMode].includes(key)) return null;
               const val = prd[key];
               if (val == null) return null;
               return (
@@ -1053,5 +1184,13 @@ export default function PrdPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function PrdPageWrapper() {
+  return (
+    <Suspense fallback={null}>
+      <PrdPage />
+    </Suspense>
   );
 }

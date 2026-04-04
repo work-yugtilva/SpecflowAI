@@ -1,4 +1,5 @@
 node_modules/
+frontend/node_modules/
 .DS_Store
 .env
 .env.local
@@ -19,7 +20,14 @@ Screenshot*.png
 
 # Local artifacts / nested copies
 output/
+autoresearch/
 everything-claude-code/
+
+# Design reference / nested apps (never commit — was 9k+ files incl. node_modules)
+frontend/inspiration/
+
+# Vercel CLI
+.vercel/
 
 # Test & coverage (Vitest, pytest, coverage.py)
 coverage/

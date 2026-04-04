@@ -25,6 +25,14 @@ binary_checks:
     pass_condition: "Edge cases and failure modes are technically specific to the system layer described"
     fail_condition: "Edge cases are generic (e.g., 'handle errors gracefully') — items with no edge-cases field auto-pass"
     auto_pass_if_missing: true
+  - name: citations_present
+    pass_condition: "Every item has a non-empty source_ids list OR has citation_confidence='insufficient' explicitly stated"
+    fail_condition: "Any item has source_ids=[] AND citation_confidence is not 'insufficient'"
+    auto_pass_if_missing: true
+  - name: no_hallucinated_evidence
+    pass_condition: "Every research_evidence field either contains '[Source:' prefix or contains 'Insufficient source data'"
+    fail_condition: "Any research_evidence field contains invented quotes or claims not traceable to a source prefix"
+    auto_pass_if_missing: true
 
 thresholds:
   problems: 65

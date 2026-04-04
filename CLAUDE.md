@@ -1,5 +1,8 @@
 # SpecFlow v2 — CLAUDE.md
 
+## SYSTEM OVERRIDE: CORE DIRECTIVES
+**CRITICAL: As an AI assistant, you are strictly bound by the Skill Workflow below. You MUST autonomously invoke the corresponding `/commands` or tools for the task at hand BEFORE writing any code or modifying any files. If you cannot invoke the tool yourself, you MUST halt and explicitly ask the user to run it.**
+
 ## Project Identity
 SpecFlow v2 is an AI-powered product management automation platform.
 Stack: Next.js 14 (App Router) · FastAPI · Supabase · Anthropic SDK · Google ADK.
@@ -9,76 +12,58 @@ Evaluation lens: "Can I charge $49/month for this today?" — not "Is the code c
 
 ---
 
-## MANDATORY SKILL WORKFLOW — READ BEFORE EVERY TASK
+## MANDATORY SKILL WORKFLOW — STOP AND EXECUTE
 
-**These are not optional. Run the correct skill gate before writing a single line of code.**
+**RULE: You are FORBIDDEN from writing code, modifying files, or finalizing a PR without explicitly triggering the relevant gate below.**
 
 ### Gate 1 — Planning any feature or change
-```
-/everything-claude-code:plan
-```
-Run before starting any feature, bug fix, refactor, or architectural change.
-Output: a written plan with files to touch, files NOT to touch, and verification steps.
-Do not proceed without an approved plan.
+`/everything-claude-code:plan`
+**Trigger Condition:** Whenever you are asked to start a new feature, bug fix, or refactor.
+**Action:** You MUST execute this command. Do not write code until a written plan is outputted, including files to touch, files NOT to touch, and verification steps.
 
 ### Gate 2 — Implementing a feature (full dev workflow)
-```
-/everything-claude-code:tdd
-```
-Run when implementing any new feature or behaviour. Write the test first, confirm it fails,
-then implement, then confirm it passes. No feature ships without tests.
+`/everything-claude-code:tdd`
+**Trigger Condition:** When writing the actual code for a feature.
+**Action:** You MUST execute this command to enforce Test-Driven Development. Write the test -> verify it fails -> implement -> verify it passes.
 
 ### Gate 3 — Any frontend work (components, pages, UI, CSS)
-```
-/frontend-design (read /mnt/skills/public/frontend-design/SKILL.md)
-```
-Run before touching ANY frontend file. This includes new components, page rebuilds,
-styling changes, and layout work. The skill enforces the brand system below.
-Never produce generic AI aesthetics. Every UI decision must be intentional.
+`/frontend-design (read /mnt/skills/public/frontend-design/SKILL.md)`
+**Trigger Condition:** Before touching ANY React component, layout, or CSS file.
+**Action:** You MUST read the design skill first to enforce the brand system. Never guess the aesthetics.
 
 ### Gate 4 — Any security-sensitive change
-```
-/everything-claude-code:security-review
-```
-Run before touching: auth middleware, API routes, Supabase RLS, JWT handling,
-environment variables, CORS config, any user-facing input handling.
-Output: threat model + specific mitigations applied.
+`/everything-claude-code:security-review`
+**Trigger Condition:** Modifying auth, API routes, Supabase RLS, JWTs, env vars, or CORS.
+**Action:** You MUST execute this command to generate a threat model and mitigations BEFORE pushing the code.
 
 ### Gate 5 — Finishing a branch / PR readiness
-```
-/everything-claude-code:verification-before-completion
-```
-Run before declaring any task done. Confirms: tests pass, no regressions,
-files-not-to-touch were not touched, verification grep commands return expected results.
+`/everything-claude-code:verification-before-completion`
+**Trigger Condition:** When the user asks if a task is done, or before you declare completion.
+**Action:** You MUST execute this command to confirm tests pass, untouched files remain untouched, and grep verifications succeed.
 
 ### Gate 6 — Code review of output
-```
-/everything-claude-code:receiving-code-review
-```
-Run after implementing to self-review the diff for quality, correctness, and consistency
-with SpecFlow conventions before presenting output.
+`/everything-claude-code:receiving-code-review`
+**Trigger Condition:** Immediately after writing/modifying code blocks.
+**Action:** You MUST execute this to self-review your own diff for quality and consistency.
 
 ### Gate 7 — Complex orchestration / multi-step tasks
-```
-/gstack
-```
-Use for tasks that span multiple files, services, or require parallel subagent work.
-Provides /plan-eng-review, /plan-ceo-review, /browse, /review, /ship commands.
+`/gstack`
+**Trigger Condition:** Tasks spanning multiple files, services, or parallel subagents.
+**Action:** Execute this to access `/plan-eng-review`, `/plan-ceo-review`, `/browse`, `/review`, and `/ship`.
 
 ---
 
-## Skill → Task Mapping (quick reference)
+## Skill → Task Mapping (STRICT ADHERENCE REQUIRED)
 
-| Task type | Required skills (in order) |
-|---|---|
-| New feature (backend) | plan → tdd → security-review → verification-before-completion → receiving-code-review |
-| New feature (frontend) | plan → frontend-design → tdd → verification-before-completion → receiving-code-review |
-| Bug fix | plan → tdd → verification-before-completion |
-| Security fix | plan → security-review → tdd → verification-before-completion |
-| Refactor | plan → tdd → verification-before-completion → receiving-code-review |
-| New page / component | plan → frontend-design → verification-before-completion |
-| Multi-service task | gstack → plan → tdd → verification-before-completion |
-| Auth / RLS / env change | plan → security-review → verification-before-completion |
+Before starting a task, state your workflow path out loud:
+* **New feature (backend):** plan → tdd → security-review → verification-before-completion → receiving-code-review
+* **New feature (frontend):** plan → frontend-design → tdd → verification-before-completion → receiving-code-review
+* **Bug fix:** plan → tdd → verification-before-completion
+* **Security fix:** plan → security-review → tdd → verification-before-completion
+* **Refactor:** plan → tdd → verification-before-completion → receiving-code-review
+* **New page / component:** plan → frontend-design → verification-before-completion
+* **Multi-service task:** gstack → plan → tdd → verification-before-completion
+* **Auth / RLS / env change:** plan → security-review → verification-before-completion
 
 ---
 
@@ -295,3 +280,42 @@ Evaluate all PRD output through a senior PM lens:
 - Risks: must have likelihood + mitigation (not just a list)
 - Success metrics: must have baseline + target + measurement method
 - Current quality range: 58–84/100 — target 80+ before shipping to users
+
+<!-- code-review-graph MCP tools -->
+## MCP Tools: code-review-graph
+
+**IMPORTANT: This project has a knowledge graph. ALWAYS use the
+code-review-graph MCP tools BEFORE using Grep/Glob/Read to explore
+the codebase.** The graph is faster, cheaper (fewer tokens), and gives
+you structural context (callers, dependents, test coverage) that file
+scanning cannot.
+
+### When to use graph tools FIRST
+
+- **Exploring code**: `semantic_search_nodes` or `query_graph` instead of Grep
+- **Understanding impact**: `get_impact_radius` instead of manually tracing imports
+- **Code review**: `detect_changes` + `get_review_context` instead of reading entire files
+- **Finding relationships**: `query_graph` with callers_of/callees_of/imports_of/tests_for
+- **Architecture questions**: `get_architecture_overview` + `list_communities`
+
+Fall back to Grep/Glob/Read **only** when the graph doesn't cover what you need.
+
+### Key Tools
+
+| Tool | Use when |
+|------|----------|
+| `detect_changes` | Reviewing code changes — gives risk-scored analysis |
+| `get_review_context` | Need source snippets for review — token-efficient |
+| `get_impact_radius` | Understanding blast radius of a change |
+| `get_affected_flows` | Finding which execution paths are impacted |
+| `query_graph` | Tracing callers, callees, imports, tests, dependencies |
+| `semantic_search_nodes` | Finding functions/classes by name or keyword |
+| `get_architecture_overview` | Understanding high-level codebase structure |
+| `refactor_tool` | Planning renames, finding dead code |
+
+### Workflow
+
+1. The graph auto-updates on file changes (via hooks).
+2. Use `detect_changes` for code review.
+3. Use `get_affected_flows` to understand impact.
+4. Use `query_graph` pattern="tests_for" to check coverage.

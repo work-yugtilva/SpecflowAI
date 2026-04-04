@@ -34,6 +34,11 @@ def validate_required_env() -> None:
 
 
 load_root_env()
+# Monorepo .env often sets NEXT_PUBLIC_SUPABASE_ANON_KEY only; mirror for FastAPI.
+if not os.environ.get("SUPABASE_ANON_KEY") and os.environ.get(
+    "NEXT_PUBLIC_SUPABASE_ANON_KEY"
+):
+    os.environ["SUPABASE_ANON_KEY"] = os.environ["NEXT_PUBLIC_SUPABASE_ANON_KEY"]
 validate_required_env()
 
 import sentry_sdk
@@ -862,9 +867,16 @@ async def get_prd(request: Request, session_id: str, auth: AuthContext = Depends
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+EXPORT_SECTIONS = {
+    "full": ["executive_summary", "problem_statement", "goals", "features", "architecture", "implementation_plan", "risks", "success_metrics"],
+    "engineering": ["features", "architecture", "implementation_plan"],
+    "executive": ["executive_summary", "problem_statement", "goals", "risks", "success_metrics"],
+}
+
+
 @app.get("/session/{session_id}/prd/export")
 @limiter.limit(RATE_LIMIT_DEFAULT)
-async def export_prd_markdown(request: Request, session_id: str, auth: AuthContext = Depends(require_auth_context)):
+async def export_prd_markdown(request: Request, session_id: str, view: str = "full", auth: AuthContext = Depends(require_auth_context)):
     """
     Export the session's PRD as a downloadable markdown file.
     """
@@ -878,6 +890,10 @@ async def export_prd_markdown(request: Request, session_id: str, auth: AuthConte
         if not isinstance(prd, dict):
             raise HTTPException(status_code=404, detail="PRD data is malformed")
 
+        # Validate view param
+        if view not in EXPORT_SECTIONS:
+            view = "full"
+
         # Convert JSON sections to markdown
         lines = ["# Product Requirements Document\n"]
         section_titles = {
@@ -890,7 +906,8 @@ async def export_prd_markdown(request: Request, session_id: str, auth: AuthConte
             "risks": "Risks",
             "success_metrics": "Success Metrics",
         }
-        for key, title in section_titles.items():
+        filtered_sections = {k: v for k, v in section_titles.items() if k in EXPORT_SECTIONS[view]}
+        for key, title in filtered_sections.items():
             val = prd.get(key)
             if val is None:
                 continue
@@ -968,10 +985,16 @@ async def export_prd_markdown(request: Request, session_id: str, auth: AuthConte
 
         md = "\n".join(lines)
         short_id = session_id[:8]
+        if view == "engineering":
+            filename = f"prd-engineering-{short_id}.md"
+        elif view == "executive":
+            filename = f"prd-executive-{short_id}.md"
+        else:
+            filename = f"prd-{short_id}.md"
         return Response(
             content=md,
             media_type="text/markdown",
-            headers={"Content-Disposition": f'attachment; filename="prd-{short_id}.md"'},
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
     except HTTPException:
         raise
@@ -1043,6 +1066,25 @@ async def list_session_pipelines(request: Request, session_id: str, auth: AuthCo
         return {"pipelines": [r.model_dump() for r in runs]}
     except Exception as e:
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+class EmbedRequest(BaseModel):
+    entry_id: str
+    title: str
+    content: str
+
+
+@app.post("/research/embed")
+@limiter.limit(RATE_LIMIT_DEFAULT)
+async def embed_research_entry(request: Request, req: EmbedRequest, auth: AuthContext = Depends(require_auth_context)):
+    """Generate and store a vector embedding for a research entry."""
+    try:
+        from services.rag.embedding_service import get_embedding_service
+        svc = get_embedding_service()
+        success = await svc.embed_and_store(req.entry_id, req.title, req.content, auth.client)
+        return {"success": success}
+    except Exception:
+        return {"success": False}
 
 
 if __name__ == "__main__":

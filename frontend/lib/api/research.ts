@@ -104,7 +104,20 @@ export async function createResearchEntry(
       body: JSON.stringify(entry),
     })
   );
-  return handleResponse<ResearchEntryRecord>(res);
+  const created = await handleResponse<ResearchEntryRecord>(res);
+
+  // Fire-and-forget: generate embedding in the background — never block the UI
+  fetch("/api/research/embed", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      entry_id: created.id,
+      title: created.title,
+      content: created.content,
+    }),
+  }).catch(() => {});
+
+  return created;
 }
 
 export async function updateResearchEntry(

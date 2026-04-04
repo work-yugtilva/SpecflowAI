@@ -14,7 +14,6 @@ export default defineConfig({
     ],
     exclude: [
       "tests/e2e/**",
-      "inspiration/**",
       "**/node_modules/**",
       "**/dist/**",
       "**/.next/**",
