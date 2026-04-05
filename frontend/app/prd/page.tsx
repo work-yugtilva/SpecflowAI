@@ -12,6 +12,7 @@ import type { LinearPayload } from "@/lib/pipeline-contracts";
 import dynamic from "next/dynamic";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
+import { CitationBadge } from "@/components/pipeline/CitationBadge";
 const TextShimmer = dynamic(
   () => import("@/components/ui/text-shimmer").then((m) => m.TextShimmer)
 );
@@ -96,25 +97,38 @@ function GoalsRenderer({ items }: { items: unknown[] }) {
 function FeaturesRenderer({ items }: { items: unknown[] }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {items.map((item: any, i) => (
-        <div key={i} style={{ borderLeft: "2px solid #E4DDD4", paddingLeft: 12 }}>
-          <div style={{ fontWeight: 600, color: "#0D0D0D", fontSize: 13 }}>{item.title}</div>
-          {item.description && <div style={{ fontSize: 13, color: "#6B6B6B", marginTop: 4 }}>{item.description}</div>}
-          {item.linked_problem && (
-            <div style={{ fontSize: 11, color: "#E8561B", marginTop: 4 }}>Solves: {item.linked_problem}</div>
-          )}
-          {item.acceptance_criteria && (
-            <div style={{
-              marginTop: 8, background: "#F3F4F6", borderRadius: 6,
-              padding: "8px 10px", fontSize: 12, color: "#374151",
-              fontFamily: "var(--font-mono, 'Courier New', monospace)",
-              whiteSpace: "pre-wrap",
-            }}>
-              {item.acceptance_criteria}
+      {items.map((item: any, i) => {
+        const sourceIds = Array.isArray(item.source_ids) ? item.source_ids : [];
+        const confidence = item.citation_confidence as "high" | "medium" | "insufficient" | undefined;
+        const isNoSource = confidence === "insufficient" || (sourceIds.length === 0 && confidence === undefined);
+        return (
+          <div key={i} style={{ borderLeft: "2px solid #E4DDD4", paddingLeft: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div style={{ fontWeight: 600, color: "#0D0D0D", fontSize: 13 }}>{item.title}</div>
+              <CitationBadge sourceIds={sourceIds} confidence={confidence} />
             </div>
-          )}
-        </div>
-      ))}
+            {item.description && <div style={{ fontSize: 13, color: "#6B6B6B", marginTop: 4 }}>{item.description}</div>}
+            {item.linked_problem && (
+              <div style={{ fontSize: 11, color: "#E8561B", marginTop: 4 }}>Solves: {item.linked_problem}</div>
+            )}
+            {item.acceptance_criteria && (
+              <div style={{
+                marginTop: 8, background: "#F3F4F6", borderRadius: 6,
+                padding: "8px 10px", fontSize: 12, color: "#374151",
+                fontFamily: "var(--font-mono, 'Courier New', monospace)",
+                whiteSpace: "pre-wrap",
+              }}>
+                {item.acceptance_criteria}
+              </div>
+            )}
+            {isNoSource && (
+              <div style={{ fontSize: 11, color: "#D97706", marginTop: 6 }}>
+                ⚠ This claim could not be traced to a source. Verify before shipping.
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -241,13 +255,38 @@ function TipTapStringEditor({
 
 function SectionCard({
   title, value, sectionKey, editing, onEditStart, onEditEnd, onUpdate, onScheduleSave,
+  onAiEdit, aiEditing, aiEdited, citationCount,
 }: {
   title: string; value: unknown; sectionKey: string;
   editing: boolean;
   onEditStart: () => void; onEditEnd: () => void;
   onUpdate: (v: unknown) => void;
   onScheduleSave?: (v: unknown) => void;
+  onAiEdit: (instruction: string) => Promise<void>;
+  aiEditing: boolean;
+  aiEdited: boolean;
+  citations?: Record<string, string[]> | null;
+  citationCount?: number;
 }) {
+  const [hovering, setHovering] = useState(false);
+  const [showAiInput, setShowAiInput] = useState(false);
+  const [aiInstruction, setAiInstruction] = useState("");
+  const [aiError, setAiError] = useState<string | null>(null);
+  const aiInputRef = useRef<HTMLInputElement>(null);
+
+  async function handleAiSubmit() {
+    const trimmed = aiInstruction.trim();
+    if (!trimmed) return;
+    setAiError(null);
+    try {
+      await onAiEdit(trimmed);
+      setShowAiInput(false);
+      setAiInstruction("");
+    } catch (e) {
+      setAiError(e instanceof Error ? e.message : "AI edit failed");
+    }
+  }
+
   const editTextareaStyle: React.CSSProperties = {
     width: "100%", padding: "10px 12px", borderRadius: 8,
     border: "1.5px solid #E8561B", fontSize: 13, color: "#0D0D0D", lineHeight: 1.7,
@@ -264,47 +303,160 @@ function SectionCard({
 
   return (
     <div
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => setHovering(false)}
       style={{
+        position: "relative",
         background: "#FFFFFF",
-        border: "1px solid #E4DDD4",
+        border: `1px solid ${aiEditing ? "rgba(232,86,27,0.3)" : "#E4DDD4"}`,
         borderRadius: 12,
         padding: "20px 24px",
         marginBottom: 12,
+        transition: "border-color 0.2s",
       }}
     >
+      {/* Shimmer overlay while AI is rewriting */}
+      {aiEditing && (
+        <div style={{
+          position: "absolute", inset: 0, borderRadius: 12, pointerEvents: "none", zIndex: 1,
+          background: "linear-gradient(90deg, transparent 0%, rgba(232,86,27,0.06) 50%, transparent 100%)",
+          backgroundSize: "200% 100%",
+          animation: "prd-shimmer 1.4s ease-in-out infinite",
+        }} />
+      )}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-        <h3
-          style={{
-            fontFamily: "var(--font-instrument), Georgia, serif",
-            fontSize: 16,
-            fontWeight: 600,
-            color: "#0D0D0D",
-            margin: 0,
-            letterSpacing: "-0.01em",
-          }}
-        >
-          {title}
-        </h3>
-        {typeof value !== "string" && (
-          <button
-            onClick={() => editing ? onEditEnd() : onEditStart()}
+        {/* Title + AI edited badge */}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <h3
             style={{
-              background: "none", border: "none", cursor: "pointer", padding: "2px 8px",
-              borderRadius: 6, fontSize: 11, fontWeight: 500,
-              color: editing ? "#E8561B" : "#9E9E9E",
-              fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+              fontFamily: "var(--font-instrument), Georgia, serif",
+              fontSize: 16,
+              fontWeight: 600,
+              color: "#0D0D0D",
+              margin: 0,
+              letterSpacing: "-0.01em",
             }}
           >
-            {editing ? "Done" : "Edit"}
-          </button>
-        )}
+            {title}
+          </h3>
+          {aiEdited && (
+            <span style={{
+              fontSize: 10, fontWeight: 600, padding: "1px 7px", borderRadius: 20,
+              background: "rgba(232,86,27,0.10)", color: "#E8561B", letterSpacing: "0.04em",
+            }}>
+              AI edited
+            </span>
+          )}
+          {citationCount != null && citationCount > 0 ? (
+            <span style={{
+              fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20,
+              background: "rgba(61,107,94,0.10)", color: "#3D6B5E",
+            }}>
+              {citationCount} sourced
+            </span>
+          ) : citationCount === 0 && sectionKey === "features" ? (
+            <span style={{
+              fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20,
+              background: "rgba(245,158,11,0.10)", color: "#D97706",
+            }}>
+              Unverified
+            </span>
+          ) : null}
+        </div>
+        {/* Right-side controls */}
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          {/* AI edit pill / input */}
+          {showAiInput ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+              <input
+                ref={aiInputRef}
+                value={aiInstruction}
+                onChange={e => setAiInstruction(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter") { e.preventDefault(); handleAiSubmit(); }
+                  if (e.key === "Escape") { setShowAiInput(false); setAiInstruction(""); setAiError(null); }
+                }}
+                disabled={aiEditing}
+                placeholder="Edit this section..."
+                autoFocus
+                style={{
+                  fontSize: 12, padding: "4px 11px", borderRadius: 20, width: 210,
+                  border: "1px solid rgba(232,86,27,0.35)", outline: "none",
+                  background: "#FDFAF7", color: "#0D0D0D",
+                  fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                  opacity: aiEditing ? 0.6 : 1,
+                }}
+              />
+              <button
+                onClick={handleAiSubmit}
+                disabled={aiEditing || !aiInstruction.trim()}
+                style={{
+                  fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 20,
+                  background: "#E8561B", color: "#FFFFFF", border: "none",
+                  cursor: aiEditing || !aiInstruction.trim() ? "not-allowed" : "pointer",
+                  opacity: aiEditing || !aiInstruction.trim() ? 0.5 : 1,
+                  fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                }}
+              >
+                {aiEditing ? "…" : "Apply"}
+              </button>
+              <button
+                onClick={() => { setShowAiInput(false); setAiInstruction(""); setAiError(null); }}
+                disabled={aiEditing}
+                style={{
+                  fontSize: 11, padding: "4px 7px", borderRadius: 20,
+                  background: "none", border: "1px solid #E4DDD4", color: "#9E9E9E",
+                  cursor: "pointer", lineHeight: 1,
+                }}
+              >
+                ✕
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => { setShowAiInput(true); }}
+              style={{
+                fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 20,
+                background: "rgba(232,86,27,0.08)", color: "#E8561B",
+                border: "1px solid rgba(232,86,27,0.18)", cursor: "pointer",
+                fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                opacity: hovering ? 1 : 0,
+                pointerEvents: hovering ? "auto" : "none",
+                transition: "opacity 0.15s",
+              }}
+            >
+              ✦ AI Edit
+            </button>
+          )}
+          {typeof value !== "string" && (
+            <button
+              onClick={() => editing ? onEditEnd() : onEditStart()}
+              style={{
+                background: "none", border: "none", cursor: "pointer", padding: "2px 8px",
+                borderRadius: 6, fontSize: 11, fontWeight: 500,
+                color: editing ? "#E8561B" : "#9E9E9E",
+                fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+              }}
+            >
+              {editing ? "Done" : "Edit"}
+            </button>
+          )}
+        </div>
       </div>
+      {/* Inline AI error */}
+      {aiError && (
+        <div style={{ fontSize: 11, color: "#DC2626", marginBottom: 8, paddingLeft: 2 }}>
+          {aiError}
+        </div>
+      )}
       <div
         style={{
           fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
           fontSize: 14,
           color: "#6B6B6B",
           lineHeight: 1.7,
+          opacity: aiEditing ? 0.35 : 1,
+          transition: "opacity 0.2s",
         }}
       >
         {typeof value === "string" ? (
@@ -538,6 +690,9 @@ function PrdPage() {
   );
   const [copied, setCopied] = useState(false);
   const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [aiEditingKey, setAiEditingKey] = useState<string | null>(null);
+  const [aiEditedSections, setAiEditedSections] = useState<Set<string>>(new Set());
+  const [citations, setCitations] = useState<Record<string, string[]> | null>(null);
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -582,6 +737,7 @@ function PrdPage() {
           setPrd(data.prd as PrdData);
           setFromSession(true);
           if (data.quality_score) setQualityScore(data.quality_score);
+          if (data.citations?.citations) setCitations(data.citations.citations);
         }
       })
       .catch(() => {});
@@ -662,6 +818,7 @@ function PrdPage() {
             } else if (event.type === "complete") {
               setPrd(event.prd ?? null);
               if (event.quality_score) setQualityScore(event.quality_score);
+              if (event.citations?.citations) setCitations(event.citations.citations);
               setFromSession(true);
               try { setSessionDetail(await getSession(activeSessionId)); } catch {}
             } else if (event.type === "error") {
@@ -707,6 +864,47 @@ function PrdPage() {
       setLinearPushStatus("error");
     } finally {
       setLinearPushing(false);
+    }
+  }
+
+  // ── Citation count helper ──
+  function getSectionCitationCount(sectionKey: string, prdData: PrdData, cits: Record<string, string[]> | null): number {
+    if (cits === null) return 0;
+    if (sectionKey !== "features") return 0;
+    const features = prdData.features;
+    if (!Array.isArray(features)) return 0;
+    return features.filter((item: any, idx: number) => {
+      const fromItem = Array.isArray(item?.source_ids) && item.source_ids.length > 0;
+      const fromMap = Array.isArray(cits[String(idx)]) && (cits[String(idx)] as string[]).length > 0;
+      return fromItem || fromMap;
+    }).length;
+  }
+
+  // ── AI inline edit ──
+  async function handleAiEdit(key: string, instruction: string): Promise<void> {
+    if (!activeSessionId || !prd) throw new Error("No active session");
+    setAiEditingKey(key);
+    try {
+      const res = await fetch(`/api/sessions/${activeSessionId}/prd/edit`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          section_key: key,
+          instruction,
+          current_section_value: prd[key],
+          full_prd: prd,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail ?? body.error ?? "AI edit failed");
+      }
+      const data = await res.json();
+      updateSection(key, data.updated_section);
+      scheduleSave({ ...prd, [key]: data.updated_section });
+      setAiEditedSections(prev => { const next = new Set(prev); next.add(key); return next; });
+    } finally {
+      setAiEditingKey(null);
     }
   }
 
@@ -1042,6 +1240,7 @@ function PrdPage() {
           >
             <style>{`
               @keyframes spin { to { transform: rotate(360deg); } }
+              @keyframes prd-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
               .tiptap-wrapper { border-radius: 6px; margin: -4px; padding: 4px; transition: background 0.15s; cursor: text; }
               .tiptap-wrapper:hover { background: rgba(232,86,27,0.03); }
               .tiptap-wrapper:focus-within { background: rgba(232,86,27,0.05); }
@@ -1114,6 +1313,11 @@ function PrdPage() {
                   onEditEnd={() => setEditingKey(null)}
                   onUpdate={(v) => updateSection(key, v)}
                   onScheduleSave={(v) => scheduleSave({ ...prd, [key]: v })}
+                  onAiEdit={(instruction) => handleAiEdit(key, instruction)}
+                  aiEditing={aiEditingKey === key}
+                  aiEdited={aiEditedSections.has(key)}
+                  citations={citations}
+                  citationCount={getSectionCitationCount(key, prd, citations)}
                 />
               );
             })}

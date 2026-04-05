@@ -338,6 +338,13 @@ class AttachPipelineRequest(BaseModel):
     session_id: str
 
 
+class EditPRDSectionRequest(BaseModel):
+    section_key: str
+    instruction: str
+    current_section_value: Any
+    full_prd: dict
+
+
 # ---------------------------------------------------------------------------
 # Routes — health + legacy /run (unchanged)
 # ---------------------------------------------------------------------------
@@ -703,6 +710,8 @@ async def generate_prd(request: Request, session_id: str, auth: AuthContext = De
             key: Pipeline._unwrap_persisted_content(outputs.get(key, []))
             for key in ("product_context", "problems", "features", "decompositions", "tasks")
         }
+        if outputs.get("rag_context"):
+            context["rag_context"] = Pipeline._unwrap_persisted_content(outputs["rag_context"])
 
         # Validate prerequisites (product_context is optional)
         missing = [k for k in ("problems", "features", "decompositions", "tasks")
@@ -717,6 +726,9 @@ async def generate_prd(request: Request, session_id: str, auth: AuthContext = De
         result, quality = await agent.run(context)
         result = Pipeline._strip_reasoning_field(result)
         quality = Pipeline._strip_reasoning_field(quality)
+        _, citation_metadata = Pipeline._extract_citation_metadata(
+            result.get("features", []) if isinstance(result, dict) else result
+        )
 
         # Persist to memory
         entry = MemoryEntry(
@@ -725,7 +737,7 @@ async def generate_prd(request: Request, session_id: str, auth: AuthContext = De
             agent_name="prd",
             memory_key="prd",
             content=result if isinstance(result, dict) else {"data": result},
-            metadata={"quality_score": quality},
+            metadata={"quality_score": quality, "citations": citation_metadata},
         )
         memory_repo = MemoryRepository(client=auth.client)
         await memory_repo.save_for_session(entry)
@@ -774,6 +786,8 @@ async def generate_prd_stream(request: Request, session_id: str, auth: AuthConte
                 key: Pipeline._unwrap_persisted_content(outputs.get(key, []))
                 for key in ("product_context", "problems", "features", "decompositions", "tasks")
             }
+            if outputs.get("rag_context"):
+                context["rag_context"] = Pipeline._unwrap_persisted_content(outputs["rag_context"])
 
             missing = [k for k in ("problems", "features", "decompositions", "tasks")
                        if not context.get(k)]
@@ -809,6 +823,9 @@ async def generate_prd_stream(request: Request, session_id: str, auth: AuthConte
             quality = result_container["quality"]
             result = Pipeline._strip_reasoning_field(result)
             quality = Pipeline._strip_reasoning_field(quality)
+            _, citation_metadata = Pipeline._extract_citation_metadata(
+                result.get("features", []) if isinstance(result, dict) else result
+            )
 
             yield f"data: {json.dumps({'type': 'phase', 'phase': 'Quality check...', 'progress': 90})}\n\n"
 
@@ -818,7 +835,7 @@ async def generate_prd_stream(request: Request, session_id: str, auth: AuthConte
                 agent_name="prd",
                 memory_key="prd",
                 content=result if isinstance(result, dict) else {"data": result},
-                metadata={"quality_score": quality},
+                metadata={"quality_score": quality, "citations": citation_metadata},
             )
             memory_repo = MemoryRepository(client=auth.client)
             await memory_repo.save_for_session(entry)
@@ -832,7 +849,7 @@ async def generate_prd_stream(request: Request, session_id: str, auth: AuthConte
                 step=current_state.get("last_completed_step", "prd"),
             )
 
-            yield f"data: {json.dumps({'type': 'complete', 'prd': result, 'quality_score': quality, 'progress': 100})}\n\n"
+            yield f"data: {json.dumps({'type': 'complete', 'prd': result, 'quality_score': quality, 'citations': citation_metadata, 'progress': 100})}\n\n"
 
         except Exception as e:
             import traceback
@@ -860,7 +877,8 @@ async def get_prd(request: Request, session_id: str, auth: AuthContext = Depends
             raise HTTPException(status_code=404, detail="No PRD found for this session")
         prd = Pipeline._unwrap_persisted_content(entry.content)
         quality = entry.metadata.get("quality_score") if entry.metadata else None
-        return {"prd": prd, "quality_score": quality}
+        citations = entry.metadata.get("citations") if entry.metadata else None
+        return {"prd": prd, "quality_score": quality, "citations": citations}
     except HTTPException:
         raise
     except Exception:
@@ -1001,6 +1019,68 @@ async def export_prd_markdown(request: Request, session_id: str, view: str = "fu
     except Exception:
         import traceback
         traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.post("/session/{session_id}/prd/edit")
+@limiter.limit(RATE_LIMIT_AI)
+async def edit_prd_section(
+    request: Request,
+    session_id: str,
+    body: EditPRDSectionRequest,
+    auth: AuthContext = Depends(require_auth_context),
+):
+    """
+    Rewrite a single PRD section based on a user instruction.
+    Uses the full PRD as context but returns only the updated section value.
+    Does NOT persist — the caller handles saving via autosave.
+    """
+    try:
+        from services.ai.client import run_ai_async
+        from json_repair import loads as repair_loads
+
+        sm = SessionManager(client=auth.client)
+        await sm.load_session(session_id)
+        current_state = await sm.get_current_state(session_id)
+
+        # Respect the PRD regeneration cap (shared counter with generate_prd)
+        regen_counts = (current_state or {}).get("regeneration_counts", {})
+        if regen_counts.get("prd", 0) >= 3:
+            raise HTTPException(
+                status_code=403,
+                detail="Regeneration limit reached. Please edit the document manually.",
+            )
+
+        prompt = "\n\n".join([
+            "<role>\nYou are a senior product manager rewriting a single PRD section.\n</role>",
+            f"<full_prd>\n{json.dumps(body.full_prd, indent=2)}\n</full_prd>",
+            f"<section_key>\n{body.section_key}\n</section_key>",
+            f"<current_section_value>\n{json.dumps(body.current_section_value, indent=2)}\n</current_section_value>",
+            f"<instruction>\n{body.instruction}\n</instruction>",
+            (
+                "<response_contract>\n"
+                "Return ONLY the rewritten section value as valid JSON.\n"
+                "Match the exact shape of current_section_value (string, list of objects, or dict).\n"
+                "Do not wrap in an outer key. Do not emit markdown, prose, or code fences.\n"
+                "</response_contract>"
+            ),
+        ])
+
+        raw = await run_ai_async(prompt, max_tokens=2048)
+        try:
+            updated = repair_loads(raw)
+        except Exception:
+            raise HTTPException(status_code=500, detail="AI returned unparseable output")
+
+        # Strip reasoning field if the model included one at the top level
+        if isinstance(updated, dict) and "reasoning" in updated:
+            updated = {k: v for k, v in updated.items() if k != "reasoning"}
+
+        return {"success": True, "updated_section": updated}
+    except HTTPException:
+        raise
+    except Exception:
+        logger.error("edit_prd_section failed", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 

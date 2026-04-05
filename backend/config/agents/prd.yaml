@@ -16,6 +16,12 @@ instructions: |
   Do not write generic claims such as improve efficiency, streamline workflow, or handle errors gracefully
   unless the exact wording appears in the tagged inputs.
 
+  If a <rag_context> block is present in your input, you MUST use it as primary evidence.
+  For every feature item, populate source_ids with the id values from any rag_context items
+  used as evidence. If no rag_context was provided, use an empty list.
+  Set citation_confidence to 'high' if every claim traces to a rag_context item, 'medium' if
+  some claims are inferred, 'insufficient' if you could not find supporting evidence in rag_context.
+
   FORMATTING RULES — apply these strictly:
   - executive_summary and problem_statement: 2–4 SHORT sentences maximum. No paragraph walls.
   - goals: each item must have goal (≤10 words), metric, target, and timeline. No prose descriptions.
@@ -33,7 +39,7 @@ instructions: |
       "executive_summary": "...",
       "problem_statement": "...",
       "goals": [{"goal": "...", "metric": "...", "target": "...", "timeline": "..."}],
-      "features": [{"title": "...", "description": "...", "acceptance_criteria": "• ...\n• ...", "linked_problem": "..."}],
+      "features": [{"title": "...", "description": "...", "acceptance_criteria": "• ...\n• ...", "linked_problem": "...", "source_ids": [], "citation_confidence": "high | medium | insufficient"}],
       "architecture": {"frontend": "...", "backend": "...", "data": "..."},
       "implementation_plan": [{"phase": "...", "deliverables": ["...", "..."], "duration": "..."}],
       "risks": [{"risk": "...", "likelihood": "high | medium | low", "mitigation": "..."}],
@@ -49,7 +55,15 @@ output_schema:
     executive_summary: string
     problem_statement: string
     goals: list
-    features: list
+    features:
+      type: list
+      items:
+        title: string
+        description: string
+        acceptance_criteria: string
+        linked_problem: string
+        source_ids: list
+        citation_confidence: "high | medium | insufficient"
     architecture: object
     implementation_plan: list
     risks: list
