@@ -797,6 +797,7 @@ class Pipeline:
             return context
         rag_context = [
             {
+                "id": r["id"],
                 "title": r["title"],
                 "content": r["content"],
                 "source": r["type"],
