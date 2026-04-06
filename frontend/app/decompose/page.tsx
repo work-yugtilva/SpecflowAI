@@ -17,6 +17,7 @@ import { computeStepStatuses } from "@/lib/pipeline-session";
 import { runPipelineStepOrFull } from "@/lib/run-pipeline-client";
 import { useOrphanedPipeline } from "@/lib/use-orphaned-pipeline";
 import { OrphanedPipelineModal } from "@/components/ui/orphaned-pipeline-modal";
+import { ConversationPanel } from "@/components/ui/conversation-panel";
 import { adaptDecomposition } from "@/lib/pipeline-contracts";
 import type {
   DecompositionViewModel as Decomposition,
@@ -891,6 +892,11 @@ export default function DecomposePage() {
         open={showOrphanedModal}
         onClose={closeOrphanedModal}
         pipelineOutput={orphanedOutput}
+      />
+      <ConversationPanel
+        sessionId={activeSessionId}
+        contextKeys={["problems", "features", "decompositions"]}
+        mode="float"
       />
     </div>
   );

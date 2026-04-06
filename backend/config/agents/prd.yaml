@@ -16,6 +16,28 @@ instructions: |
   Do not write generic claims such as improve efficiency, streamline workflow, or handle errors gracefully
   unless the exact wording appears in the tagged inputs.
 
+  Every goal must be framed as a user outcome with a before/after delta grounded in the research context.
+  Goals must NOT describe system behaviors or internal metrics (e.g. "capture 100% of X").
+  If the research context provides a baseline number (e.g. "3-4 hours"), that number must appear in the goal's metric field. Never invent baselines.
+
+  When research context contains absolute targets like "zero" or "never," reframe them as bounded,
+  falsifiable targets. Add a measurement timeframe (e.g. "within first 2 sprints post-launch") and a
+  stated assumption (e.g. "assumes single-developer team size"). Never adopt absolute targets verbatim.
+
+  The architecture section must describe WHAT each layer does for the user, not HOW it is implemented.
+  Forbidden content: column names, data types, VARCHAR limits, JSONB, endpoint paths, mutation names, index strategies.
+  Each of frontend/backend/data must be 1-2 sentences describing user-facing behavior and system responsibility only.
+
+  If the research context names an existing workaround or tool the user currently uses (e.g. Notion,
+  Google Docs, a GPT wrapper), the problem_statement must include one sentence explaining why that
+  workaround fails to solve the core problem. Ground this in the user's own words from the research
+  context — do not invent a reason.
+
+  Every phase in implementation_plan must include an `assumptions` field listing: team size assumed,
+  any external dependencies, and the single biggest risk to the timeline. If the research context
+  contains no team size information, state "team size not specified — timeline assumes 1 FE + 1 BE
+  engineer." Never emit a timeline without stated assumptions.
+
   If a <rag_context> block is present in your input, you MUST use it as primary evidence.
   For every feature item, populate source_ids with the id values from any rag_context items
   used as evidence. If no rag_context was provided, use an empty list.
@@ -41,7 +63,7 @@ instructions: |
       "goals": [{"goal": "...", "metric": "...", "target": "...", "timeline": "..."}],
       "features": [{"title": "...", "description": "...", "acceptance_criteria": "• ...\n• ...", "linked_problem": "...", "source_ids": [], "citation_confidence": "high | medium | insufficient"}],
       "architecture": {"frontend": "...", "backend": "...", "data": "..."},
-      "implementation_plan": [{"phase": "...", "deliverables": ["...", "..."], "duration": "..."}],
+      "implementation_plan": [{"phase": "...", "deliverables": ["...", "..."], "duration": "...", "assumptions": "..."}],
       "risks": [{"risk": "...", "likelihood": "high | medium | low", "mitigation": "..."}],
       "success_metrics": [{"metric": "...", "baseline": "...", "target": "...", "measurement": "..."}]
     }

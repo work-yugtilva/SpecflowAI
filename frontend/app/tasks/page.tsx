@@ -1,13 +1,18 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
 import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
 import { QualityBadge } from "@/components/pipeline/QualityBadge";
 import { CitationBadge } from "@/components/pipeline/CitationBadge";
-import { getSession } from "@/lib/api/session";
-import type { SessionDetail } from "@/lib/api/session";
+import {
+  getSession,
+  generateHandoff,
+  getHandoff,
+  exportHandoff,
+} from "@/lib/api/session";
+import type { SessionDetail, AgentHandoff } from "@/lib/api/session";
 import {
   buildPipelineInputFromStorage,
   clearAutorunFlag,
@@ -18,6 +23,7 @@ import { computeStepStatuses } from "@/lib/pipeline-session";
 import { runPipelineStepOrFull } from "@/lib/run-pipeline-client";
 import { useOrphanedPipeline } from "@/lib/use-orphaned-pipeline";
 import { OrphanedPipelineModal } from "@/components/ui/orphaned-pipeline-modal";
+import { ConversationPanel } from "@/components/ui/conversation-panel";
 import { adaptTasks } from "@/lib/pipeline-contracts";
 import type {
   LinearPayload,
@@ -99,6 +105,420 @@ function TypeBadge({ type }: { type: TaskType }) {
   );
 }
 
+// ─── Handoff Summary Panel ────────────────────────────────────────────────────
+
+const LAYER_COLORS: Record<string, { bg: string; color: string }> = {
+  Frontend: TYPE_COLORS["Frontend"],
+  Backend: TYPE_COLORS["Backend"],
+  API: TYPE_COLORS["API"],
+  Infrastructure: TYPE_COLORS["Infrastructure"],
+};
+
+function LayerBadge({ layer }: { layer: string }) {
+  const c = LAYER_COLORS[layer] ?? { bg: "#F3F4F6", color: "#6B6B6B" };
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        padding: "2px 7px",
+        borderRadius: 4,
+        fontSize: 11,
+        fontWeight: 500,
+        background: c.bg,
+        color: c.color,
+        flexShrink: 0,
+      }}
+    >
+      {layer}
+    </span>
+  );
+}
+
+interface HandoffSummaryPanelProps {
+  handoff: import("@/lib/api/session").AgentHandoff;
+  sessionId: string;
+  expandedTask: string | null;
+  onExpandTask: (id: string | null) => void;
+  onClose: () => void;
+}
+
+function HandoffSummaryPanel({
+  handoff,
+  sessionId,
+  expandedTask,
+  onExpandTask,
+  onClose,
+}: HandoffSummaryPanelProps) {
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        onClick={onClose}
+        style={{
+          position: "fixed",
+          inset: 0,
+          top: 52,
+          background: "rgba(0,0,0,0.15)",
+          zIndex: 39,
+        }}
+      />
+      {/* Panel */}
+      <div
+        style={{
+          position: "fixed",
+          right: 0,
+          top: 52,
+          width: 420,
+          height: "calc(100vh - 52px)",
+          background: "#FFFFFF",
+          borderLeft: "1px solid #E4DDD4",
+          boxShadow: "-4px 0 24px rgba(0,0,0,0.08)",
+          zIndex: 40,
+          display: "flex",
+          flexDirection: "column",
+          animation: "slideInRight 220ms ease",
+        }}
+      >
+        {/* Header */}
+        <div
+          style={{
+            padding: "16px 20px",
+            borderBottom: "1px solid #E4DDD4",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexShrink: 0,
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 14, fontWeight: 600, color: "#0D0D0D" }}>
+              Agent Handoff
+            </span>
+            {handoff.estimated_sessions != null && (
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  padding: "2px 8px",
+                  borderRadius: 20,
+                  background: "rgba(232,86,27,0.10)",
+                  color: "#E8561B",
+                }}
+              >
+                ~{handoff.estimated_sessions} session{handoff.estimated_sessions !== 1 ? "s" : ""}
+              </span>
+            )}
+          </div>
+          <button
+            onClick={onClose}
+            style={{
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              color: "#9E9E9E",
+              fontSize: 18,
+              lineHeight: 1,
+              padding: 4,
+              fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+            }}
+            aria-label="Close panel"
+          >
+            ×
+          </button>
+        </div>
+
+        {/* Clarification warning */}
+        {handoff.needs_clarification_count > 0 && (
+          <div
+            style={{
+              padding: "10px 20px",
+              background: "rgba(245,158,11,0.08)",
+              borderBottom: "1px solid rgba(245,158,11,0.2)",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              flexShrink: 0,
+            }}
+          >
+            <span style={{ color: "#D97706", fontSize: 13 }}>⚠</span>
+            <span style={{ fontSize: 12.5, color: "#92400E", lineHeight: 1.5 }}>
+              {handoff.needs_clarification_count} task
+              {handoff.needs_clarification_count !== 1 ? "s" : ""} need clarification before handoff
+            </span>
+          </div>
+        )}
+
+        {/* Project brief */}
+        {handoff.project_brief && (
+          <div
+            style={{
+              padding: "14px 20px",
+              borderBottom: "1px solid #E4DDD4",
+              flexShrink: 0,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 10,
+                fontWeight: 600,
+                letterSpacing: "0.08em",
+                textTransform: "uppercase",
+                color: "#9E9E9E",
+                marginBottom: 6,
+              }}
+            >
+              Project Brief
+            </div>
+            <p
+              style={{
+                fontSize: 12.5,
+                color: "#6B6B6B",
+                lineHeight: 1.6,
+                margin: 0,
+              }}
+            >
+              {handoff.project_brief}
+            </p>
+          </div>
+        )}
+
+        {/* Task list */}
+        <div style={{ flex: 1, overflowY: "auto" }}>
+          {handoff.tasks.map((task) => {
+            const isExpanded = expandedTask === task.id;
+            return (
+              <div key={task.id} style={{ borderBottom: "1px solid #F0EDE9" }}>
+                <button
+                  onClick={() => onExpandTask(isExpanded ? null : task.id)}
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "10px 20px",
+                    background: isExpanded ? "rgba(232,86,27,0.03)" : "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                    transition: "background 120ms ease",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!isExpanded) e.currentTarget.style.background = "rgba(0,0,0,0.02)";
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!isExpanded) e.currentTarget.style.background = "transparent";
+                  }}
+                >
+                  {/* Chevron */}
+                  <svg
+                    width="10"
+                    height="10"
+                    viewBox="0 0 10 10"
+                    fill="none"
+                    style={{
+                      transform: isExpanded ? "rotate(90deg)" : "rotate(0deg)",
+                      transition: "transform 150ms ease",
+                      flexShrink: 0,
+                      color: "#9E9E9E",
+                    }}
+                  >
+                    <path
+                      d="M3.5 2L7 5L3.5 8"
+                      stroke="currentColor"
+                      strokeWidth="1.4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                  <span
+                    style={{
+                      fontSize: 12.5,
+                      fontWeight: 500,
+                      color: "#0D0D0D",
+                      flex: 1,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    {task.title}
+                  </span>
+                  {task.needs_clarification && (
+                    <span
+                      title={task.clarification_reason}
+                      style={{ fontSize: 12, color: "#D97706", flexShrink: 0, cursor: "help" }}
+                    >
+                      ⚠
+                    </span>
+                  )}
+                  <LayerBadge layer={task.layer} />
+                </button>
+
+                {isExpanded && (
+                  <div
+                    style={{
+                      padding: "0 20px 14px 38px",
+                      display: "flex",
+                      flexDirection: "column",
+                      gap: 10,
+                    }}
+                  >
+                    {task.clarification_reason && task.needs_clarification && (
+                      <div
+                        style={{
+                          padding: "8px 12px",
+                          background: "rgba(245,158,11,0.07)",
+                          border: "1px solid rgba(245,158,11,0.2)",
+                          borderRadius: 6,
+                          fontSize: 12,
+                          color: "#92400E",
+                          lineHeight: 1.5,
+                        }}
+                      >
+                        ⚠ {task.clarification_reason}
+                      </div>
+                    )}
+                    <div>
+                      <div
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 600,
+                          letterSpacing: "0.07em",
+                          textTransform: "uppercase",
+                          color: "#9E9E9E",
+                          marginBottom: 5,
+                        }}
+                      >
+                        Implementation Prompt
+                      </div>
+                      <p
+                        style={{
+                          fontSize: 12,
+                          color: "#3D3D3D",
+                          lineHeight: 1.6,
+                          margin: 0,
+                          whiteSpace: "pre-wrap",
+                        }}
+                      >
+                        {task.implementation_prompt}
+                      </p>
+                    </div>
+                    {task.acceptance_criteria && (
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 600,
+                            letterSpacing: "0.07em",
+                            textTransform: "uppercase",
+                            color: "#9E9E9E",
+                            marginBottom: 5,
+                          }}
+                        >
+                          Acceptance Criteria
+                        </div>
+                        <p
+                          style={{
+                            fontSize: 12,
+                            color: "#3D3D3D",
+                            lineHeight: 1.6,
+                            margin: 0,
+                            whiteSpace: "pre-wrap",
+                          }}
+                        >
+                          {task.acceptance_criteria}
+                        </p>
+                      </div>
+                    )}
+                    {task.dependencies.length > 0 && (
+                      <div>
+                        <div
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 600,
+                            letterSpacing: "0.07em",
+                            textTransform: "uppercase",
+                            color: "#9E9E9E",
+                            marginBottom: 5,
+                          }}
+                        >
+                          Dependencies
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                          {task.dependencies.map((dep, i) => (
+                            <div key={i} style={{ fontSize: 12, color: "#6B6B6B", lineHeight: 1.5 }}>
+                              <span style={{ color: "#E8561B", marginRight: 6 }}>→</span>
+                              {dep}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Bottom export strip */}
+        <div
+          style={{
+            padding: "12px 16px",
+            borderTop: "1px solid #E4DDD4",
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+            flexShrink: 0,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 600,
+              letterSpacing: "0.08em",
+              textTransform: "uppercase",
+              color: "#9E9E9E",
+              marginBottom: 2,
+            }}
+          >
+            Export
+          </div>
+          {([
+            { label: "Export CLAUDE.md",    format: "claude_md"    },
+            { label: "Export .cursorrules", format: "cursor_rules" },
+            { label: "Copy task prompts",   format: "task_list"    },
+          ] as const).map(({ label, format }) => (
+            <button
+              key={format}
+              onClick={() => exportHandoff(sessionId, format)}
+              style={{
+                width: "100%",
+                textAlign: "left",
+                padding: "8px 12px",
+                fontSize: 12.5,
+                color: "#0D0D0D",
+                background: "#F8F4EF",
+                border: "1px solid #E4DDD4",
+                borderRadius: 6,
+                cursor: "pointer",
+                fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                transition: "background 120ms ease",
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = "#EFE9E2"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = "#F8F4EF"; }}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ─── Tasks Page ───────────────────────────────────────────────────────────────
 
 export default function TasksPage() {
@@ -134,6 +554,14 @@ export default function TasksPage() {
   const [linearPushStatus, setLinearPushStatus] = useState<"success" | "error" | null>(null);
   const [linearPushError, setLinearPushError] = useState<string | null>(null);
   const [linearNotConnected, setLinearNotConnected] = useState(false);
+  const [handoff, setHandoff] = useState<AgentHandoff | null>(null);
+  const [handoffGenerating, setHandoffGenerating] = useState(false);
+  const [handoffStatus, setHandoffStatus] = useState<"success" | "error" | null>(null);
+  const [handoffError, setHandoffError] = useState<string | null>(null);
+  const [showHandoffPanel, setShowHandoffPanel] = useState(false);
+  const [showExportDropdown, setShowExportDropdown] = useState(false);
+  const exportDropdownRef = useRef<HTMLDivElement>(null);
+  const [expandedHandoffTask, setExpandedHandoffTask] = useState<string | null>(null);
 
   const selectedTask = tasks.find((t) => t.id === selectedId) ?? null;
   const effectiveStatus = (t: Task): TaskStatus => statusMap[t.id] ?? t.status;
@@ -152,6 +580,7 @@ export default function TasksPage() {
     setSessionDetail(null);
     setLinearPayload(null);
     setLinearNotConnected(false);
+    setHandoff(null);
     if (!activeSessionId) return;
     let cancelled = false;
     getSession(activeSessionId)
@@ -171,6 +600,10 @@ export default function TasksPage() {
         }
         const lp = out?.linear_payload as LinearPayload | undefined;
         if (lp) setLinearPayload(lp);
+        // Load existing handoff (404 = never generated, not an error)
+        getHandoff(activeSessionId)
+          .then((r) => { if (!cancelled && r.handoff) setHandoff(r.handoff); })
+          .catch(() => { /* 404 is expected — stay null */ });
       })
       .catch(() => {
         if (!cancelled) setSessionDetail(null);
@@ -319,6 +752,41 @@ export default function TasksPage() {
     return () => clearTimeout(t);
   }, [linearPushStatus]);
 
+  async function handleGenerateHandoff() {
+    if (!activeSessionId || handoffGenerating) return;
+    setHandoffGenerating(true);
+    setHandoffStatus(null);
+    setHandoffError(null);
+    try {
+      const res = await generateHandoff(activeSessionId);
+      setHandoff(res.handoff);
+      setHandoffStatus("success");
+      setShowHandoffPanel(true);
+    } catch (e) {
+      setHandoffStatus("error");
+      setHandoffError(e instanceof Error ? e.message : "Handoff failed");
+    } finally {
+      setHandoffGenerating(false);
+    }
+  }
+
+  useEffect(() => {
+    if (handoffStatus === null) return;
+    const t = setTimeout(() => setHandoffStatus(null), 5000);
+    return () => clearTimeout(t);
+  }, [handoffStatus]);
+
+  useEffect(() => {
+    if (!showExportDropdown) return;
+    function handleClick(e: MouseEvent) {
+      if (exportDropdownRef.current && !exportDropdownRef.current.contains(e.target as Node)) {
+        setShowExportDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showExportDropdown]);
+
   useEffect(() => {
     if (!activeSessionId || !isAutorunPending(activeSessionId)) return;
     handleGenerate();
@@ -461,6 +929,116 @@ export default function TasksPage() {
               </svg>
               {linearPushing ? "Pushing…" : "Push to Linear"}
             </button>
+            {/* Handoff status chips */}
+            {handoffStatus === "success" && (
+              <span style={{ fontSize: 11.5, fontWeight: 600, padding: "2px 10px", borderRadius: 20, background: "rgba(34,197,94,0.12)", color: "#15803D" }}>
+                Handoff ready ✓
+              </span>
+            )}
+            {handoffStatus === "error" && (
+              <span
+                title={handoffError ?? undefined}
+                style={{ fontSize: 11.5, fontWeight: 600, padding: "2px 10px", borderRadius: 20, background: "rgba(239,68,68,0.12)", color: "#DC2626", cursor: handoffError ? "help" : "default", maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+              >
+                {handoffError ? handoffError : "Handoff failed — try again"}
+              </span>
+            )}
+            {/* View Handoff toggle (only when handoff exists) */}
+            {handoff && (
+              <button
+                onClick={() => setShowHandoffPanel((v) => !v)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  padding: "0.4rem 0.875rem",
+                  borderRadius: 8,
+                  fontSize: "0.8125rem",
+                  fontWeight: 500,
+                  background: showHandoffPanel ? "rgba(232,86,27,0.06)" : "#FFFFFF",
+                  border: "1.5px solid rgba(232,86,27,0.35)",
+                  color: "#E8561B",
+                  cursor: "pointer",
+                  fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                  transition: "background 150ms ease",
+                }}
+              >
+                {showHandoffPanel ? "Hide Handoff" : "View Handoff"}
+              </button>
+            )}
+            {/* Export dropdown (only when handoff exists) */}
+            {handoff && (
+              <div ref={exportDropdownRef} style={{ position: "relative" }}>
+                <button
+                  onClick={() => setShowExportDropdown((v) => !v)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 5,
+                    padding: "0.4rem 0.875rem",
+                    borderRadius: 8,
+                    fontSize: "0.8125rem",
+                    fontWeight: 500,
+                    background: "#FFFFFF",
+                    border: "1.5px solid #E4DDD4",
+                    color: "#0D0D0D",
+                    cursor: "pointer",
+                    fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                    transition: "background 150ms ease",
+                  }}
+                >
+                  Export for Agent ↓
+                </button>
+                {showExportDropdown && (
+                  <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, width: 200, background: "#FFF", border: "1px solid #E4DDD4", borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.08)", zIndex: 50, overflow: "hidden" }}>
+                    {([
+                      { label: "Export CLAUDE.md",    format: "claude_md"    },
+                      { label: "Export .cursorrules", format: "cursor_rules" },
+                      { label: "Copy task prompts",   format: "task_list"    },
+                    ] as const).map(({ label, format }) => (
+                      <button
+                        key={format}
+                        onClick={() => { exportHandoff(activeSessionId!, format); setShowExportDropdown(false); }}
+                        style={{ width: "100%", textAlign: "left", padding: "9px 14px", fontSize: 12.5, color: "#0D0D0D", background: "none", border: "none", cursor: "pointer", fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif" }}
+                        onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(0,0,0,0.04)"; }}
+                        onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {/* Generate Handoff button (when tasks exist) */}
+            {tasks.length > 0 && (
+              <button
+                onClick={handleGenerateHandoff}
+                disabled={handoffGenerating || !activeSessionId}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  padding: "0.4rem 0.875rem",
+                  borderRadius: 8,
+                  fontSize: "0.8125rem",
+                  fontWeight: 500,
+                  background: handoffGenerating || !activeSessionId ? "#F8F4EF" : "#FFFFFF",
+                  border: "1.5px solid #E4DDD4",
+                  color: handoffGenerating || !activeSessionId ? "#9E9E9E" : "#0D0D0D",
+                  cursor: handoffGenerating || !activeSessionId ? "not-allowed" : "pointer",
+                  fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                  opacity: !activeSessionId ? 0.6 : 1,
+                  transition: "background 150ms ease, border-color 150ms ease",
+                }}
+              >
+                {handoffGenerating ? (
+                  <TextShimmer duration={1.2}>Preparing handoff…</TextShimmer>
+                ) : (
+                  "Generate Handoff"
+                )}
+              </button>
+            )}
             {prdStatus === "success" && (
               <span style={{ fontSize: 11.5, fontWeight: 600, padding: "2px 10px", borderRadius: 20, background: "rgba(34,197,94,0.12)", color: "#15803D" }}>
                 PRD generated ✓
@@ -1220,6 +1798,20 @@ export default function TasksPage() {
         onClose={closeOrphanedModal}
         pipelineOutput={orphanedOutput}
       />
+      <ConversationPanel
+        sessionId={activeSessionId}
+        contextKeys={["problems", "features", "decompositions", "tasks"]}
+        mode="float"
+      />
+      {showHandoffPanel && handoff && activeSessionId && (
+        <HandoffSummaryPanel
+          handoff={handoff}
+          sessionId={activeSessionId}
+          expandedTask={expandedHandoffTask}
+          onExpandTask={setExpandedHandoffTask}
+          onClose={() => setShowHandoffPanel(false)}
+        />
+      )}
     </div>
   );
 }

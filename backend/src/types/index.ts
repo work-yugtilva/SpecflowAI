@@ -22,7 +22,16 @@ export interface ContextBundle {
 // Research types
 export type ResearchType = 'Interview' | 'Survey' | 'Analytics' | 'Market Insight';
 
-export interface ResearchEntry {
+export interface AnalyticsFields {
+  metricName?: string;
+  metricValue?: number;
+  metricBaseline?: number;
+  metricUnit?: string;
+  timePeriod?: string;
+  dataSource?: string;
+}
+
+export interface ResearchEntry extends AnalyticsFields {
   id?: string;
   type: ResearchType;
   title: string;
@@ -35,6 +44,16 @@ export interface ResearchEntry {
   sessionId?: string | null;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface AnalyticsEntry extends Omit<ResearchEntry, keyof AnalyticsFields | 'type'> {
+  type: 'Analytics';
+  metricName: string;
+  metricValue?: number;
+  metricBaseline?: number;
+  metricUnit?: string;
+  timePeriod?: string;
+  dataSource?: string;
 }
 
 // Problem types

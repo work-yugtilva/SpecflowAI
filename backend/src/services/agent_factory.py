@@ -10,6 +10,7 @@ from services.agents.decompose_agent import DecomposeAgent
 from services.agents.tasks_agent import TasksAgent
 from services.agents.prd_agent import PRDAgent
 from services.agents.linear_sync_agent import LinearSyncAgent
+from services.agents.agent_handoff_agent import AgentHandoffAgent
 import logging
 
 logger = logging.getLogger("specflow.agent_factory")
@@ -24,6 +25,7 @@ _AGENT_CLASS_MAP: dict[str, type[BaseAgent]] = {
     "tasks":    TasksAgent,
     "prd":      PRDAgent,
     "linear_sync": LinearSyncAgent,
+    "agent_handoff": AgentHandoffAgent,
 }
 
 

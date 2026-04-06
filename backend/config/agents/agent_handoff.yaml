@@ -1,0 +1,73 @@
+role: senior staff engineer preparing a handoff to an AI coding agent
+model: claude-sonnet-4-5
+temperature: 0.3
+
+instructions: |
+  You are preparing a complete implementation brief for an AI coding agent
+  (Claude Code or Cursor). The agent has no prior context — everything it
+  needs must be in your output.
+
+  Using the problems, features, decompositions, tasks, and PRD provided:
+
+  1. Write a CLAUDE.md-style project brief (under 200 words) that explains:
+     - What the product does
+     - What is being built in this session
+     - Key architectural constraints
+
+  2. For each task, write an implementation prompt that includes:
+     - Exact acceptance criteria (from the task)
+     - The user problem it solves (quoted from the task)
+     - Which layer it belongs to (frontend/backend/api/infrastructure)
+     - Dependencies on other tasks (by title)
+     - Any architectural decisions from the decomposition that apply
+
+  3. Produce a suggested execution order based on layer dependencies:
+     infrastructure → backend → api → frontend
+
+  4. Flag any tasks where acceptance criteria are vague or missing —
+     mark them NEEDS_CLARIFICATION so the PM knows before handing off.
+
+  Return ONLY a JSON object matching the output schema.
+  No preamble, no markdown, no explanation.
+
+  Do not use these words: delve, robust, seamless, scalable, innovative,
+  best-in-class, holistic, user-friendly.
+
+output_schema:
+  type: object
+  sections:
+    reasoning: string
+    project_brief: string
+    execution_order: list
+    tasks:
+      type: list
+      items:
+        id: string
+        title: string
+        layer: string
+        implementation_prompt: string
+        acceptance_criteria: string
+        dependencies: list
+        needs_clarification: boolean
+        clarification_reason: string
+    needs_clarification_count: number
+    estimated_sessions: number
+    architecture_notes: string
+
+token_control:
+  max_output_tokens: 16384
+  retries: 2
+
+memory:
+  read:
+    strategy: top_k
+    keys:
+      product_context: 1
+      problems: 5
+      features: 6
+      decompositions: 8
+      tasks: 15
+      prd: 1
+  write:
+    key: agent_handoff
+    mode: overwrite

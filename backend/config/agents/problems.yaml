@@ -25,6 +25,8 @@ instructions: |
   - citation_confidence: set to 'high' if every claim traces to a rag_context item, 'medium' if some claims are inferred, 'insufficient' if you could not find supporting evidence in rag_context.
   - If citation_confidence would be 'insufficient' for ALL items, output a single item with title='Insufficient source data' and description explaining what context is missing.
 
+  If an <analytics_context> block is present, treat each metric as quantitative evidence for problems. Reference specific metric names and values when writing research_evidence fields.
+
 output_schema:
   type: list
   sections:

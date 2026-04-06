@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
 import {
@@ -8,8 +8,11 @@ import {
   runSession,
   getSession,
   getLastSessionMode,
+  getHandoff,
+  generateHandoff,
+  exportHandoff,
 } from "@/lib/api/session";
-import type { SessionDetail, SessionEvent } from "@/lib/api/session";
+import type { SessionDetail, SessionEvent, AgentHandoff } from "@/lib/api/session";
 import dynamic from "next/dynamic";
 const TextShimmer = dynamic(
   () => import("@/components/ui/text-shimmer").then((m) => m.TextShimmer)
@@ -362,7 +365,10 @@ export default function SessionsPage() {
   const [interviewContent, setInterviewContent] = useState("");
   const [interviewMeta, setInterviewMeta] = useState({ user: "", pain: "", context: "" });
   const [productContent, setProductContent] = useState("");
-  const [productMeta, setProductMeta] = useState({ dropOffRate: "", activeUsers: "" });
+  const [productMeta, setProductMeta] = useState({
+    metricName: "", metricValue: "", metricBaseline: "",
+    metricUnit: "", timePeriod: "", dataSource: "",
+  });
 
   // Create form state
   const [newSessionName, setNewSessionName] = useState("");
@@ -374,6 +380,12 @@ export default function SessionsPage() {
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
   const [sessionMode, setSessionMode] = useState<"remote" | "local" | null>(null);
   const [backendOffline, setBackendOffline] = useState(false);
+  const [sessionHandoff, setSessionHandoff] = useState<AgentHandoff | null>(null);
+  const [handoffGenerating, setHandoffGenerating] = useState(false);
+  const [handoffGenerateOk, setHandoffGenerateOk] = useState(false);
+  const [handoffGenerateError, setHandoffGenerateError] = useState<string | null>(null);
+  const selectedIdRef = useRef<string | null>(null);
+  selectedIdRef.current = selectedId;
 
   const openCreateModal = useCallback(() => {
     setIsCreating(true);
@@ -411,11 +423,25 @@ export default function SessionsPage() {
         localStorage.setItem(LS_KEY, JSON.stringify(updated));
         return updated;
       });
+      void getHandoff(id)
+        .then((r) => {
+          if (selectedIdRef.current !== id) return;
+          const h = (r as { handoff?: unknown }).handoff;
+          if (h && typeof h === "object" && Array.isArray((h as AgentHandoff).tasks)) {
+            setSessionHandoff(h as AgentHandoff);
+          } else {
+            setSessionHandoff(null);
+          }
+        })
+        .catch(() => {
+          if (selectedIdRef.current === id) setSessionHandoff(null);
+        });
     } catch (e) {
       if (e instanceof Error && (e.message.includes("offline") || e.message.includes("503") || e.message.includes("Failed to fetch"))) {
         setBackendOffline(true);
       }
       setDetail(null);
+      setSessionHandoff(null);
     } finally {
       setIsLoadingDetail(false);
     }
@@ -426,6 +452,9 @@ export default function SessionsPage() {
       setSelectedId(id);
       selectSession(id);
       setRunError(null);
+      setSessionHandoff(null);
+      setHandoffGenerateError(null);
+      setHandoffGenerateOk(false);
       loadDetail(id);
     },
     [loadDetail, selectSession]
@@ -592,7 +621,16 @@ export default function SessionsPage() {
               id: crypto.randomUUID(),
               type: "product_data",
               content: productContent,
-              metadata: { metrics: productMeta },
+              metadata: {
+                metrics: [{
+                  metric_name:     productMeta.metricName     || undefined,
+                  metric_value:    productMeta.metricValue    ? parseFloat(productMeta.metricValue)    : undefined,
+                  metric_baseline: productMeta.metricBaseline ? parseFloat(productMeta.metricBaseline) : undefined,
+                  metric_unit:     productMeta.metricUnit     || undefined,
+                  time_period:     productMeta.timePeriod     || undefined,
+                  data_source:     productMeta.dataSource     || undefined,
+                }],
+              },
               createdAt: new Date().toISOString(),
             };
 
@@ -665,6 +703,28 @@ export default function SessionsPage() {
     },
     [selectedId, buildInputData, loadDetail, router, selectSession]
   );
+
+  const handleGenerateHandoff = useCallback(async () => {
+    if (!selectedId || handoffGenerating || isRunning) return;
+    setHandoffGenerating(true);
+    setHandoffGenerateError(null);
+    setHandoffGenerateOk(false);
+    try {
+      const res = await generateHandoff(selectedId);
+      setSessionHandoff(res.handoff);
+      setHandoffGenerateOk(true);
+    } catch (e) {
+      setHandoffGenerateError(e instanceof Error ? e.message : "Generation failed");
+    } finally {
+      setHandoffGenerating(false);
+    }
+  }, [selectedId, isRunning]);
+
+  useEffect(() => {
+    if (!handoffGenerateOk) return;
+    const t = setTimeout(() => setHandoffGenerateOk(false), 5000);
+    return () => clearTimeout(t);
+  }, [handoffGenerateOk]);
 
   const stepStatuses = computeStepStatuses(detail);
   const nextStep = getNextStep(stepStatuses);
@@ -1144,15 +1204,50 @@ export default function SessionsPage() {
                           onFocus={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#E8561B"; (e.currentTarget as HTMLElement).style.background = "#fff"; }}
                           onBlur={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#E4DDD4"; (e.currentTarget as HTMLElement).style.background = "#F8F4EF"; }}
                         />
+                        {/* Metric Name — full width */}
+                        <div>
+                          <label style={{ display: "block", fontSize: 10.5, fontWeight: 600, color: "#9B9189", letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 4 }}>Metric Name</label>
+                          <input
+                            type="text"
+                            value={productMeta.metricName}
+                            onChange={(e) => setProductMeta((prev) => ({ ...prev, metricName: e.target.value }))}
+                            placeholder='e.g. "30-day activation rate"'
+                            style={{ width: "100%", padding: "7px 10px", background: "#F8F4EF", border: "1.5px solid #E4DDD4", borderRadius: 8, fontSize: 12.5, color: "#0D0D0D", fontFamily: "inherit", boxSizing: "border-box" }}
+                            onFocus={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#E8561B"; (e.currentTarget as HTMLElement).style.background = "#fff"; }}
+                            onBlur={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#E4DDD4"; (e.currentTarget as HTMLElement).style.background = "#F8F4EF"; }}
+                          />
+                        </div>
+                        {/* Current Value + Baseline — 2-col grid */}
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                           {[
-                            { key: "dropOffRate", label: "Drop-off Rate (%)", placeholder: "42" },
-                            { key: "activeUsers", label: "Active Users", placeholder: "1200" },
+                            { key: "metricValue",    label: "Current Value",  placeholder: "42",  type: "number" },
+                            { key: "metricBaseline", label: "Baseline Value", placeholder: "28",  type: "number" },
+                          ].map(({ key, label, placeholder, type }) => (
+                            <div key={key}>
+                              <label style={{ display: "block", fontSize: 10.5, fontWeight: 600, color: "#9B9189", letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 4 }}>{label}</label>
+                              <input
+                                type={type}
+                                value={productMeta[key as keyof typeof productMeta]}
+                                onChange={(e) => setProductMeta((prev) => ({ ...prev, [key]: e.target.value }))}
+                                placeholder={placeholder}
+                                style={{ width: "100%", padding: "7px 10px", background: "#F8F4EF", border: "1.5px solid #E4DDD4", borderRadius: 8, fontSize: 12.5, color: "#0D0D0D", fontFamily: "inherit" }}
+                                onFocus={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#E8561B"; (e.currentTarget as HTMLElement).style.background = "#fff"; }}
+                                onBlur={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#E4DDD4"; (e.currentTarget as HTMLElement).style.background = "#F8F4EF"; }}
+                              />
+                            </div>
+                          ))}
+                        </div>
+                        {/* Unit + Time Period + Data Source — 3-col grid */}
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                          {[
+                            { key: "metricUnit", label: "Unit",        placeholder: '"%"' },
+                            { key: "timePeriod", label: "Time Period",  placeholder: "Q1 2026" },
+                            { key: "dataSource", label: "Data Source",  placeholder: "Mixpanel" },
                           ].map(({ key, label, placeholder }) => (
                             <div key={key}>
                               <label style={{ display: "block", fontSize: 10.5, fontWeight: 600, color: "#9B9189", letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 4 }}>{label}</label>
                               <input
-                                type="number"
+                                type="text"
                                 value={productMeta[key as keyof typeof productMeta]}
                                 onChange={(e) => setProductMeta((prev) => ({ ...prev, [key]: e.target.value }))}
                                 placeholder={placeholder}
@@ -1448,6 +1543,212 @@ export default function SessionsPage() {
                       </div>
                     )}
                   </div>
+
+                  {/* Coding Agent Handoff — only after tasks step completed */}
+                  {stepStatuses.tasks === "completed" && selectedId && (
+                    <div
+                      style={{
+                        background: "#FFFFFF",
+                        border: "1px solid #E4DDD4",
+                        borderRadius: 14,
+                        padding: "18px 22px",
+                        marginBottom: 18,
+                      }}
+                    >
+                      <div
+                        style={{
+                          display: "flex",
+                          alignItems: "flex-start",
+                          justifyContent: "space-between",
+                          gap: 12,
+                          marginBottom: 12,
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 600,
+                            color: "#9B9189",
+                            letterSpacing: "0.06em",
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          Coding Agent Handoff
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                          {!sessionHandoff && (
+                            <button
+                              type="button"
+                              onClick={() => void handleGenerateHandoff()}
+                              disabled={isRunning || handoffGenerating || !selectedId}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 6,
+                                padding: "6px 14px",
+                                borderRadius: 8,
+                                fontSize: 12.5,
+                                fontWeight: 600,
+                                background: isRunning || handoffGenerating ? "#F0EAE1" : "#0D0D0D",
+                                color: isRunning || handoffGenerating ? "#9B9189" : "#FFFFFF",
+                                border: "none",
+                                cursor: isRunning || handoffGenerating ? "not-allowed" : "pointer",
+                                fontFamily: "'DM Sans', sans-serif",
+                              }}
+                            >
+                              {handoffGenerating ? (
+                                <>
+                                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 0.8s linear infinite" }}>
+                                    <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeDasharray="32" strokeLinecap="round" opacity="0.35" />
+                                  </svg>
+                                  Generating…
+                                </>
+                              ) : (
+                                "Generate"
+                              )}
+                            </button>
+                          )}
+                          {sessionHandoff && sessionHandoff.needs_clarification_count > 0 && (
+                            <span
+                              style={{
+                                fontSize: 11,
+                                fontWeight: 600,
+                                padding: "3px 10px",
+                                borderRadius: 20,
+                                background: "rgba(245,158,11,0.12)",
+                                color: "#B45309",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              ⚠ {sessionHandoff.needs_clarification_count} gaps
+                            </span>
+                          )}
+                          {sessionHandoff && sessionHandoff.needs_clarification_count === 0 && (
+                            <span style={{ fontSize: 14, color: "#15803D", fontWeight: 600 }}>✓</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {handoffGenerateOk && (
+                        <div style={{ fontSize: 12.5, color: "#15803D", fontWeight: 500, marginBottom: 10 }}>
+                          Handoff generated successfully.
+                        </div>
+                      )}
+                      {handoffGenerateError && (
+                        <div style={{ fontSize: 12.5, color: "#DC2626", marginBottom: 10, lineHeight: 1.5 }}>
+                          {handoffGenerateError}
+                        </div>
+                      )}
+
+                      {!sessionHandoff && (
+                        <div style={{ fontSize: 13, color: "#6B6B6B", lineHeight: 1.65 }}>
+                          <p style={{ margin: "0 0 8px 0" }}>All pipeline steps complete.</p>
+                          <p style={{ margin: 0 }}>
+                            Generate a handoff package for Claude Code or Cursor.
+                          </p>
+                        </div>
+                      )}
+
+                      {sessionHandoff && sessionHandoff.needs_clarification_count === 0 && (
+                        <>
+                          <div style={{ fontSize: 13, color: "#3a3530", lineHeight: 1.6, marginBottom: 14 }}>
+                            {sessionHandoff.estimated_sessions != null && (
+                              <p style={{ margin: "0 0 6px 0" }}>
+                                ~{sessionHandoff.estimated_sessions} coding session
+                                {sessionHandoff.estimated_sessions !== 1 ? "s" : ""}
+                              </p>
+                            )}
+                            <p style={{ margin: 0 }}>
+                              {sessionHandoff.tasks.length} task{sessionHandoff.tasks.length !== 1 ? "s" : ""} across{" "}
+                              {Array.from(new Set(sessionHandoff.tasks.map((t) => t.layer))).join(", ") || "—"}
+                            </p>
+                          </div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                            <button
+                              type="button"
+                              onClick={() => exportHandoff(selectedId, "claude_md")}
+                              style={{
+                                padding: "7px 12px",
+                                borderRadius: 8,
+                                fontSize: 12.5,
+                                fontWeight: 500,
+                                background: "#F8F4EF",
+                                border: "1px solid #E4DDD4",
+                                color: "#0D0D0D",
+                                cursor: "pointer",
+                                fontFamily: "'DM Sans', sans-serif",
+                              }}
+                            >
+                              Export CLAUDE.md
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => exportHandoff(selectedId, "cursor_rules")}
+                              style={{
+                                padding: "7px 12px",
+                                borderRadius: 8,
+                                fontSize: 12.5,
+                                fontWeight: 500,
+                                background: "#F8F4EF",
+                                border: "1px solid #E4DDD4",
+                                color: "#0D0D0D",
+                                cursor: "pointer",
+                                fontFamily: "'DM Sans', sans-serif",
+                              }}
+                            >
+                              Export .cursorrules
+                            </button>
+                          </div>
+                        </>
+                      )}
+
+                      {sessionHandoff && sessionHandoff.needs_clarification_count > 0 && (
+                        <>
+                          <div style={{ fontSize: 13, color: "#6B6B6B", lineHeight: 1.65, marginBottom: 14 }}>
+                            {sessionHandoff.needs_clarification_count} task
+                            {sessionHandoff.needs_clarification_count !== 1 ? "s" : ""} need clearer acceptance criteria
+                            before handoff.
+                          </div>
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                            <button
+                              type="button"
+                              onClick={() => router.push("/tasks")}
+                              style={{
+                                padding: "7px 12px",
+                                borderRadius: 8,
+                                fontSize: 12.5,
+                                fontWeight: 500,
+                                background: "#FFF7ED",
+                                border: "1.5px solid #FED7AA",
+                                color: "#C2410C",
+                                cursor: "pointer",
+                                fontFamily: "'DM Sans', sans-serif",
+                              }}
+                            >
+                              View in Tasks →
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => exportHandoff(selectedId, "claude_md")}
+                              style={{
+                                padding: "7px 12px",
+                                borderRadius: 8,
+                                fontSize: 12.5,
+                                fontWeight: 500,
+                                background: "#F8F4EF",
+                                border: "1px solid #E4DDD4",
+                                color: "#0D0D0D",
+                                cursor: "pointer",
+                                fontFamily: "'DM Sans', sans-serif",
+                              }}
+                            >
+                              Export CLAUDE.md anyway
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  )}
 
                   {/* Outputs inspector — per-step structured view */}
                   {detail?.state?.state?.outputs && Object.keys(detail.state.state.outputs).length > 0 && (

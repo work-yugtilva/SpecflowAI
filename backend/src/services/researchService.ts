@@ -22,6 +22,12 @@ interface ResearchRow {
   tags: string[] | null;
   created_at: string;
   updated_at: string;
+  metric_name: string | null;
+  metric_value: number | null;
+  metric_baseline: number | null;
+  metric_unit: string | null;
+  time_period: string | null;
+  data_source: string | null;
 }
 
 type ResearchListOptions = {
@@ -64,6 +70,12 @@ export class ResearchService {
       sessionId: row.session_id,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+      metricName:     row.metric_name     ?? undefined,
+      metricValue:    row.metric_value    ?? undefined,
+      metricBaseline: row.metric_baseline ?? undefined,
+      metricUnit:     row.metric_unit     ?? undefined,
+      timePeriod:     row.time_period     ?? undefined,
+      dataSource:     row.data_source     ?? undefined,
     };
   }
 
@@ -91,6 +103,12 @@ export class ResearchService {
       pain_point: entry.pain?.trim() ?? '',
       context_text: entry.context?.trim() ?? '',
       tags: entry.tags ?? [],
+      ...(entry.metricName     !== undefined && { metric_name:     entry.metricName }),
+      ...(entry.metricValue    !== undefined && { metric_value:    entry.metricValue }),
+      ...(entry.metricBaseline !== undefined && { metric_baseline: entry.metricBaseline }),
+      ...(entry.metricUnit     !== undefined && { metric_unit:     entry.metricUnit }),
+      ...(entry.timePeriod     !== undefined && { time_period:     entry.timePeriod }),
+      ...(entry.dataSource     !== undefined && { data_source:     entry.dataSource }),
     };
 
     const { data, error } = await supabase
@@ -185,6 +203,12 @@ export class ResearchService {
     if (updates.pain !== undefined) payload.pain_point = updates.pain.trim();
     if (updates.context !== undefined) payload.context_text = updates.context.trim();
     if (updates.tags !== undefined) payload.tags = updates.tags;
+    if (updates.metricName     !== undefined) payload.metric_name     = updates.metricName;
+    if (updates.metricValue    !== undefined) payload.metric_value    = updates.metricValue;
+    if (updates.metricBaseline !== undefined) payload.metric_baseline = updates.metricBaseline;
+    if (updates.metricUnit     !== undefined) payload.metric_unit     = updates.metricUnit;
+    if (updates.timePeriod     !== undefined) payload.time_period     = updates.timePeriod;
+    if (updates.dataSource     !== undefined) payload.data_source     = updates.dataSource;
 
     const { data, error } = await supabase
       .from(RESEARCH_TABLE)

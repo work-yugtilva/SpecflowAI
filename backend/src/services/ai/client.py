@@ -42,6 +42,10 @@ def _get_async_client() -> AsyncAnthropic:
     return _async_client
 
 
+def get_async_client() -> AsyncAnthropic:
+    return _get_async_client()
+
+
 def _get_async_instructor_client():
     global _async_instructor_client
     if _async_instructor_client is None:

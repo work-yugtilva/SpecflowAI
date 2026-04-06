@@ -30,6 +30,12 @@ interface FormState {
   pain: string;
   context: string;
   tagsRaw: string;
+  metricName: string;
+  metricValue: string;
+  metricBaseline: string;
+  metricUnit: string;
+  timePeriod: string;
+  dataSource: string;
 }
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -56,6 +62,12 @@ const EMPTY_FORM: FormState = {
   pain: "",
   context: "",
   tagsRaw: "",
+  metricName: "",
+  metricValue: "",
+  metricBaseline: "",
+  metricUnit: "",
+  timePeriod: "",
+  dataSource: "",
 };
 
 function formatDate(iso: string): string {
@@ -275,6 +287,12 @@ export default function ResearchPage() {
       pain: entry.pain,
       context: entry.context,
       tagsRaw: entry.tags.join(", "),
+      metricName:     entry.metricName     ?? "",
+      metricValue:    entry.metricValue    != null ? String(entry.metricValue)    : "",
+      metricBaseline: entry.metricBaseline != null ? String(entry.metricBaseline) : "",
+      metricUnit:     entry.metricUnit     ?? "",
+      timePeriod:     entry.timePeriod     ?? "",
+      dataSource:     entry.dataSource     ?? "",
     });
     setEditingId(entry.id);
     setFormError(false);
@@ -395,6 +413,14 @@ export default function ResearchPage() {
       pain: form.pain,
       context: form.context,
       tags,
+      ...(form.type === "Analytics" && {
+        metricName:     form.metricName     || undefined,
+        metricValue:    form.metricValue    ? parseFloat(form.metricValue)    : undefined,
+        metricBaseline: form.metricBaseline ? parseFloat(form.metricBaseline) : undefined,
+        metricUnit:     form.metricUnit     || undefined,
+        timePeriod:     form.timePeriod     || undefined,
+        dataSource:     form.dataSource     || undefined,
+      }),
     };
 
     try {
@@ -1055,6 +1081,78 @@ export default function ResearchPage() {
                   </>
                 )}
 
+                {/* Analytics structured data */}
+                {selectedEntry.type === "Analytics" &&
+                  (selectedEntry.metricName ||
+                    selectedEntry.metricValue != null ||
+                    selectedEntry.metricBaseline != null ||
+                    selectedEntry.metricUnit ||
+                    selectedEntry.timePeriod ||
+                    selectedEntry.dataSource) && (
+                  <>
+                    <hr
+                      style={{
+                        border: "none",
+                        borderTop: "1px solid #F0EDE9",
+                        margin: "22px 0 0",
+                      }}
+                    />
+                    <div
+                      style={{
+                        fontSize: 10,
+                        fontWeight: 600,
+                        letterSpacing: "0.08em",
+                        textTransform: "uppercase",
+                        color: "#D97706",
+                        marginBottom: 6,
+                        marginTop: 18,
+                      }}
+                    >
+                      Analytics Metric
+                    </div>
+
+                    {selectedEntry.metricName && (
+                      <>
+                        <SectionLabel>Metric</SectionLabel>
+                        <p style={{ fontSize: 13, color: "#3D3D3D", lineHeight: 1.6, margin: 0 }}>
+                          {selectedEntry.metricName}
+                        </p>
+                      </>
+                    )}
+
+                    {(selectedEntry.metricValue != null || selectedEntry.metricBaseline != null) && (
+                      <>
+                        <SectionLabel>Value</SectionLabel>
+                        <p style={{ fontSize: 13, color: "#3D3D3D", lineHeight: 1.6, margin: 0, fontFamily: "'Courier New', monospace" }}>
+                          {selectedEntry.metricValue != null && selectedEntry.metricBaseline != null
+                            ? `current: ${selectedEntry.metricValue}${selectedEntry.metricUnit ? " " + selectedEntry.metricUnit : ""} | baseline: ${selectedEntry.metricBaseline}${selectedEntry.metricUnit ? " " + selectedEntry.metricUnit : ""}`
+                            : selectedEntry.metricValue != null
+                            ? `${selectedEntry.metricValue}${selectedEntry.metricUnit ? " " + selectedEntry.metricUnit : ""}`
+                            : `baseline: ${selectedEntry.metricBaseline}${selectedEntry.metricUnit ? " " + selectedEntry.metricUnit : ""}`}
+                        </p>
+                      </>
+                    )}
+
+                    {selectedEntry.timePeriod && (
+                      <>
+                        <SectionLabel>Time Period</SectionLabel>
+                        <p style={{ fontSize: 13, color: "#3D3D3D", lineHeight: 1.6, margin: 0 }}>
+                          {selectedEntry.timePeriod}
+                        </p>
+                      </>
+                    )}
+
+                    {selectedEntry.dataSource && (
+                      <>
+                        <SectionLabel>Data Source</SectionLabel>
+                        <p style={{ fontSize: 13, color: "#3D3D3D", lineHeight: 1.6, margin: 0 }}>
+                          {selectedEntry.dataSource}
+                        </p>
+                      </>
+                    )}
+                  </>
+                )}
+
                 {/* Actions */}
                 <div
                   style={{
@@ -1653,6 +1751,114 @@ export default function ResearchPage() {
                   margin: "2px 0",
                 }}
               />
+
+              {/* Analytics structured fields — only shown when type is Analytics */}
+              {form.type === "Analytics" && (
+                <>
+                  <div
+                    style={{
+                      fontSize: 10,
+                      fontWeight: 600,
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
+                      color: "#D97706",
+                      marginBottom: 2,
+                    }}
+                  >
+                    Analytics Metric
+                  </div>
+
+                  {/* Metric Name */}
+                  <div>
+                    <FieldLabel optional>Metric Name</FieldLabel>
+                    <input
+                      type="text"
+                      placeholder='e.g. "30-day activation rate"'
+                      value={form.metricName}
+                      onChange={(e) => updateForm("metricName", e.target.value)}
+                      style={inputStyle}
+                      onFocus={onFocus}
+                      onBlur={onBlur}
+                    />
+                  </div>
+
+                  {/* Current Value + Baseline — 2-col grid */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                    <div>
+                      <FieldLabel optional>Current Value</FieldLabel>
+                      <input
+                        type="number"
+                        placeholder="e.g. 42"
+                        value={form.metricValue}
+                        onChange={(e) => updateForm("metricValue", e.target.value)}
+                        style={inputStyle}
+                        onFocus={onFocus}
+                        onBlur={onBlur}
+                      />
+                    </div>
+                    <div>
+                      <FieldLabel optional>Baseline Value</FieldLabel>
+                      <input
+                        type="number"
+                        placeholder="e.g. 28"
+                        value={form.metricBaseline}
+                        onChange={(e) => updateForm("metricBaseline", e.target.value)}
+                        style={inputStyle}
+                        onFocus={onFocus}
+                        onBlur={onBlur}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Unit + Time Period + Data Source — 3-col grid */}
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+                    <div>
+                      <FieldLabel optional>Unit</FieldLabel>
+                      <input
+                        type="text"
+                        placeholder='e.g. "%"'
+                        value={form.metricUnit}
+                        onChange={(e) => updateForm("metricUnit", e.target.value)}
+                        style={inputStyle}
+                        onFocus={onFocus}
+                        onBlur={onBlur}
+                      />
+                    </div>
+                    <div>
+                      <FieldLabel optional>Time Period</FieldLabel>
+                      <input
+                        type="text"
+                        placeholder="e.g. Q1 2026"
+                        value={form.timePeriod}
+                        onChange={(e) => updateForm("timePeriod", e.target.value)}
+                        style={inputStyle}
+                        onFocus={onFocus}
+                        onBlur={onBlur}
+                      />
+                    </div>
+                    <div>
+                      <FieldLabel optional>Data Source</FieldLabel>
+                      <input
+                        type="text"
+                        placeholder="e.g. Mixpanel"
+                        value={form.dataSource}
+                        onChange={(e) => updateForm("dataSource", e.target.value)}
+                        style={inputStyle}
+                        onFocus={onFocus}
+                        onBlur={onBlur}
+                      />
+                    </div>
+                  </div>
+
+                  <hr
+                    style={{
+                      border: "none",
+                      borderTop: "1px solid #F0EDE9",
+                      margin: "2px 0",
+                    }}
+                  />
+                </>
+              )}
 
               {/* User */}
               <div>

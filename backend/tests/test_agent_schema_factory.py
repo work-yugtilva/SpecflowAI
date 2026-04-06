@@ -52,3 +52,49 @@ def test_extract_payload_and_reasoning_for_object_schema():
 
     assert reasoning == "Every check passed."
     assert payload == {"score": 92.0, "passed": True}
+
+
+def test_build_response_model_nested_list_items_like_prd_features():
+    """PRD YAML uses features: { type: list, items: { ... } } — must not stringify to Literal."""
+    from typing import get_args, get_origin
+
+    from services.agents.agent_schema_factory import build_response_model
+
+    schema = {
+        "type": "object",
+        "sections": {
+            "reasoning": "string",
+            "features": {
+                "type": "list",
+                "items": {
+                    "title": "string",
+                    "description": "string",
+                    "acceptance_criteria": "string",
+                    "linked_problem": "string",
+                    "source_ids": "list",
+                    "citation_confidence": "high | medium | insufficient",
+                },
+            },
+        },
+    }
+
+    model = build_response_model(schema, "prd")
+    fields = model.model_fields
+    assert "features" in fields
+    ann = fields["features"].annotation
+    assert get_origin(ann) is list
+    (item_ann,) = get_args(ann)
+    sample = model(
+        reasoning="ok",
+        features=[
+            {
+                "title": "T",
+                "description": "D",
+                "acceptance_criteria": "• a",
+                "linked_problem": "P",
+                "source_ids": ["r1"],
+                "citation_confidence": "high",
+            }
+        ],
+    )
+    assert sample.model_dump()["features"][0]["citation_confidence"] == "high"

@@ -20,11 +20,13 @@ import {
   describeProblemsEmptyState,
 } from "@/lib/pipeline-contracts";
 import { CitationBadge } from "@/components/pipeline/CitationBadge";
+import { EvidencePanelWithTrigger } from "@/components/pipeline/EvidencePanel";
 import type { ProblemViewModel as Problem } from "@/lib/pipeline-contracts";
 import type { PipelineInput } from "@/lib/pipeline-types";
 import { TextShimmer } from "@/components/ui/text-shimmer";
 import { useOrphanedPipeline } from "@/lib/use-orphaned-pipeline";
 import { OrphanedPipelineModal } from "@/components/ui/orphaned-pipeline-modal";
+import { ConversationPanel } from "@/components/ui/conversation-panel";
 
 // ─── Impact badge ─────────────────────────────────────────────────────────────
 
@@ -574,6 +576,22 @@ export default function ProblemsPage() {
                         </div>
                       ))}
                     </div>
+                    {(selectedProblem.source_ids?.length ?? 0) > 0 && (
+                      <div style={{ marginTop: 10 }}>
+                        <EvidencePanelWithTrigger
+                          sourceIds={selectedProblem.source_ids!}
+                          citationConfidence={
+                            selectedProblem.citation_confidence as
+                              | "high"
+                              | "medium"
+                              | "insufficient"
+                              | undefined
+                          }
+                          researchEvidence={selectedProblem.evidence.join(" ")}
+                          itemTitle={selectedProblem.title}
+                        />
+                      </div>
+                    )}
                   </div>
 
                   {/* Root Cause */}
@@ -773,6 +791,11 @@ export default function ProblemsPage() {
         open={showOrphanedModal}
         onClose={closeOrphanedModal}
         pipelineOutput={orphanedOutput}
+      />
+      <ConversationPanel
+        sessionId={activeSessionId}
+        contextKeys={["problems"]}
+        mode="float"
       />
     </div>
   );

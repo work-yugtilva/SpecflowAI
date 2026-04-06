@@ -6,13 +6,26 @@ import { Sidebar } from "@/components/ui/sidebar";
 import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
 import { getSession } from "@/lib/api/session";
 import type { SessionDetail } from "@/lib/api/session";
+import { iterateSseJsonLines } from "@/lib/sse-parse";
 import { useActiveSession } from "@/lib/active-session-context";
 import { computeStepStatuses } from "@/lib/pipeline-session";
 import type { LinearPayload } from "@/lib/pipeline-contracts";
+import {
+  fetchFeedback,
+  createFeedback,
+  deleteFeedback,
+  DEFAULT_FEEDBACK_TYPE,
+  FEEDBACK_TYPES,
+  FEEDBACK_TYPES_PANEL_ORDER,
+  type FeedbackEntry,
+  type FeedbackType,
+} from "@/lib/api/feedback";
 import dynamic from "next/dynamic";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { CitationBadge } from "@/components/pipeline/CitationBadge";
+import { resolveResearchEntries, type ResolvedEntry } from "@/lib/api/research";
+import { ConversationPanel } from "@/components/ui/conversation-panel";
 const TextShimmer = dynamic(
   () => import("@/components/ui/text-shimmer").then((m) => m.TextShimmer)
 );
@@ -94,41 +107,290 @@ function GoalsRenderer({ items }: { items: unknown[] }) {
   );
 }
 
-function FeaturesRenderer({ items }: { items: unknown[] }) {
+const PRD_TYPE_COLORS: Record<string, string> = {
+  Interview: "#3D6B5E",
+  Survey: "#1D4ED8",
+  Analytics: "#7C3AED",
+  "Market Insight": "#C2410C",
+};
+
+function PrdTypeBadge({ type }: { type: string }) {
+  const color = PRD_TYPE_COLORS[type] ?? "#6B6B6B";
+  return (
+    <span style={{
+      fontSize: 9, fontWeight: 700, letterSpacing: "0.05em",
+      textTransform: "uppercase" as const,
+      color, background: `${color}18`, border: `1px solid ${color}40`,
+      borderRadius: 3, padding: "1px 5px", flexShrink: 0,
+    }}>
+      {type}
+    </span>
+  );
+}
+
+function InlineEvidenceSummary({ sourceIds }: { sourceIds: string[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const [entries, setEntries] = useState<ResolvedEntry[] | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  if (!sourceIds.length) return null;
+
+  async function handleToggle() {
+    const next = !expanded;
+    setExpanded(next);
+    if (next && entries === null) {
+      setLoading(true);
+      const result = await resolveResearchEntries(sourceIds);
+      setEntries(result);
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div style={{ marginTop: 6 }}>
+      <button
+        onClick={handleToggle}
+        style={{
+          background: "none", border: "none", padding: 0,
+          cursor: "pointer", fontSize: 11, color: "#E8561B",
+          display: "flex", alignItems: "center", gap: 4,
+          fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+        }}
+      >
+        <span>{sourceIds.length} source{sourceIds.length !== 1 ? "s" : ""}</span>
+        <span style={{
+          display: "inline-block",
+          transition: "transform 0.15s",
+          transform: expanded ? "rotate(180deg)" : "rotate(0deg)",
+          lineHeight: 1,
+        }}>▾</span>
+      </button>
+      {expanded && (
+        <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+          {loading ? (
+            <div style={{ fontSize: 11, color: "#9E9E9E", fontStyle: "italic" }}>Loading sources…</div>
+          ) : (entries ?? []).length === 0 ? (
+            <div style={{ fontSize: 11, color: "#9E9E9E", fontStyle: "italic" }}>No source details available.</div>
+          ) : (entries ?? []).map((entry) => (
+            <div key={entry.id} style={{ display: "flex", alignItems: "baseline", gap: 6, fontSize: 12, flexWrap: "wrap" as const }}>
+              <PrdTypeBadge type={entry.type} />
+              <span style={{ color: "#0D0D0D", fontWeight: 500 }}>{entry.title}</span>
+              {entry.content && (
+                <span style={{ color: "#9E9E9E" }}>
+                  — {entry.content.slice(0, 80)}{entry.content.length > 80 ? "…" : ""}
+                </span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FeatureItem({
+  item,
+  feedback,
+  sessionId,
+  onAddFeedback,
+}: {
+  item: any;
+  feedback?: FeedbackEntry[];
+  sessionId?: string | null;
+  onAddFeedback?: (entry: FeedbackEntry) => void;
+}) {
+  const [hovering, setHovering] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [type, setType] = useState<FeedbackType>(DEFAULT_FEEDBACK_TYPE);
+  const [note, setNote] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const existingFeedback = feedback?.find((f) => f.prd_item_title === item.title);
+  const sourceIds = Array.isArray(item.source_ids) ? item.source_ids : [];
+  const confidence = item.citation_confidence as "high" | "medium" | "insufficient" | undefined;
+  const isNoSource = confidence === "insufficient" || (sourceIds.length === 0 && confidence === undefined);
+
+  const feedbackColors: Record<string, { bg: string; text: string }> = {
+    validated: { bg: "rgba(61,107,94,0.10)", text: "#3D6B5E" },
+    invalidated: { bg: "rgba(220,38,38,0.10)", text: "#DC2626" },
+    partial: { bg: "rgba(217,119,6,0.10)", text: "#D97706" },
+    deferred: { bg: "rgba(107,107,107,0.10)", text: "#6B6B6B" },
+  };
+
+  async function handleSubmit() {
+    if (!sessionId || !onAddFeedback) return;
+    setSubmitting(true);
+    try {
+      const entry = await createFeedback(sessionId, {
+        prd_section: "features",
+        prd_item_title: item.title,
+        feedback_type: type,
+        outcome_note: note,
+        linked_problem_ids: [],
+        linked_research_ids: [],
+      });
+      onAddFeedback(entry);
+      setShowForm(false);
+      setNote("");
+    } catch (err) {
+      console.error("Failed to submit feedback", err);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div
+      onMouseEnter={() => setHovering(true)}
+      onMouseLeave={() => setHovering(false)}
+      style={{ borderLeft: "2px solid #E4DDD4", paddingLeft: 12, position: "relative" }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div style={{ fontWeight: 600, color: "#0D0D0D", fontSize: 13 }}>{item.title}</div>
+          <CitationBadge sourceIds={sourceIds} confidence={confidence} />
+        </div>
+        
+        {existingFeedback ? (
+          <span style={{
+            fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 20,
+            background: feedbackColors[existingFeedback.feedback_type].bg,
+            color: feedbackColors[existingFeedback.feedback_type].text,
+            textTransform: "capitalize"
+          }}>
+            {existingFeedback.feedback_type}
+          </span>
+        ) : !showForm ? (
+          <button
+            onClick={() => setShowForm(true)}
+            style={{
+              fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 20,
+              background: "rgba(232,86,27,0.08)", color: "#E8561B",
+              border: "1px solid rgba(232,86,27,0.18)", cursor: "pointer",
+              opacity: hovering ? 1 : 0, pointerEvents: hovering ? "auto" : "none",
+              transition: "opacity 0.15s",
+            }}
+          >
+            Log Outcome
+          </button>
+        ) : null}
+      </div>
+
+      {item.description && <div style={{ fontSize: 13, color: "#6B6B6B", marginTop: 4 }}>{item.description}</div>}
+      
+      {item.linked_problem && (
+        <div style={{ fontSize: 11, color: "#E8561B", marginTop: 4 }}>Solves: {item.linked_problem}</div>
+      )}
+      
+      {item.acceptance_criteria && (
+        <div style={{
+          marginTop: 8, background: "#F3F4F6", borderRadius: 6,
+          padding: "8px 10px", fontSize: 12, color: "#374151",
+          fontFamily: "var(--font-mono, 'Courier New', monospace)",
+          whiteSpace: "pre-wrap",
+        }}>
+          {item.acceptance_criteria}
+        </div>
+      )}
+      
+      {isNoSource && (
+        <div style={{ fontSize: 11, color: "#D97706", marginTop: 6 }}>
+          ⚠ This claim could not be traced to a source. Verify before shipping.
+        </div>
+      )}
+
+      {sourceIds.length > 0 && (
+        <InlineEvidenceSummary sourceIds={sourceIds} />
+      )}
+
+      {showForm && (
+        <div style={{
+          marginTop: 12, background: "#F8F4EF", borderRadius: 8, padding: 12,
+          border: "1px solid #E4DDD4"
+        }}>
+          <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            {FEEDBACK_TYPES.map((t) => (
+              <button
+                key={t}
+                onClick={() => setType(t)}
+                style={{
+                  fontSize: 11, fontWeight: 500, padding: "4px 10px", borderRadius: 20,
+                  background: type === t ? feedbackColors[t].text : "#FFFFFF",
+                  color: type === t ? "#FFFFFF" : "#6B6B6B",
+                  border: `1px solid ${type === t ? feedbackColors[t].text : "#E4DDD4"}`,
+                  cursor: "pointer", textTransform: "capitalize",
+                  transition: "all 0.15s"
+                }}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+          <textarea
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="What did you learn?"
+            rows={2}
+            style={{
+              width: "100%", padding: "8px 10px", borderRadius: 6,
+              border: "1px solid #E4DDD4", fontSize: 12, color: "#0D0D0D",
+              fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+              resize: "none", outline: "none", marginBottom: 8,
+              boxSizing: "border-box"
+            }}
+          />
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <button
+              onClick={() => setShowForm(false)}
+              style={{
+                fontSize: 11, padding: "4px 10px", borderRadius: 6,
+                background: "none", border: "none", color: "#6B6B6B",
+                cursor: "pointer"
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={submitting}
+              style={{
+                fontSize: 11, fontWeight: 600, padding: "4px 12px", borderRadius: 6,
+                background: "#0D0D0D", color: "#FFFFFF", border: "none",
+                cursor: submitting ? "not-allowed" : "pointer",
+                opacity: submitting ? 0.6 : 1
+              }}
+            >
+              {submitting ? "Saving..." : "Save Outcome"}
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FeaturesRenderer({
+  items,
+  feedback,
+  sessionId,
+  onAddFeedback,
+}: {
+  items: unknown[];
+  feedback?: FeedbackEntry[];
+  sessionId?: string | null;
+  onAddFeedback?: (entry: FeedbackEntry) => void;
+}) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {items.map((item: any, i) => {
-        const sourceIds = Array.isArray(item.source_ids) ? item.source_ids : [];
-        const confidence = item.citation_confidence as "high" | "medium" | "insufficient" | undefined;
-        const isNoSource = confidence === "insufficient" || (sourceIds.length === 0 && confidence === undefined);
-        return (
-          <div key={i} style={{ borderLeft: "2px solid #E4DDD4", paddingLeft: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={{ fontWeight: 600, color: "#0D0D0D", fontSize: 13 }}>{item.title}</div>
-              <CitationBadge sourceIds={sourceIds} confidence={confidence} />
-            </div>
-            {item.description && <div style={{ fontSize: 13, color: "#6B6B6B", marginTop: 4 }}>{item.description}</div>}
-            {item.linked_problem && (
-              <div style={{ fontSize: 11, color: "#E8561B", marginTop: 4 }}>Solves: {item.linked_problem}</div>
-            )}
-            {item.acceptance_criteria && (
-              <div style={{
-                marginTop: 8, background: "#F3F4F6", borderRadius: 6,
-                padding: "8px 10px", fontSize: 12, color: "#374151",
-                fontFamily: "var(--font-mono, 'Courier New', monospace)",
-                whiteSpace: "pre-wrap",
-              }}>
-                {item.acceptance_criteria}
-              </div>
-            )}
-            {isNoSource && (
-              <div style={{ fontSize: 11, color: "#D97706", marginTop: 6 }}>
-                ⚠ This claim could not be traced to a source. Verify before shipping.
-              </div>
-            )}
-          </div>
-        );
-      })}
+      {items.map((item: any, i) => (
+        <FeatureItem
+          key={i}
+          item={item}
+          feedback={feedback}
+          sessionId={sessionId}
+          onAddFeedback={onAddFeedback}
+        />
+      ))}
     </div>
   );
 }
@@ -255,7 +517,8 @@ function TipTapStringEditor({
 
 function SectionCard({
   title, value, sectionKey, editing, onEditStart, onEditEnd, onUpdate, onScheduleSave,
-  onAiEdit, aiEditing, aiEdited, citationCount,
+  onAiEdit, aiEditing, aiEdited, citations, citationCount,
+  feedback, sessionId, onAddFeedback,
 }: {
   title: string; value: unknown; sectionKey: string;
   editing: boolean;
@@ -267,6 +530,9 @@ function SectionCard({
   aiEdited: boolean;
   citations?: Record<string, string[]> | null;
   citationCount?: number;
+  feedback?: FeedbackEntry[];
+  sessionId?: string | null;
+  onAddFeedback?: (entry: FeedbackEntry) => void;
 }) {
   const [hovering, setHovering] = useState(false);
   const [showAiInput, setShowAiInput] = useState(false);
@@ -487,7 +753,7 @@ function SectionCard({
             style={{ ...editMonoStyle, minHeight: 120 }}
           />
         ) : sectionKey === "goals" && Array.isArray(value) ? <GoalsRenderer items={value} /> :
-           sectionKey === "features" && Array.isArray(value) ? <FeaturesRenderer items={value} /> :
+           sectionKey === "features" && Array.isArray(value) ? <FeaturesRenderer items={value} feedback={feedback} sessionId={sessionId} onAddFeedback={onAddFeedback} /> :
            sectionKey === "risks" && Array.isArray(value) ? <RisksRenderer items={value} /> :
            sectionKey === "success_metrics" && Array.isArray(value) ? <MetricsRenderer items={value} /> :
            sectionKey === "architecture" && typeof value === "object" && !Array.isArray(value) ? <ArchitectureRenderer arch={value as Record<string, string>} /> :
@@ -696,6 +962,12 @@ function PrdPage() {
   const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const [feedback, setFeedback] = useState<FeedbackEntry[]>([]);
+  const [showFeedbackPanel, setShowFeedbackPanel] = useState(false);
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [feedbackLoadError, setFeedbackLoadError] = useState<string | null>(null);
+  const [chatOpen, setChatOpen] = useState(false);
+
   const stepStatuses = computeStepStatuses(sessionDetail);
   const regenCount = sessionDetail?.state?.state?.regeneration_counts?.["prd"] ?? 0;
   const regenLimitReached = regenCount >= 3;
@@ -712,8 +984,64 @@ function PrdPage() {
     setLinearPushStatus(null);
     setLinearPushError(null);
     setLinearNotConnected(false);
+    setFeedback([]);
+    setFeedbackLoadError(null);
     if (!activeSessionId) return;
     let cancelled = false;
+
+    // Load feedback
+    setFeedbackLoading(true);
+    fetchFeedback(activeSessionId)
+      .then((data) => {
+        // #region agent log
+        fetch("http://127.0.0.1:7264/ingest/4f5cc7a6-efcc-4f6a-96c8-871773fb1445", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "a195e9" },
+          body: JSON.stringify({
+            sessionId: "a195e9",
+            hypothesisId: "H1-H3",
+            location: "prd/page.tsx:feedback-load-then",
+            message: "fetchFeedback resolved",
+            data: {
+              isArray: Array.isArray(data),
+              count: Array.isArray(data) ? data.length : null,
+              sessionTail: activeSessionId.slice(-8),
+            },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
+        if (!cancelled) {
+          setFeedbackLoadError(null);
+          setFeedback(data);
+        }
+      })
+      .catch((err) => {
+        // #region agent log
+        fetch("http://127.0.0.1:7264/ingest/4f5cc7a6-efcc-4f6a-96c8-871773fb1445", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "a195e9" },
+          body: JSON.stringify({
+            sessionId: "a195e9",
+            hypothesisId: "H2",
+            location: "prd/page.tsx:feedback-load-catch",
+            message: "fetchFeedback rejected",
+            data: {
+              err: err instanceof Error ? err.message : String(err),
+              sessionTail: activeSessionId.slice(-8),
+            },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
+        console.error("Failed to load feedback:", err);
+        if (!cancelled) {
+          setFeedbackLoadError(err instanceof Error ? err.message : "Failed to load outcomes");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setFeedbackLoading(false);
+      });
 
     // Load session detail for stepper + linear_payload
     getSession(activeSessionId)
@@ -792,6 +1120,8 @@ function PrdPage() {
     try {
       const res = await fetch(`/api/sessions/${activeSessionId}/prd/stream`, {
         method: "POST",
+        credentials: "same-origin",
+        cache: "no-store",
       });
 
       if (!res.ok || !res.body) {
@@ -800,35 +1130,61 @@ function PrdPage() {
         return;
       }
 
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const text = decoder.decode(value);
-        const lines = text.split("\n").filter((l) => l.startsWith("data: "));
-
-        for (const line of lines) {
-          try {
-            const event = JSON.parse(line.slice(6));
-            if (event.type === "phase") {
-              setLoadingPhase(event.phase);
-            } else if (event.type === "complete") {
-              setPrd(event.prd ?? null);
-              if (event.quality_score) setQualityScore(event.quality_score);
-              if (event.citations?.citations) setCitations(event.citations.citations);
-              setFromSession(true);
-              try { setSessionDetail(await getSession(activeSessionId)); } catch {}
-            } else if (event.type === "error") {
-              setError(event.message);
+      let sawComplete = false;
+      let streamReportedError = false;
+      try {
+        for await (const raw of iterateSseJsonLines<Record<string, unknown>>(res.body)) {
+          const t = raw.type;
+          if (t === "phase" && typeof raw.phase === "string") {
+            setLoadingPhase(raw.phase);
+          } else if (t === "complete") {
+            sawComplete = true;
+            setPrd((raw.prd as PrdData | undefined) ?? null);
+            if (raw.quality_score) setQualityScore(raw.quality_score as QualityScore);
+            const cits = raw.citations as { citations?: unknown } | undefined;
+            if (cits?.citations) setCitations(cits.citations as Record<string, string[]>);
+            setFromSession(true);
+            try {
+              setSessionDetail(await getSession(activeSessionId));
+            } catch {
+              /* session refresh best-effort */
             }
-          } catch {}
+          } else if (t === "error" && typeof raw.message === "string") {
+            streamReportedError = true;
+            setError(raw.message);
+          }
         }
+      } catch (streamErr) {
+        const m =
+          streamErr instanceof Error ? streamErr.message : String(streamErr);
+        if (
+          /failed to fetch|load failed|networkerror|econnrefused|socket|fetch/i.test(
+            m
+          )
+        ) {
+          setError(
+            "Failed to reach the pipeline. Start the FastAPI service (port 8001), e.g. `npm run dev:pipeline` from backend/, or run `npm run dev` from the repo root."
+          );
+        } else {
+          setError(m || "PRD stream failed.");
+        }
+        return;
       }
-    } catch {
-      setError("Failed to generate PRD. Check that the backend is running.");
+
+      if (!sawComplete && !streamReportedError) {
+        setError(
+          "PRD stream ended before completion. If the pipeline was restarted, try Generate again."
+        );
+      }
+    } catch (e) {
+      const m = e instanceof Error ? e.message : String(e);
+      if (/failed to fetch|load failed|networkerror/i.test(m)) {
+        setError(
+          "Failed to reach the app or pipeline. Ensure Next.js is running and the FastAPI pipeline is up on port 8001."
+        );
+      } else {
+        setError(m || "Failed to generate PRD.");
+      }
     } finally {
       setGenerating(false);
       setLoadingPhase("");
@@ -1081,6 +1437,61 @@ function PrdPage() {
                   </svg>
                   Export as Markdown
                 </button>
+                <button
+                  onClick={() => setChatOpen(!chatOpen)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "0.4rem 0.875rem",
+                    borderRadius: 8,
+                    fontSize: "0.8125rem",
+                    fontWeight: 500,
+                    background: chatOpen ? "rgba(232,86,27,0.08)" : "#FFFFFF",
+                    border: chatOpen ? "1.5px solid rgba(232,86,27,0.4)" : "1.5px solid #E4DDD4",
+                    color: chatOpen ? "#E8561B" : "#0D0D0D",
+                    cursor: "pointer",
+                    fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  Ask AI
+                </button>
+                <button
+                  onClick={() => setShowFeedbackPanel(!showFeedbackPanel)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "0.4rem 0.875rem",
+                    borderRadius: 8,
+                    fontSize: "0.8125rem",
+                    fontWeight: 500,
+                    background: showFeedbackPanel ? "#F3F4F6" : "#FFFFFF",
+                    border: "1.5px solid #E4DDD4",
+                    color: "#0D0D0D",
+                    cursor: "pointer",
+                    fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                  }}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                    <path d="M3 3v5h5" />
+                    <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                    <path d="M16 21v-5h5" />
+                  </svg>
+                  Discovery Loop
+                  {feedback.length > 0 && (
+                    <span style={{
+                      background: "#E8561B", color: "white", fontSize: 10,
+                      padding: "2px 6px", borderRadius: 10, fontWeight: 600
+                    }}>
+                      {feedback.length}
+                    </span>
+                  )}
+                </button>
                 {/* Push to Linear */}
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
                   <button
@@ -1234,93 +1645,237 @@ function PrdPage() {
             )}
           </div>
         ) : (
-          <div
-            className="flex-1 overflow-y-auto"
-            style={{ padding: "24px 28px" }}
-          >
-            <style>{`
-              @keyframes spin { to { transform: rotate(360deg); } }
-              @keyframes prd-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-              .tiptap-wrapper { border-radius: 6px; margin: -4px; padding: 4px; transition: background 0.15s; cursor: text; }
-              .tiptap-wrapper:hover { background: rgba(232,86,27,0.03); }
-              .tiptap-wrapper:focus-within { background: rgba(232,86,27,0.05); }
-              .tiptap { outline: none; }
-              .tiptap p { margin: 0 0 0.4em 0; }
-              .tiptap p:last-child { margin: 0; }
-            `}</style>
-            {/* Quality gaps banner */}
-            {qualityScore && qualityScore.score < 70 && qualityScore.critical_gaps.length > 0 && (
-              <div
-                style={{
-                  background: "rgba(239,68,68,0.06)",
-                  border: "1px solid rgba(239,68,68,0.2)",
-                  borderRadius: 10,
-                  padding: "12px 16px",
-                  marginBottom: 16,
-                  fontSize: 13,
-                  color: "#6B6B6B",
-                }}
-              >
-                <strong style={{ color: "#DC2626" }}>Quality gaps detected ({qualityScore.score}/100):</strong>
-                <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>
-                  {qualityScore.critical_gaps.map((g, i) => (
-                    <li key={i}>{g}</li>
-                  ))}
-                </ul>
-              </div>
-            )}
+          <div className="flex flex-1 overflow-hidden">
+            <div
+              className="flex-1 overflow-y-auto"
+              style={{ padding: "24px 28px" }}
+            >
+              <style>{`
+                @keyframes spin { to { transform: rotate(360deg); } }
+                @keyframes prd-shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+                .tiptap-wrapper { border-radius: 6px; margin: -4px; padding: 4px; transition: background 0.15s; cursor: text; }
+                .tiptap-wrapper:hover { background: rgba(232,86,27,0.03); }
+                .tiptap-wrapper:focus-within { background: rgba(232,86,27,0.05); }
+                .tiptap { outline: none; }
+                .tiptap p { margin: 0 0 0.4em 0; }
+                .tiptap p:last-child { margin: 0; }
+              `}</style>
+              {/* Quality gaps banner */}
+              {qualityScore && qualityScore.score < 70 && qualityScore.critical_gaps.length > 0 && (
+                <div
+                  style={{
+                    background: "rgba(239,68,68,0.06)",
+                    border: "1px solid rgba(239,68,68,0.2)",
+                    borderRadius: 10,
+                    padding: "12px 16px",
+                    marginBottom: 16,
+                    fontSize: 13,
+                    color: "#6B6B6B",
+                  }}
+                >
+                  <strong style={{ color: "#DC2626" }}>Quality gaps detected ({qualityScore.score}/100):</strong>
+                  <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>
+                    {qualityScore.critical_gaps.map((g, i) => (
+                      <li key={i}>{g}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
-            {/* View mode context banner */}
-            {viewMode !== "full" && (
+              {/* View mode context banner */}
+              {viewMode !== "full" && (
+                <div
+                  style={{
+                    background: "rgba(232,86,27,0.06)",
+                    border: "1px solid rgba(232,86,27,0.15)",
+                    borderRadius: 10,
+                    padding: "10px 16px",
+                    marginBottom: 16,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "#0D0D0D" }}>
+                      {VIEW_MODE_META[viewMode].label}
+                    </span>
+                    {VIEW_MODE_META[viewMode].audience && (
+                      <span style={{ fontSize: 12, color: "#E8561B" }}>
+                        {VIEW_MODE_META[viewMode].audience}
+                      </span>
+                    )}
+                  </div>
+                  <span style={{ fontSize: 12, color: "#6B6B6B" }}>
+                    {VIEW_MODE_META[viewMode].description}
+                  </span>
+                </div>
+              )}
+
+              {/* Section cards */}
+              {PRD_SECTIONS.map(({ key, title }) => {
+                if (!SECTION_VISIBILITY[viewMode].includes(key)) return null;
+                const val = prd[key];
+                if (val == null) return null;
+                return (
+                  <SectionCard
+                    key={key}
+                    title={title}
+                    value={val}
+                    sectionKey={key}
+                    editing={editingKey === key}
+                    onEditStart={() => setEditingKey(key)}
+                    onEditEnd={() => setEditingKey(null)}
+                    onUpdate={(v) => updateSection(key, v)}
+                    onScheduleSave={(v) => scheduleSave({ ...prd, [key]: v })}
+                    onAiEdit={(instruction) => handleAiEdit(key, instruction)}
+                    aiEditing={aiEditingKey === key}
+                    aiEdited={aiEditedSections.has(key)}
+                    citations={citations}
+                    citationCount={getSectionCitationCount(key, prd, citations)}
+                    feedback={feedback}
+                    sessionId={activeSessionId}
+                    onAddFeedback={(entry) => setFeedback(prev => [entry, ...prev])}
+                  />
+                );
+              })}
+            </div>
+
+            {/* Feedback Panel */}
+            <ConversationPanel
+              sessionId={activeSessionId}
+              contextKeys={["problems", "features", "tasks", "prd"]}
+              mode="sidebar"
+              isOpen={chatOpen}
+              onClose={() => setChatOpen(false)}
+            />
+
+            {showFeedbackPanel && (
               <div
                 style={{
-                  background: "rgba(232,86,27,0.06)",
-                  border: "1px solid rgba(232,86,27,0.15)",
-                  borderRadius: 10,
-                  padding: "10px 16px",
-                  marginBottom: 16,
+                  width: 280,
+                  flexShrink: 0,
+                  borderLeft: "1px solid #E4DDD4",
+                  background: "#FFFFFF",
+                  display: "flex",
+                  flexDirection: "column",
+                  fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
                 }}
               >
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                  <span style={{ fontSize: 13, fontWeight: 600, color: "#0D0D0D" }}>
-                    {VIEW_MODE_META[viewMode].label}
-                  </span>
-                  {VIEW_MODE_META[viewMode].audience && (
-                    <span style={{ fontSize: 12, color: "#E8561B" }}>
-                      {VIEW_MODE_META[viewMode].audience}
-                    </span>
+                <div style={{ padding: 20, borderBottom: "1px solid #E4DDD4" }}>
+                  <h3 style={{ fontSize: 14, fontWeight: 600, color: "#0D0D0D", margin: "0 0 12px 0" }}>
+                    Discovery Loop
+                  </h3>
+                  {feedbackLoading ? (
+                    <div style={{ fontSize: 12, color: "#9E9E9E" }}>Loading outcomes…</div>
+                  ) : feedbackLoadError ? (
+                    <div style={{ fontSize: 12, color: "#DC2626", lineHeight: 1.5 }}>
+                      {feedbackLoadError}
+                      <div style={{ fontSize: 11, color: "#6B6B6B", marginTop: 6 }}>
+                        Check that the pipeline API is running and you are signed in.
+                      </div>
+                    </div>
+                  ) : (() => {
+                    const total = feedback.length;
+                    const validated = feedback.filter(f => f.feedback_type === "validated").length;
+                    const partial = feedback.filter(f => f.feedback_type === "partial").length;
+                    if (total === 0) {
+                      return (
+                        <div>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                            <span style={{ fontSize: 12, color: "#6B6B6B", fontWeight: 500 }}>Validation Score</span>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: "#9E9E9E" }}>—</span>
+                          </div>
+                          <div style={{ height: 6, background: "#F3F4F6", borderRadius: 3, overflow: "hidden" }} />
+                          <div style={{ fontSize: 11, color: "#9E9E9E", marginTop: 8 }}>
+                            No outcomes logged yet. Use <strong style={{ color: "#6B6B6B" }}>Log Outcome</strong> on feature rows (Full or Engineering view).
+                          </div>
+                        </div>
+                      );
+                    }
+                    const score = Math.round(((validated + partial * 0.5) / total) * 100);
+                    const scoreColor = score >= 70 ? "#3D6B5E" : score >= 40 ? "#D97706" : "#DC2626";
+                    return (
+                      <div>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                          <span style={{ fontSize: 12, color: "#6B6B6B", fontWeight: 500 }}>Validation Score</span>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: scoreColor }}>{score}%</span>
+                        </div>
+                        <div style={{ height: 6, background: "#F3F4F6", borderRadius: 3, overflow: "hidden" }}>
+                          <div style={{ height: "100%", background: scoreColor, width: `${score}%`, transition: "width 0.3s ease" }} />
+                        </div>
+                        <div style={{ fontSize: 11, color: "#9E9E9E", marginTop: 8 }}>
+                          {validated} validated, {partial} partial out of {total} logged
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+                  {feedbackLoadError ? null : feedbackLoading ? (
+                    <div style={{ fontSize: 13, color: "#9E9E9E", textAlign: "center", marginTop: 40 }}>
+                      Loading…
+                    </div>
+                  ) : feedback.length === 0 ? (
+                    <div style={{ fontSize: 13, color: "#6B6B6B", textAlign: "center", marginTop: 40, lineHeight: 1.6 }}>
+                      Outcomes you log appear here. Hover a feature in the PRD and choose validated, partial, invalidated, or deferred.
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                      {FEEDBACK_TYPES_PANEL_ORDER.map((type) => {
+                        const items = feedback.filter(f => f.feedback_type === type);
+                        if (items.length === 0) return null;
+                        const colors: Record<string, string> = {
+                          validated: "#3D6B5E",
+                          invalidated: "#DC2626",
+                          partial: "#D97706",
+                          deferred: "#6B6B6B"
+                        };
+                        return (
+                          <div key={type}>
+                            <h4 style={{ fontSize: 11, fontWeight: 700, color: colors[type], textTransform: "uppercase", letterSpacing: "0.05em", margin: "0 0 8px 0" }}>
+                              {type} ({items.length})
+                            </h4>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                              {items.map(item => (
+                                <div key={item.id} style={{ background: "#F8F4EF", borderRadius: 8, padding: 12, border: "1px solid #E4DDD4", position: "relative" }}>
+                                  <div style={{ fontSize: 12, fontWeight: 600, color: "#0D0D0D", marginBottom: 4, paddingRight: 20 }}>
+                                    {item.prd_item_title}
+                                  </div>
+                                  {item.outcome_note && (
+                                    <div style={{ fontSize: 11, color: "#6B6B6B", lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                                      {item.outcome_note}
+                                    </div>
+                                  )}
+                                  <button
+                                    onClick={async () => {
+                                      try {
+                                        await deleteFeedback(activeSessionId!, item.id);
+                                        setFeedback(prev => prev.filter(f => f.id !== item.id));
+                                      } catch (err) {
+                                        console.error("Failed to delete", err);
+                                      }
+                                    }}
+                                    style={{
+                                      position: "absolute", top: 10, right: 10,
+                                      background: "none", border: "none", color: "#9E9E9E", cursor: "pointer",
+                                      padding: 2, borderRadius: 4
+                                    }}
+                                    title="Delete"
+                                  >
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                      <path d="M18 6L6 18M6 6l12 12" />
+                                    </svg>
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   )}
                 </div>
-                <span style={{ fontSize: 12, color: "#6B6B6B" }}>
-                  {VIEW_MODE_META[viewMode].description}
-                </span>
               </div>
             )}
-
-            {/* Section cards */}
-            {PRD_SECTIONS.map(({ key, title }) => {
-              if (!SECTION_VISIBILITY[viewMode].includes(key)) return null;
-              const val = prd[key];
-              if (val == null) return null;
-              return (
-                <SectionCard
-                  key={key}
-                  title={title}
-                  value={val}
-                  sectionKey={key}
-                  editing={editingKey === key}
-                  onEditStart={() => setEditingKey(key)}
-                  onEditEnd={() => setEditingKey(null)}
-                  onUpdate={(v) => updateSection(key, v)}
-                  onScheduleSave={(v) => scheduleSave({ ...prd, [key]: v })}
-                  onAiEdit={(instruction) => handleAiEdit(key, instruction)}
-                  aiEditing={aiEditingKey === key}
-                  aiEdited={aiEditedSections.has(key)}
-                  citations={citations}
-                  citationCount={getSectionCitationCount(key, prd, citations)}
-                />
-              );
-            })}
           </div>
         )}
       </div>

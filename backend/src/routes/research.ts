@@ -2,9 +2,20 @@ import { Router } from 'express';
 import { verifyAuth, AuthRequest } from '@/middleware/auth.js';
 import { researchService } from '@/services/researchService.js';
 import { AppError } from '@/middleware/errorHandler.js';
-import { ContextScope } from '@/types/index.js';
+import { ContextScope, ResearchEntry } from '@/types/index.js';
 
 const router = Router();
+
+function validateAnalyticsEntry(
+  entry: Partial<ResearchEntry>
+): { valid: boolean; errors: string[] } {
+  if (entry.type !== 'Analytics') return { valid: true, errors: [] };
+  const errors: string[] = [];
+  if (!entry.metricName?.trim()) {
+    errors.push('metric_name is required for Analytics entries');
+  }
+  return { valid: errors.length === 0, errors };
+}
 
 function resolveScope(req: AuthRequest): { scope: ContextScope; sessionId?: string } {
   const rawScope = String(req.query.scope ?? 'global').toLowerCase();
@@ -61,6 +72,16 @@ router.post('/', verifyAuth, async (req: AuthRequest, res) => {
         error: 'Validation failed',
         code: 'VALIDATION_ERROR',
         details: errors,
+      });
+    }
+
+    const analyticsValidation = validateAnalyticsEntry(req.body);
+    if (!analyticsValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        code: 'VALIDATION_ERROR',
+        details: analyticsValidation.errors,
       });
     }
 
@@ -144,6 +165,16 @@ router.put('/:id', verifyAuth, async (req: AuthRequest, res) => {
         error: 'Validation failed',
         code: 'VALIDATION_ERROR',
         details: errors,
+      });
+    }
+
+    const analyticsValidation = validateAnalyticsEntry(req.body);
+    if (!analyticsValidation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: 'Validation failed',
+        code: 'VALIDATION_ERROR',
+        details: analyticsValidation.errors,
       });
     }
 

@@ -35,6 +35,43 @@ export interface ResearchEntryRecord {
   sessionId?: string | null;
   createdAt?: string;
   updatedAt?: string;
+  metricName?: string;
+  metricValue?: number;
+  metricBaseline?: number;
+  metricUnit?: string;
+  timePeriod?: string;
+  dataSource?: string;
+}
+
+export interface ResolvedEntry {
+  id: string;
+  title: string;
+  content: string;
+  type: ResearchType;
+  metric_name?: string | null;
+  metric_value?: number | null;
+  metric_baseline?: number | null;
+  metric_unit?: string | null;
+  time_period?: string | null;
+  data_source?: string | null;
+}
+
+/** Resolve research entry UUIDs to full entry objects for citation display.
+ *  Returns an empty array on any error — callers handle gracefully. */
+export async function resolveResearchEntries(
+  ids: string[]
+): Promise<ResolvedEntry[]> {
+  if (!ids.length) return [];
+  try {
+    const res = await fetch(
+      `/api/research/resolve?ids=${ids.slice(0, 20).join(",")}`
+    );
+    if (!res.ok) return [];
+    const json = await res.json();
+    return json.entries ?? [];
+  } catch {
+    return [];
+  }
 }
 
 interface ApiResponse<T> {
@@ -107,13 +144,33 @@ export async function createResearchEntry(
   const created = await handleResponse<ResearchEntryRecord>(res);
 
   // Fire-and-forget: generate embedding in the background — never block the UI
+  // For Analytics entries, enrich the embedded content with structured metric fields
+  // so the vector index can match queries like "activation rate" or "30-day retention".
+  let embedContent = created.content;
+  if (created.type === "Analytics" && created.metricName) {
+    const parts: string[] = [created.content];
+    const unit = created.metricUnit ?? "";
+    const valuePart =
+      created.metricValue != null && created.metricBaseline != null
+        ? `${created.metricValue}${unit} vs baseline ${created.metricBaseline}${unit}`
+        : created.metricValue != null
+        ? `${created.metricValue}${unit}`
+        : created.metricBaseline != null
+        ? `baseline ${created.metricBaseline}${unit}`
+        : null;
+    const metaParts = [created.timePeriod, created.dataSource].filter(Boolean);
+    parts.push(
+      `Metric: ${created.metricName}${valuePart ? ` ${valuePart}` : ""}${metaParts.length ? ` (${metaParts.join(", ")})` : ""}`
+    );
+    embedContent = parts.join(" ");
+  }
   fetch("/api/research/embed", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       entry_id: created.id,
       title: created.title,
-      content: created.content,
+      content: embedContent,
     }),
   }).catch(() => {});
 

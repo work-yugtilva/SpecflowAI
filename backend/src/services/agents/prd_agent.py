@@ -98,8 +98,12 @@ class PRDAgent(BaseAgent):
             self._wrap_xml(
                 "instructions",
                 (
-                    "Score this PRD from 0 to 100 on specificity, completeness, actionability, and coherence. "
-                    "If the score is below 70, list the critical gaps that must be fixed."
+                    "Score this PRD 0-100 on four dimensions, weighted equally:\n"
+                    "1. Evidence grounding (25pts): Every factual claim traces to a verbatim quote or data point from the research context. Deduct 5pts per invented claim.\n"
+                    "2. Goal quality (25pts): Every goal has a before/after baseline from research, a bounded target, and a measurement timeframe. Deduct 5pts per goal missing any of these.\n"
+                    "3. Structural correctness (25pts): Architecture section contains no schema details, column names, or endpoint specs. Implementation plan has stated assumptions per phase. Deduct 10pts for each violation.\n"
+                    "4. User outcome clarity (25pts): A non-technical reader (e.g. investor, new PM) could read the PRD and understand the user's problem, why existing tools fail, and what success looks like in 90 days. Deduct 5pts if the competitive displacement is absent.\n\n"
+                    "Return score as the sum of all four dimensions. A PRD scoring below 70 MUST have critical_gaps listing the exact field and the exact fix needed."
                 ),
             ),
             self._wrap_xml("prd_draft", prd_output),

@@ -1,6 +1,7 @@
 // lib/api/session.ts — Client for the session system API routes (proxied via Next.js)
 
 import type { PipelineOutputs } from "@/lib/pipeline-contracts";
+import { iterateSseJsonLines } from "@/lib/sse-parse";
 
 const API_BASE = "/api/sessions";
 
@@ -230,37 +231,89 @@ export async function* subscribeToRunStream(
     throw new Error("Stream connect failed: empty response body");
   }
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buf = "";
   try {
-    while (true) {
-      let chunk: ReadableStreamReadResult<Uint8Array>;
-      try {
-        chunk = await reader.read();
-      } catch (e) {
-        throw mapStreamConnectFailure(e);
-      }
-      const { done, value } = chunk;
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      const lines = buf.split("\n");
-      buf = lines.pop() ?? "";
-      for (const line of lines) {
-        if (line.startsWith("data: ")) {
-          try {
-            yield JSON.parse(line.slice(6)) as RunStreamEvent;
-          } catch {
-            // skip malformed SSE line
-          }
-        }
-      }
+    for await (const event of iterateSseJsonLines<RunStreamEvent>(res.body)) {
+      yield event;
     }
-  } finally {
-    reader.releaseLock();
+  } catch (e) {
+    throw mapStreamConnectFailure(e);
   }
 }
 
 // Note: listOrphanedPipelines, attachPipelineToSession, listSessionPipelines are
 // intentionally omitted — pipeline management UI is out of scope. No
+// ─── Agent Handoff Types ──────────────────────────────────────────────────────
+
+export interface HandoffTask {
+  id: string;
+  title: string;
+  layer: string;
+  implementation_prompt: string;
+  acceptance_criteria: string;
+  dependencies: string[];
+  needs_clarification: boolean;
+  clarification_reason: string;
+}
+
+export interface AgentHandoff {
+  project_brief: string;
+  execution_order: string[];
+  tasks: HandoffTask[];
+  needs_clarification_count: number;
+  estimated_sessions: number;
+  architecture_notes: string;
+}
+
+export interface HandoffResponse {
+  success: boolean;
+  handoff: AgentHandoff;
+}
+
+// ─── Agent Handoff ────────────────────────────────────────────────────────────
+
+export async function generateHandoff(sessionId: string): Promise<HandoffResponse> {
+  const res = await fetch(`${API_BASE}/${sessionId}/handoff`, {
+    ...SESSION_FETCH_DEFAULTS,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  return handleResponse<HandoffResponse>(res);
+}
+
+export async function getHandoff(sessionId: string): Promise<HandoffResponse> {
+  const res = await fetch(`${API_BASE}/${sessionId}/handoff`, SESSION_FETCH_DEFAULTS);
+  return handleResponse<HandoffResponse>(res);
+}
+
+export async function exportHandoff(
+  sessionId: string,
+  format: "claude_md" | "cursor_rules" | "task_list"
+): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/${sessionId}/handoff/export?format=${format}`,
+    SESSION_FETCH_DEFAULTS
+  );
+  if (!res.ok) throw new Error("Export failed");
+  const text = await res.text();
+
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const nameMatch = disposition.match(/filename="([^"]+)"/);
+  const filename =
+    nameMatch?.[1] ??
+    (format === "claude_md"
+      ? "CLAUDE.md"
+      : format === "cursor_rules"
+      ? ".cursorrules"
+      : `tasks-${sessionId.slice(0, 8)}.txt`);
+
+  const mimeType = format === "task_list" ? "text/plain" : "text/markdown";
+  const blob = new Blob([text], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 // Next.js proxy routes exist for /api/pipelines/* in this plan.

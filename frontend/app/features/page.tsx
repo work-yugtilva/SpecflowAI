@@ -6,6 +6,7 @@ import { Sidebar } from "@/components/ui/sidebar";
 import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
 import { QualityBadge } from "@/components/pipeline/QualityBadge";
 import { CitationBadge } from "@/components/pipeline/CitationBadge";
+import { EvidencePanelWithTrigger } from "@/components/pipeline/EvidencePanel";
 import { getSession } from "@/lib/api/session";
 import type { SessionDetail } from "@/lib/api/session";
 import {
@@ -18,6 +19,7 @@ import { computeStepStatuses } from "@/lib/pipeline-session";
 import { runPipelineStepOrFull } from "@/lib/run-pipeline-client";
 import { useOrphanedPipeline } from "@/lib/use-orphaned-pipeline";
 import { OrphanedPipelineModal } from "@/components/ui/orphaned-pipeline-modal";
+import { ConversationPanel } from "@/components/ui/conversation-panel";
 import {
   adaptFeatures,
   describeFeaturesEmptyState,
@@ -683,6 +685,33 @@ export default function FeaturesPage() {
                     </p>
                   </div>
 
+                  {/* Evidence */}
+                  {(selectedFeature.source_ids?.length ?? 0) > 0 && (
+                    <div
+                      style={{
+                        paddingTop: 18,
+                        borderTop: "1px solid #E4DDD4",
+                        marginBottom: 20,
+                      }}
+                    >
+                      <SectionLabel>Evidence</SectionLabel>
+                      <div style={{ marginTop: 8 }}>
+                        <EvidencePanelWithTrigger
+                          sourceIds={selectedFeature.source_ids!}
+                          citationConfidence={
+                            selectedFeature.citation_confidence as
+                              | "high"
+                              | "medium"
+                              | "insufficient"
+                              | undefined
+                          }
+                          researchEvidence={selectedFeature.reasoning}
+                          itemTitle={selectedFeature.title}
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   {/* Success Metrics */}
                   <div
                     style={{
@@ -739,6 +768,11 @@ export default function FeaturesPage() {
         open={showOrphanedModal}
         onClose={closeOrphanedModal}
         pipelineOutput={orphanedOutput}
+      />
+      <ConversationPanel
+        sessionId={activeSessionId}
+        contextKeys={["problems", "features"]}
+        mode="float"
       />
     </div>
   );

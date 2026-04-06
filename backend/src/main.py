@@ -62,7 +62,7 @@ from fastapi.responses import JSONResponse, Response, StreamingResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 import asyncio
 from pydantic import BaseModel
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 from urllib.parse import urlparse
 
 from services.pipeline import Pipeline
@@ -343,6 +343,25 @@ class EditPRDSectionRequest(BaseModel):
     instruction: str
     current_section_value: Any
     full_prd: dict
+
+
+class FeedbackEntry(BaseModel):
+    prd_section: str
+    prd_item_title: str
+    feedback_type: Literal["validated", "invalidated", "partial", "deferred"]
+    outcome_note: Optional[str] = ""
+    linked_problem_ids: Optional[list[str]] = []
+    linked_research_ids: Optional[list[str]] = []
+
+
+class ConversationMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class ConversationRequest(BaseModel):
+    messages: list[ConversationMessage]
+    session_context_keys: Optional[list[str]] = []
 
 
 # ---------------------------------------------------------------------------
@@ -1082,6 +1101,554 @@ async def edit_prd_section(
     except Exception:
         logger.error("edit_prd_section failed", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.post("/session/{session_id}/agent_handoff")
+@limiter.limit(RATE_LIMIT_AI)
+async def generate_agent_handoff(request: Request, session_id: str, auth: AuthContext = Depends(require_auth_context)):
+    """
+    Generate an agent-ready handoff payload for a session.
+    Requires problems, features, decompositions, and tasks. PRD is optional (empty dict if missing).
+    Returns a structured prompt package for Claude Code or Cursor.
+    Capped at 3 regenerations per session.
+    """
+    try:
+        sm = SessionManager(client=auth.client)
+        await sm.load_session(session_id)
+
+        current_state = await sm.get_current_state(session_id)
+
+        regen_counts = (current_state or {}).get("regeneration_counts", {})
+        if regen_counts.get("agent_handoff", 0) >= 3:
+            raise HTTPException(
+                status_code=403,
+                detail="Regeneration limit reached. Please use the exported handoff.",
+            )
+
+        outputs = (current_state or {}).get("outputs") or {}
+        # Keys may be present with JSON null — .get(k, default) would still return None.
+        _output_defaults = {
+            "product_context": {},
+            "problems": [],
+            "features": [],
+            "decompositions": [],
+            "tasks": [],
+            "prd": [],
+        }
+
+        def _raw_session_output(key: str):
+            if key not in outputs:
+                return _output_defaults[key]
+            val = outputs[key]
+            return _output_defaults[key] if val is None else val
+
+        context = {
+            key: Pipeline._unwrap_persisted_content(_raw_session_output(key))
+            for key in _output_defaults
+        }
+
+        # PRD improves handoff quality but is not required (tasks page may generate handoff before PRD).
+        if not context.get("prd"):
+            context["prd"] = {}
+
+        missing = [k for k in ("problems", "features", "decompositions", "tasks")
+                   if not context.get(k)]
+        if missing:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Run {', '.join(missing)} first",
+            )
+
+        agent = AgentFactory.create("agent_handoff")
+        result = await agent.execute_async(
+            "Generate a complete agent-ready handoff payload for the implementation tasks in this product session.",
+            context=context,
+        )
+        result = Pipeline._strip_reasoning_field(result)
+
+        entry = MemoryEntry(
+            session_id=session_id,
+            user_id=auth.user_id,
+            agent_name="agent_handoff",
+            memory_key="agent_handoff",
+            content=result if isinstance(result, dict) else {"data": result},
+            metadata={},
+        )
+        memory_repo = MemoryRepository(client=auth.client)
+        await memory_repo.save_for_session(entry)
+
+        regen_counts["agent_handoff"] = regen_counts.get("agent_handoff", 0) + 1
+        current_state["regeneration_counts"] = regen_counts
+        await sm.update_state(
+            session_id,
+            current_state,
+            step=current_state.get("last_completed_step", "agent_handoff"),
+        )
+
+        return {"success": True, "handoff": result}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        logger.error("generate_agent_handoff failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=404, detail="Internal server error")
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.get("/session/{session_id}/agent_handoff")
+@limiter.limit(RATE_LIMIT_DEFAULT)
+async def get_agent_handoff(request: Request, session_id: str, auth: AuthContext = Depends(require_auth_context)):
+    """Load a stored agent handoff payload from memory_entries for a session."""
+    try:
+        memory_repo = MemoryRepository(client=auth.client)
+        entry = await memory_repo.get_by_session_and_key(session_id, "agent_handoff")
+        if not entry:
+            raise HTTPException(status_code=404, detail="No agent handoff found for this session")
+        handoff = Pipeline._unwrap_persisted_content(entry.content)
+        return {"handoff": handoff}
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.get("/session/{session_id}/agent_handoff/export")
+@limiter.limit(RATE_LIMIT_DEFAULT)
+async def export_agent_handoff_markdown(request: Request, session_id: str, auth: AuthContext = Depends(require_auth_context)):
+    """
+    Export the session's agent handoff as a downloadable CLAUDE.md-style markdown file.
+    """
+    try:
+        memory_repo = MemoryRepository(client=auth.client)
+        entry = await memory_repo.get_by_session_and_key(session_id, "agent_handoff")
+        if not entry:
+            raise HTTPException(status_code=404, detail="No agent handoff found for this session")
+
+        handoff = Pipeline._unwrap_persisted_content(entry.content)
+        if not isinstance(handoff, dict):
+            raise HTTPException(status_code=404, detail="Handoff data is malformed")
+
+        lines = ["# Agent Implementation Handoff\n"]
+
+        project_brief = handoff.get("project_brief", "")
+        if project_brief:
+            lines.append("## Project Brief\n")
+            lines.append(project_brief)
+            lines.append("")
+
+        architecture_notes = handoff.get("architecture_notes", "")
+        if architecture_notes:
+            lines.append("## Architecture Notes\n")
+            lines.append(architecture_notes)
+            lines.append("")
+
+        execution_order = handoff.get("execution_order", [])
+        if execution_order:
+            lines.append("## Execution Order\n")
+            for i, step in enumerate(execution_order, 1):
+                label = step if isinstance(step, str) else step.get("title", str(step))
+                lines.append(f"{i}. {label}")
+            lines.append("")
+
+        tasks = handoff.get("tasks", [])
+        if tasks:
+            lines.append("## Implementation Tasks\n")
+            for task in tasks:
+                title = task.get("title", "Untitled")
+                layer = task.get("layer", "")
+                header = f"### {title}"
+                if layer:
+                    header += f" [{layer}]"
+                lines.append(header)
+                lines.append("")
+
+                impl_prompt = task.get("implementation_prompt", "")
+                if impl_prompt:
+                    lines.append(impl_prompt)
+                    lines.append("")
+
+                acceptance_criteria = task.get("acceptance_criteria", "")
+                if acceptance_criteria:
+                    lines.append("**Acceptance Criteria:**")
+                    lines.append(acceptance_criteria)
+                    lines.append("")
+
+                deps = task.get("dependencies", [])
+                dep_str = ", ".join(deps) if deps else "None"
+                lines.append(f"**Dependencies:** {dep_str}")
+                lines.append("")
+
+                if task.get("needs_clarification"):
+                    reason = task.get("clarification_reason", "")
+                    lines.append(f"⚠ NEEDS_CLARIFICATION: {reason}")
+                    lines.append("")
+
+                lines.append("---")
+                lines.append("")
+
+        needs_count = handoff.get("needs_clarification_count", 0)
+        estimated = handoff.get("estimated_sessions", "")
+        lines.append("## Summary\n")
+        lines.append(f"- Tasks: {len(tasks)}")
+        lines.append(f"- Needs clarification: {needs_count}")
+        if estimated:
+            lines.append(f"- Estimated sessions: {estimated}")
+
+        md = "\n".join(lines)
+        short_id = session_id[:8]
+        filename = f"handoff-{short_id}.md"
+        return Response(
+            content=md,
+            media_type="text/markdown",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.get("/session/{session_id}/handoff")
+@limiter.limit(RATE_LIMIT_DEFAULT)
+async def get_handoff(request: Request, session_id: str, auth: AuthContext = Depends(require_auth_context)):
+    """
+    Load stored agent handoff from memory_entries.
+    Strips reasoning field and surfaces needs_clarification_count and estimated_sessions
+    as top-level response keys.
+    """
+    try:
+        memory_repo = MemoryRepository(client=auth.client)
+        entry = await memory_repo.get_by_session_and_key(session_id, "agent_handoff")
+        if not entry:
+            raise HTTPException(status_code=404, detail="No agent handoff found for this session")
+        handoff = Pipeline._unwrap_persisted_content(entry.content)
+        handoff = Pipeline._strip_reasoning_field(handoff)
+        return {
+            "handoff": handoff,
+            "needs_clarification_count": handoff.get("needs_clarification_count", 0) if isinstance(handoff, dict) else 0,
+            "estimated_sessions": handoff.get("estimated_sessions") if isinstance(handoff, dict) else None,
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.get("/session/{session_id}/handoff/export")
+@limiter.limit(RATE_LIMIT_DEFAULT)
+async def export_handoff(
+    request: Request,
+    session_id: str,
+    format: str = "claude_md",
+    auth: AuthContext = Depends(require_auth_context),
+):
+    """
+    Export the agent handoff in one of three formats:
+    - claude_md  (default): CLAUDE.md ready to drop into a repo
+    - cursor_rules: .cursorrules project context file
+    - task_list: plain .txt with one task block per entry, for pasting into Claude Code
+    NEEDS_CLARIFICATION tasks are prefixed with ⚠ in all formats.
+    """
+    try:
+        memory_repo = MemoryRepository(client=auth.client)
+        entry = await memory_repo.get_by_session_and_key(session_id, "agent_handoff")
+        if not entry:
+            raise HTTPException(status_code=404, detail="No agent handoff found for this session")
+
+        handoff = Pipeline._unwrap_persisted_content(entry.content)
+        if not isinstance(handoff, dict):
+            raise HTTPException(status_code=404, detail="Handoff data is malformed")
+
+        handoff = Pipeline._strip_reasoning_field(handoff)
+
+        project_brief = handoff.get("project_brief", "")
+        architecture_notes = handoff.get("architecture_notes", "")
+        execution_order = handoff.get("execution_order", [])
+        tasks = handoff.get("tasks", [])
+        needs_count = handoff.get("needs_clarification_count", 0)
+        estimated = handoff.get("estimated_sessions", "")
+
+        def _task_title(task: dict) -> str:
+            prefix = "⚠ " if task.get("needs_clarification") else ""
+            return f"{prefix}{task.get('title', 'Untitled')}"
+
+        def _deps(task: dict) -> str:
+            deps = task.get("dependencies", [])
+            return ", ".join(deps) if deps else "none"
+
+        short_id = session_id[:8]
+
+        if format == "cursor_rules":
+            lines = []
+            if project_brief:
+                lines.append("## Project Context\n")
+                lines.append(project_brief)
+                lines.append("")
+            if architecture_notes:
+                lines.append("## Architecture\n")
+                lines.append(architecture_notes)
+                lines.append("")
+            if tasks:
+                lines.append("## Current Sprint Tasks\n")
+                for i, task in enumerate(tasks, 1):
+                    layer = task.get("layer", "")
+                    tag = f" [{layer}]" if layer else ""
+                    lines.append(f"{i}. {_task_title(task)}{tag}")
+            content = "\n".join(lines)
+            filename = ".cursorrules"
+            media_type = "text/plain"
+
+        elif format == "task_list":
+            blocks = []
+            for task in tasks:
+                layer = task.get("layer", "")
+                impl = task.get("implementation_prompt", "")
+                ac = task.get("acceptance_criteria", "")
+                block_lines = [
+                    f"TASK: {_task_title(task)}",
+                    f"LAYER: {layer}",
+                    f"DEPENDS ON: {_deps(task)}",
+                ]
+                if impl:
+                    block_lines.append(impl)
+                block_lines.append("DONE WHEN:")
+                if ac:
+                    block_lines.append(ac)
+                blocks.append("\n".join(block_lines))
+            content = "\n\n---\n\n".join(blocks)
+            filename = f"tasks-{short_id}.txt"
+            media_type = "text/plain"
+
+        else:
+            # claude_md (default)
+            lines = ["# CLAUDE.md\n"]
+            if project_brief:
+                lines.append(project_brief)
+                lines.append("")
+            if architecture_notes:
+                lines.append("## Architecture Notes\n")
+                lines.append(architecture_notes)
+                lines.append("")
+            if execution_order:
+                lines.append("## Execution Order\n")
+                for i, step in enumerate(execution_order, 1):
+                    label = step if isinstance(step, str) else step.get("title", str(step))
+                    layer = step.get("layer", "") if isinstance(step, dict) else ""
+                    tag = f" [{layer}]" if layer else ""
+                    lines.append(f"{i}. {label}{tag}")
+                lines.append("")
+            if tasks:
+                lines.append("## Tasks\n")
+                for task in tasks:
+                    layer = task.get("layer", "")
+                    impl = task.get("implementation_prompt", "")
+                    ac = task.get("acceptance_criteria", "")
+                    lines.append(f"### {_task_title(task)}")
+                    if layer:
+                        lines.append(f"**Layer:** {layer}")
+                    lines.append(f"**Dependencies:** {_deps(task)}")
+                    if impl:
+                        lines.append("")
+                        lines.append(impl)
+                    if ac:
+                        lines.append("")
+                        lines.append("**Acceptance Criteria:**")
+                        lines.append(ac)
+                    lines.append("")
+            if needs_count or estimated:
+                lines.append("---\n")
+                if needs_count:
+                    lines.append(f"⚠ {needs_count} task(s) flagged NEEDS_CLARIFICATION — resolve before handing off.")
+                if estimated:
+                    lines.append(f"Estimated sessions: {estimated}")
+            content = "\n".join(lines)
+            filename = "CLAUDE.md"
+            media_type = "text/markdown"
+
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.post("/session/{session_id}/feedback")
+@limiter.limit(RATE_LIMIT_AI)
+async def create_feedback_entry(
+    request: Request,
+    session_id: str,
+    req: FeedbackEntry,
+    auth: AuthContext = Depends(require_auth_context),
+):
+    try:
+        result = auth.client.table("feedback_entries").insert({
+            "session_id": session_id,
+            "user_id": auth.user_id,
+            "prd_section": req.prd_section,
+            "prd_item_title": req.prd_item_title,
+            "feedback_type": req.feedback_type,
+            "outcome_note": req.outcome_note or "",
+            "linked_problem_ids": req.linked_problem_ids or [],
+            "linked_research_ids": req.linked_research_ids or [],
+        }).execute()
+        entry = result.data[0] if result.data else {}
+        return {"success": True, "entry": entry}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("create_feedback_entry error: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.get("/session/{session_id}/feedback")
+@limiter.limit(RATE_LIMIT_DEFAULT)
+async def list_feedback_entries(
+    request: Request,
+    session_id: str,
+    auth: AuthContext = Depends(require_auth_context),
+):
+    try:
+        result = (
+            auth.client.table("feedback_entries")
+            .select("*")
+            .eq("session_id", session_id)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        return {"entries": result.data or []}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("list_feedback_entries error: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.delete("/session/{session_id}/feedback/{entry_id}")
+@limiter.limit(RATE_LIMIT_DEFAULT)
+async def delete_feedback_entry(
+    request: Request,
+    session_id: str,
+    entry_id: str,
+    auth: AuthContext = Depends(require_auth_context),
+):
+    try:
+        result = (
+            auth.client.table("feedback_entries")
+            .delete()
+            .eq("id", entry_id)
+            .eq("session_id", session_id)
+            .execute()
+        )
+        if not result.data:
+            raise HTTPException(status_code=404, detail="Feedback entry not found")
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("delete_feedback_entry error: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+_VALID_CONTEXT_KEYS = {"problems", "features", "decompositions", "tasks", "prd"}
+
+
+def build_conversation_system_prompt(session_outputs: dict, requested_keys: list[str]) -> str:
+    lines = [
+        "You are a product strategy assistant embedded in SpecFlow, an AI-powered PM tool.",
+        "You help product managers understand, critique, and improve their pipeline outputs.",
+        "",
+        "## What you can help with",
+        "- Explain any part of the pipeline outputs below",
+        "- Identify gaps, inconsistencies, or missing detail",
+        "- Suggest improvements grounded in the session data",
+        "- Answer product management methodology questions",
+        "",
+        "## Constraints",
+        "- Stay grounded in the session data provided. Flag clearly when you speculate beyond it.",
+        "- Keep responses concise (under 150 words) unless the user explicitly asks for detail.",
+        "- Never reproduce full JSON dumps — summarize and reference items by title or key.",
+        "",
+        "## Session Context",
+    ]
+
+    safe_keys = [k for k in requested_keys if k in _VALID_CONTEXT_KEYS]
+    if safe_keys:
+        for key in safe_keys:
+            val = session_outputs.get(key)
+            if val is None:
+                continue
+            val = Pipeline._unwrap_persisted_content(val)
+            snippet = json.dumps(val)
+            if len(snippet) > 800:
+                snippet = snippet[:800] + "... [truncated]"
+            lines.append(f"\n### {key}\n```json\n{snippet}\n```")
+    else:
+        lines.append("(No session context requested.)")
+
+    return "\n".join(lines)
+
+
+@app.post("/session/{session_id}/conversation")
+@limiter.limit(RATE_LIMIT_AI)
+async def stream_conversation(
+    request: Request,
+    session_id: str,
+    body: ConversationRequest,
+    auth: AuthContext = Depends(require_auth_context),
+):
+    """Token-by-token SSE conversation endpoint. History is stateless — client manages it."""
+    from services.ai.client import get_async_client
+
+    async def event_stream():
+        try:
+            sm = SessionManager(client=auth.client)
+            try:
+                await sm.load_session(session_id)
+            except ValueError:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Session not found'})}\n\n"
+                return
+
+            current_state = await sm.get_current_state(session_id)
+            outputs = (current_state or {}).get("outputs", {})
+
+            system_prompt = build_conversation_system_prompt(
+                outputs, body.session_context_keys or []
+            )
+
+            messages = [{"role": m.role, "content": m.content} for m in body.messages[-20:]]
+
+            ai_client = get_async_client()
+            async with ai_client.messages.stream(
+                model="claude-sonnet-4-6",
+                max_tokens=1024,
+                temperature=0.4,
+                system=system_prompt,
+                messages=messages,
+            ) as stream:
+                async for text in stream.text_stream:
+                    yield f"data: {json.dumps({'type': 'token', 'content': text})}\n\n"
+
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+        except Exception:
+            logger.error("stream_conversation failed", exc_info=True)
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Internal server error'})}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.get("/session/{session_id}")

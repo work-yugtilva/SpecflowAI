@@ -250,6 +250,13 @@ class Pipeline:
 
         state = dict(input_data)
 
+        _analytics_block = self._format_analytics_context(
+            state.get("ingest") or [],
+            state.get("research") or [],
+        )
+        if _analytics_block:
+            state["analytics_context"] = _analytics_block
+
         # Gate: reject immediately if required context fields or ingest are missing
         validate_pipeline_input(input_data)
 
@@ -611,6 +618,67 @@ class Pipeline:
         if isinstance(content, dict) and "reasoning" in content:
             return {key: value for key, value in content.items() if key != "reasoning"}
         return content
+
+    @staticmethod
+    def _format_analytics_context(ingest: list, research: list = None) -> Optional[str]:
+        """
+        Scan ingest and research entries for Analytics type items with metric_name set.
+        Returns a formatted multi-line string, or None if no qualifying entries found.
+        Context key ('analytics_context') is derived from type.lower() + '_context'.
+        Handles both snake_case (DB/pipeline) and camelCase (frontend payload) field names.
+        """
+        lines: list = []
+        for source in (ingest or [], research or []):
+            for item in source:
+                if not isinstance(item, dict):
+                    continue
+                item_type = str(item.get("type") or "").strip()
+                if item_type.lower() != "analytics":
+                    continue
+                metric_name = str(
+                    item.get("metric_name") or item.get("metricName") or ""
+                ).strip()
+                if not metric_name:
+                    continue
+
+                metric_value = (
+                    item.get("metric_value")
+                    if item.get("metric_value") is not None
+                    else item.get("metricValue")
+                )
+                metric_baseline = (
+                    item.get("metric_baseline")
+                    if item.get("metric_baseline") is not None
+                    else item.get("metricBaseline")
+                )
+                metric_unit = str(
+                    item.get("metric_unit") or item.get("metricUnit") or ""
+                ).strip()
+                time_period = str(
+                    item.get("time_period") or item.get("timePeriod") or ""
+                ).strip()
+                data_source = str(
+                    item.get("data_source") or item.get("dataSource") or ""
+                ).strip()
+
+                lines.append(f"METRIC: {metric_name}")
+                value_parts = []
+                if metric_value is not None:
+                    value_parts.append(f"Current: {metric_value}{metric_unit}")
+                if metric_baseline is not None:
+                    value_parts.append(f"Baseline: {metric_baseline}{metric_unit}")
+                if value_parts:
+                    lines.append(f"  {' | '.join(value_parts)}")
+                meta_parts = []
+                if time_period:
+                    meta_parts.append(f"Period: {time_period}")
+                if data_source:
+                    meta_parts.append(f"Source: {data_source}")
+                if meta_parts:
+                    lines.append(f"  {' | '.join(meta_parts)}")
+                lines.append("")
+
+        return "\n".join(lines).strip() or None
 
     def _finalize_agent_output(self, agent_name: str, out_key: str, data: Any, agent) -> Any:
         data = self._strip_reasoning_field(data)

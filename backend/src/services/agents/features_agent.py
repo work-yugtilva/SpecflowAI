@@ -29,6 +29,9 @@ class FeaturesAgent(BaseAgent):
             "prior_problems": problems,
         }
 
+        if ctx.get("analytics_context"):
+            prompt_context["analytics_context"] = ctx["analytics_context"]
+
         if ctx.get("previous_attempt_failure"):
             prompt_context["previous_attempt_failure"] = ctx["previous_attempt_failure"]
 
