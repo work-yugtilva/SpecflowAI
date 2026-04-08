@@ -8,9 +8,14 @@ export default defineConfig({
   workers: 1,
   reporter: "list",
   globalSetup: "./tests/e2e/global-setup.ts",
+  /* Full smoke (specflow-full-smoke.spec.ts) sets test.setTimeout(900_000) internally. */
+  timeout: 120_000,
+  expect: { timeout: 15_000 },
+  outputDir: "test-results/playwright-artifacts",
   use: {
     baseURL: "http://localhost:3000",
     trace: "on-first-retry",
+    screenshot: "only-on-failure",
     storageState: ".playwright/auth.json",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],

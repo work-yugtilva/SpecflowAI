@@ -967,6 +967,8 @@ function PrdPage() {
   const [feedbackLoading, setFeedbackLoading] = useState(false);
   const [feedbackLoadError, setFeedbackLoadError] = useState<string | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const [interruptedJobId, setInterruptedJobId] = useState<string | null>(null);
+  const [resuming, setResuming] = useState(false);
 
   const stepStatuses = computeStepStatuses(sessionDetail);
   const regenCount = sessionDetail?.state?.state?.regeneration_counts?.["prd"] ?? 0;
@@ -993,47 +995,12 @@ function PrdPage() {
     setFeedbackLoading(true);
     fetchFeedback(activeSessionId)
       .then((data) => {
-        // #region agent log
-        fetch("http://127.0.0.1:7264/ingest/4f5cc7a6-efcc-4f6a-96c8-871773fb1445", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "a195e9" },
-          body: JSON.stringify({
-            sessionId: "a195e9",
-            hypothesisId: "H1-H3",
-            location: "prd/page.tsx:feedback-load-then",
-            message: "fetchFeedback resolved",
-            data: {
-              isArray: Array.isArray(data),
-              count: Array.isArray(data) ? data.length : null,
-              sessionTail: activeSessionId.slice(-8),
-            },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
         if (!cancelled) {
           setFeedbackLoadError(null);
           setFeedback(data);
         }
       })
       .catch((err) => {
-        // #region agent log
-        fetch("http://127.0.0.1:7264/ingest/4f5cc7a6-efcc-4f6a-96c8-871773fb1445", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "a195e9" },
-          body: JSON.stringify({
-            sessionId: "a195e9",
-            hypothesisId: "H2",
-            location: "prd/page.tsx:feedback-load-catch",
-            message: "fetchFeedback rejected",
-            data: {
-              err: err instanceof Error ? err.message : String(err),
-              sessionTail: activeSessionId.slice(-8),
-            },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
         console.error("Failed to load feedback:", err);
         if (!cancelled) {
           setFeedbackLoadError(err instanceof Error ? err.message : "Failed to load outcomes");
@@ -1109,16 +1076,24 @@ function PrdPage() {
   }
 
   // ── Generate PRD ──
-  async function handleGenerate() {
+  async function handleGenerate(resumeJobId?: string) {
     if (!activeSessionId || generating) return;
     setGenerating(true);
     setError(null);
+    setInterruptedJobId(null);
     setPrd(null);
     setQualityScore(null);
     setLoadingPhase("Loading context...");
 
+    // Track job_id received from first SSE event so we can resume on disconnect
+    let currentJobId: string | null = null;
+
     try {
-      const res = await fetch(`/api/sessions/${activeSessionId}/prd/stream`, {
+      const streamUrl = resumeJobId
+        ? `/api/sessions/${activeSessionId}/prd/stream?job_id=${encodeURIComponent(resumeJobId)}`
+        : `/api/sessions/${activeSessionId}/prd/stream`;
+
+      const res = await fetch(streamUrl, {
         method: "POST",
         credentials: "same-origin",
         cache: "no-store",
@@ -1135,7 +1110,9 @@ function PrdPage() {
       try {
         for await (const raw of iterateSseJsonLines<Record<string, unknown>>(res.body)) {
           const t = raw.type;
-          if (t === "phase" && typeof raw.phase === "string") {
+          if (t === "job_created" && typeof raw.job_id === "string") {
+            currentJobId = raw.job_id;
+          } else if (t === "phase" && typeof raw.phase === "string") {
             setLoadingPhase(raw.phase);
           } else if (t === "complete") {
             sawComplete = true;
@@ -1158,7 +1135,7 @@ function PrdPage() {
         const m =
           streamErr instanceof Error ? streamErr.message : String(streamErr);
         if (
-          /failed to fetch|load failed|networkerror|econnrefused|socket|fetch/i.test(
+          /failed to fetch|load failed|network.?error|econnrefused|socket|fetch/i.test(
             m
           )
         ) {
@@ -1168,17 +1145,27 @@ function PrdPage() {
         } else {
           setError(m || "PRD stream failed.");
         }
+        // On network disconnect: if we have a job_id, offer resume
+        if (currentJobId && !sawComplete) {
+          setInterruptedJobId(currentJobId);
+          setError("Generation interrupted — the connection was lost.");
+        }
         return;
       }
 
       if (!sawComplete && !streamReportedError) {
-        setError(
-          "PRD stream ended before completion. If the pipeline was restarted, try Generate again."
-        );
+        if (currentJobId) {
+          setInterruptedJobId(currentJobId);
+          setError("Generation interrupted — the connection was lost.");
+        } else {
+          setError(
+            "PRD stream ended before completion. If the pipeline was restarted, try Generate again."
+          );
+        }
       }
     } catch (e) {
       const m = e instanceof Error ? e.message : String(e);
-      if (/failed to fetch|load failed|networkerror/i.test(m)) {
+      if (/failed to fetch|load failed|network.?error/i.test(m)) {
         setError(
           "Failed to reach the app or pipeline. Ensure Next.js is running and the FastAPI pipeline is up on port 8001."
         );
@@ -1188,6 +1175,67 @@ function PrdPage() {
     } finally {
       setGenerating(false);
       setLoadingPhase("");
+    }
+  }
+
+  // ── Resume interrupted PRD generation ──
+  async function handleResume() {
+    if (!activeSessionId || !interruptedJobId || resuming) return;
+    setResuming(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `/api/sessions/${activeSessionId}/job/${interruptedJobId}/status`,
+        { credentials: "same-origin" }
+      );
+      if (!res.ok) {
+        setError("Could not check job status. Try generating again.");
+        setInterruptedJobId(null);
+        return;
+      }
+      const job = await res.json() as { status: string; error?: string };
+
+      if (job.status === "completed") {
+        // Fetch the stored PRD from memory_entries
+        const prdRes = await fetch(`/api/sessions/${activeSessionId}/prd`, {
+          credentials: "same-origin",
+        });
+        if (prdRes.ok) {
+          const prdData = await prdRes.json() as {
+            prd?: PrdData;
+            quality_score?: QualityScore;
+            citations?: Record<string, string[]>;
+          };
+          setPrd(prdData.prd ?? null);
+          if (prdData.quality_score) setQualityScore(prdData.quality_score);
+          if (prdData.citations) setCitations(prdData.citations);
+          setFromSession(true);
+          setError(null);
+          setInterruptedJobId(null);
+          try {
+            setSessionDetail(await getSession(activeSessionId));
+          } catch {
+            /* best-effort */
+          }
+        } else {
+          setError("Could not load the completed PRD. Try refreshing.");
+          setInterruptedJobId(null);
+        }
+      } else if (job.status === "failed") {
+        setError(job.error ?? "Generation failed on the server.");
+        setInterruptedJobId(null);
+      } else {
+        // running — reconnect SSE stream with the same job_id
+        setInterruptedJobId(null);
+        setResuming(false);
+        await handleGenerate(interruptedJobId);
+        return;
+      }
+    } catch {
+      setError("Could not check job status. Try generating again.");
+      setInterruptedJobId(null);
+    } finally {
+      setResuming(false);
     }
   }
 
@@ -1616,15 +1664,36 @@ function PrdPage() {
                   <path d="M12 8v4M12 16h.01" stroke="#EF4444" strokeWidth="1.5" strokeLinecap="round" />
                 </svg>
                 <span style={{ fontSize: 13, color: "#6B6B6B", textAlign: "center", maxWidth: 400 }}>{error}</span>
-                <button
-                  onClick={handleGenerate}
-                  disabled={!activeSessionId || regenLimitReached}
-                  title={regenLimitReached ? "Limit reached. Use the editor." : undefined}
-                  className="btn-dark"
-                  style={{ fontSize: 13, padding: "0.4rem 1rem", marginTop: 8, opacity: regenLimitReached ? 0.6 : 1, cursor: regenLimitReached ? "not-allowed" : "pointer" }}
-                >
-                  Try Again
-                </button>
+                {interruptedJobId ? (
+                  <div className="flex flex-col items-center gap-2" style={{ marginTop: 8 }}>
+                    <button
+                      onClick={handleResume}
+                      disabled={resuming || !activeSessionId}
+                      className="btn-dark"
+                      style={{ fontSize: 13, padding: "0.4rem 1rem" }}
+                    >
+                      {resuming ? "Checking..." : "Resume Generation"}
+                    </button>
+                    <button
+                      onClick={() => { setInterruptedJobId(null); handleGenerate(); }}
+                      disabled={!activeSessionId || regenLimitReached}
+                      title={regenLimitReached ? "Limit reached. Use the editor." : undefined}
+                      style={{ fontSize: 12, color: "#6B6B6B", background: "none", border: "none", cursor: regenLimitReached ? "not-allowed" : "pointer", opacity: regenLimitReached ? 0.5 : 0.7, textDecoration: "underline" }}
+                    >
+                      Start Over
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => handleGenerate()}
+                    disabled={!activeSessionId || regenLimitReached}
+                    title={regenLimitReached ? "Limit reached. Use the editor." : undefined}
+                    className="btn-dark"
+                    style={{ fontSize: 13, padding: "0.4rem 1rem", marginTop: 8, opacity: regenLimitReached ? 0.6 : 1, cursor: regenLimitReached ? "not-allowed" : "pointer" }}
+                  >
+                    Try Again
+                  </button>
+                )}
               </div>
             ) : (
               <div className="flex flex-col items-center gap-3">

@@ -1,3 +1,8 @@
+// SMOKE TEST: Open /problems after running pipeline with research entries.
+// Click Evidence button on any item. Drawer should open showing source entry
+// titles and content. citation_confidence badge should be visible.
+// If drawer shows "No sources", check that source_ids is populated in DB:
+// SELECT title, source_ids FROM problems WHERE session_id = '<your session id>';
 "use client";
 
 import { useState, useEffect } from "react";
@@ -483,7 +488,7 @@ export function EvidencePanel({
                   border: "1px solid #E4DDD4",
                 }}
               >
-                No source entries linked to this item.
+                No research sources were linked to this item. Add research entries and re-run the pipeline.
               </div>
             )}
           </section>

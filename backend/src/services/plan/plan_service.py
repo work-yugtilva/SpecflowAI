@@ -17,6 +17,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from services.db.supabase_client import get_supabase_client
+from services.db.supabase_async import run_sync, rows_from_result
 
 PLAN_LIMITS: dict[str, dict[str, Any]] = {
     "free": {
@@ -44,6 +45,9 @@ COST_CENTS: dict[str, int] = {
     "full": 50,  # full 5-step pipeline run
     "step": 10,  # single step regeneration
 }
+
+# Free plan step budget: 2 full runs × 4 pipeline steps
+FREE_PLAN_STEP_LIMIT: int = 8
 
 _VALID_PLANS = set(PLAN_LIMITS.keys())
 
@@ -87,8 +91,12 @@ class PlanService:
 
         if plan == "free":
             max_runs = limits["max_runs"]
+            steps_used = row.get("step_runs_used", 0)
             result["max_pipeline_runs"] = max_runs
             result["pipeline_runs_remaining"] = max(0, max_runs - runs_used)
+            result["step_runs_used"] = steps_used
+            result["step_runs_remaining"] = max(0, FREE_PLAN_STEP_LIMIT - steps_used)
+            result["max_step_runs"] = FREE_PLAN_STEP_LIMIT
             result["limit_type"] = "runs"
         else:
             max_cents = limits["max_credit_cents"]
@@ -113,18 +121,26 @@ class PlanService:
         limits = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])
 
         if plan == "free":
-            # Free plan: count full runs only
-            if is_full_run:
-                runs_used = row.get("pipeline_runs_used", 0)
-                max_runs = limits["max_runs"]
-                if runs_used >= max_runs:
-                    raise HTTPException(
-                        status_code=429,
-                        detail=(
-                            f"Free plan limit reached ({max_runs} full pipeline runs). "
-                            "Upgrade to Pro at $30/month for $15 of AI credit."
-                        ),
-                    )
+            runs_used = row.get("pipeline_runs_used", 0)
+            steps_used = row.get("step_runs_used", 0)
+            max_runs = limits["max_runs"]
+
+            if runs_used >= max_runs:
+                raise HTTPException(
+                    status_code=429,
+                    detail=(
+                        f"Free plan limit reached ({max_runs} full pipeline runs). "
+                        "Upgrade to Pro at $30/month for $15 of AI credit."
+                    ),
+                )
+            if steps_used >= FREE_PLAN_STEP_LIMIT:
+                raise HTTPException(
+                    status_code=429,
+                    detail=(
+                        f"Free plan step limit reached ({FREE_PLAN_STEP_LIMIT} steps). "
+                        "Upgrade to Pro at $30/month for $15 of AI credit."
+                    ),
+                )
         else:
             # Pro / Unlimited: check credit
             max_cents = limits["max_credit_cents"]
@@ -153,18 +169,29 @@ class PlanService:
         plan = row.get("plan", "free")
 
         if plan == "free":
-            if not is_full_run:
-                return  # single-step regen does not count against free runs
-            new_runs = row.get("pipeline_runs_used", 0) + 1
-            self._client.table("user_plans").update(
-                {"pipeline_runs_used": new_runs, "updated_at": "now()"}
-            ).eq("user_id", user_id).execute()
+            if is_full_run:
+                new_runs = row.get("pipeline_runs_used", 0) + 1
+                new_steps = row.get("step_runs_used", 0) + 4  # 4 steps per full run
+                def _update_runs():
+                    return self._client.table("user_plans").update(
+                        {"pipeline_runs_used": new_runs, "step_runs_used": new_steps, "updated_at": "now()"}
+                    ).eq("user_id", user_id).execute()
+                await run_sync(_update_runs)
+            else:
+                new_steps = row.get("step_runs_used", 0) + 1
+                def _update_steps():
+                    return self._client.table("user_plans").update(
+                        {"step_runs_used": new_steps, "updated_at": "now()"}
+                    ).eq("user_id", user_id).execute()
+                await run_sync(_update_steps)
         else:
             cost = COST_CENTS["full"] if is_full_run else COST_CENTS["step"]
             new_credit = row.get("api_credit_used_cents", 0) + cost
-            self._client.table("user_plans").update(
-                {"api_credit_used_cents": new_credit, "updated_at": "now()"}
-            ).eq("user_id", user_id).execute()
+            def _update_credit():
+                return self._client.table("user_plans").update(
+                    {"api_credit_used_cents": new_credit, "updated_at": "now()"}
+                ).eq("user_id", user_id).execute()
+            await run_sync(_update_credit)
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -175,25 +202,29 @@ class PlanService:
         Fetch the user_plans row. If no row exists, insert a free plan row
         and return it. Uses upsert to avoid race conditions.
         """
-        result = (
-            self._client.table("user_plans")
-            .select("*")
-            .eq("user_id", user_id)
-            .limit(1)
-            .execute()
-        )
-        rows = result.data if result.data else []
+        def _select():
+            return (
+                self._client.table("user_plans")
+                .select("*")
+                .eq("user_id", user_id)
+                .limit(1)
+                .execute()
+            )
+        result = await run_sync(_select)
+        rows = rows_from_result(result)
         if rows:
             return rows[0]
 
         # Auto-provision a free plan row on first access
         new_row = {"user_id": user_id, "plan": "free"}
-        upsert_result = (
-            self._client.table("user_plans")
-            .upsert(new_row, on_conflict="user_id")
-            .execute()
-        )
-        upserted = upsert_result.data
+        def _upsert():
+            return (
+                self._client.table("user_plans")
+                .upsert(new_row, on_conflict="user_id")
+                .execute()
+            )
+        upsert_result = await run_sync(_upsert)
+        upserted = rows_from_result(upsert_result)
         if upserted:
             return upserted[0]
         return new_row

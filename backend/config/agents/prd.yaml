@@ -44,6 +44,22 @@ instructions: |
   Set citation_confidence to 'high' if every claim traces to a rag_context item, 'medium' if
   some claims are inferred, 'insufficient' if you could not find supporting evidence in rag_context.
 
+  For ui_changes: list every component the user will see added or modified.
+  Derive each item from the features list. Do not invent components not implied by the features.
+  Use the exact Next.js route path where the change appears (e.g. /dashboard/session/[id]).
+  Set component to the existing component name, or "new: ComponentName" if it does not yet exist.
+
+  For data_model_changes: list only schema changes required to support the features.
+  Derive each item from the decompositions and tasks memory keys.
+  Never invent columns or tables not implied by the provided data.
+  Table names must follow existing Supabase schema conventions: snake_case, plural.
+  change_type must be one of: add_column, new_table, modify_column, add_index.
+
+  For workflow_changes: list every user-facing workflow that changes as a result of the features.
+  before and after must be grounded in the research context — do not invent baselines.
+  If no before state exists in the research context, set before to "not previously supported".
+  trigger must name the exact user action that initiates the new workflow.
+
   FORMATTING RULES — apply these strictly:
   - executive_summary and problem_statement: 2–4 SHORT sentences maximum. No paragraph walls.
   - goals: each item must have goal (≤10 words), metric, target, and timeline. No prose descriptions.
@@ -55,6 +71,8 @@ instructions: |
   - implementation_plan: each item must have phase (e.g. "Phase 1: Foundation"), duration (e.g. "Weeks 1–2"),
     and deliverables as a list of 3–5 bullet strings. No nested objects inside deliverables.
   - architecture: frontend, backend, and data keys — each value is 1–2 sentences only.
+  - ui_changes, data_model_changes, workflow_changes: each item must be a flat object.
+    No nested lists. No prose paragraphs. Every string field is exactly 1 sentence.
   - Use this exact output structure:
     {
       "reasoning": "...",
@@ -65,7 +83,10 @@ instructions: |
       "architecture": {"frontend": "...", "backend": "...", "data": "..."},
       "implementation_plan": [{"phase": "...", "deliverables": ["...", "..."], "duration": "...", "assumptions": "..."}],
       "risks": [{"risk": "...", "likelihood": "high | medium | low", "mitigation": "..."}],
-      "success_metrics": [{"metric": "...", "baseline": "...", "target": "...", "measurement": "..."}]
+      "success_metrics": [{"metric": "...", "baseline": "...", "target": "...", "measurement": "..."}],
+      "ui_changes": [{"component": "...", "change_type": "add | modify | remove", "description": "...", "affected_route": "..."}],
+      "data_model_changes": [{"table": "...", "change_type": "add_column | new_table | modify_column | add_index", "field": "...", "reason": "..."}],
+      "workflow_changes": [{"workflow": "...", "before": "...", "after": "...", "trigger": "..."}]
     }
 
   Return ONLY a JSON object matching the output schema. No preamble, no markdown, no explanation.
@@ -90,6 +111,27 @@ output_schema:
     implementation_plan: list
     risks: list
     success_metrics: list
+    ui_changes:
+      type: list
+      items:
+        component: string
+        change_type: string
+        description: string
+        affected_route: string
+    data_model_changes:
+      type: list
+      items:
+        table: string
+        change_type: string
+        field: string
+        reason: string
+    workflow_changes:
+      type: list
+      items:
+        workflow: string
+        before: string
+        after: string
+        trigger: string
   fields: null
   groups: null
 

@@ -45,8 +45,8 @@ class ResearchRepository:
                 item_context_text = item.get("context_text", "")
                 item_tags = item.get("tags", [])
 
-                def _insert():
-                    return self.client.table(TABLE).insert({
+                def _upsert():
+                    return self.client.table(TABLE).upsert({
                         "user_id": PIPELINE_USER_ID,
                         "scope": "global",
                         "scope_key": project_id,
@@ -57,9 +57,10 @@ class ResearchRepository:
                         "pain_point": item_pain_point,
                         "context_text": item_context_text,
                         "tags": item_tags,
-                    }).execute()
+                        "updated_at": "now()",
+                    }, on_conflict="scope_key,title,type").execute()
 
-                await run_sync(_insert)
+                await run_sync(_upsert)
                 logger.debug(f"Saved ingest item {idx+1}/{len(items)} for project {project_id}")
             except Exception as e:
                 logger.error(f"Failed to save ingest item {idx+1} for project {project_id}: {e}", exc_info=True)

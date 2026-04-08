@@ -54,6 +54,7 @@ ENV/
 playwright-report/
 test-results/
 .playwright/
+.playwright-mcp/
 
 # OS / editor noise
 Thumbs.db

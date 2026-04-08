@@ -51,7 +51,7 @@ if dsn := os.environ.get("SENTRY_DSN"):
     )
 
 from dataclasses import dataclass
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -73,7 +73,16 @@ from services.db.models.pipeline import PipelineRun, PIPELINE_STATUS_ORPHANED, P
 from services.agent_factory import AgentFactory
 from services.memory.memory_repository import MemoryRepository
 from services.memory.memory_schemas import MemoryEntry
-from services.job_registry import create_job, get_job
+from contextlib import asynccontextmanager
+from services.job_registry import (
+    create_job,
+    get_job,
+    create_prd_job,
+    get_prd_job,
+    finish_prd_job,
+    PrdJob,
+)
+from services.job_repository import JobRepository
 from services.db.supabase_client import get_supabase_client, get_user_supabase_client, verify_supabase_jwt
 from services.plan.plan_service import PlanService
 from sentry_sdk.integrations.asgi import SentryAsgiMiddleware
@@ -213,12 +222,25 @@ RATE_LIMIT_DEFAULT = "60/minute"   # All other endpoints
 
 limiter = Limiter(key_func=get_remote_address)
 
+@asynccontextmanager
+async def lifespan(app):
+    """Mark any jobs that were still 'running' when the process last died as failed."""
+    try:
+        repo = JobRepository()
+        await repo.mark_stale_as_failed(older_than_minutes=10)
+        logger.info("Startup: stale running jobs marked as failed")
+    except Exception as e:
+        logger.warning(f"Startup stale-job cleanup failed: {e}")
+    yield
+
+
 app = FastAPI(
     title="SpecFlow Pipeline API",
     version="1.0.0",
     docs_url=None if _is_production() else "/docs",
     redoc_url=None if _is_production() else "/redoc",
     openapi_url=None if _is_production() else "/openapi.json",
+    lifespan=lifespan,
 )
 app.state.limiter = limiter
 
@@ -362,6 +384,10 @@ class ConversationMessage(BaseModel):
 class ConversationRequest(BaseModel):
     messages: list[ConversationMessage]
     session_context_keys: Optional[list[str]] = []
+
+
+class QueryRequest(BaseModel):
+    question: str
 
 
 # ---------------------------------------------------------------------------
@@ -585,14 +611,16 @@ async def run_session_async(request: Request, session_id: str, req: SessionRunRe
         _is_full_run = req.step is None
         _user_id_for_plan = auth.user_id
 
-        job = create_job(session_id)
+        job = await create_job(session_id, user_id=auth.user_id)
 
         async def _run_bg():
             # Use service-role client for all DB operations inside the background task.
             # The user's JWT (auth.client) expires during long-running pipeline runs.
             # Authorization was already verified above before this task was queued.
             bg_sm = SessionManager(client=get_supabase_client())
+            repo = JobRepository()
             job.status = "running"
+            await repo.update_status(job.job_id, "running")
             try:
                 async def _cb(event: dict):
                     await job.queue.put(event)
@@ -629,23 +657,27 @@ async def run_session_async(request: Request, session_id: str, req: SessionRunRe
                     "session_state": current_state,
                 })
                 job.status = "completed"
+                await repo.update_status(job.job_id, "completed", result=result)
             except HTTPException as e:
                 await job.queue.put({"type": "error", "message": e.detail, "status_code": e.status_code})
                 job.status = "failed"
+                await repo.update_status(job.job_id, "failed", error=e.detail)
             except ValueError as e:
                 msg = str(e)
                 await job.queue.put({"type": "error", "message": msg})
                 job.status = "failed"
+                await repo.update_status(job.job_id, "failed", error=msg)
             except Exception as e:
                 import traceback
                 traceback.print_exc()
                 await job.queue.put({"type": "error", "message": "Internal server error"})
                 job.status = "failed"
+                await repo.update_status(job.job_id, "failed", error="Internal server error")
             finally:
                 await job.queue.put(None)  # sentinel — tells SSE generator to close
 
         asyncio.create_task(_run_bg())
-        return {"job_id": job.job_id, "status": "queued"}
+        return {"job_id": job.job_id, "status": "pending"}
 
     except HTTPException:
         raise
@@ -699,6 +731,37 @@ async def stream_run(request: Request, session_id: str, job_id: str, auth: AuthC
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.get("/session/{session_id}/job/{job_id}/status")
+@limiter.limit(RATE_LIMIT_DEFAULT)
+async def get_job_status(
+    request: Request,
+    session_id: str,
+    job_id: str,
+    auth: AuthContext = Depends(require_auth_context),
+):
+    """
+    Poll durable job state after SSE disconnect or on reconnect.
+
+    Returns current status from the `jobs` table. When status is 'completed'
+    the result is included; when 'failed' the error message is included.
+    Use this endpoint instead of reconnecting to the SSE stream after a disconnect.
+    """
+    repo = JobRepository()
+    row = await repo.get_by_id(job_id)
+    if not row or row["session_id"] != session_id or row["user_id"] != auth.user_id:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return {
+        "job_id": job_id,
+        "session_id": session_id,
+        "status": row["status"],
+        "job_type": row["job_type"],
+        "result": row.get("result"),
+        "error": row.get("error"),
+        "created_at": row.get("created_at"),
+        "updated_at": row.get("updated_at"),
+    }
 
 
 @app.post("/session/{session_id}/prd")
@@ -782,11 +845,162 @@ async def generate_prd(request: Request, session_id: str, auth: AuthContext = De
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+async def _run_prd_background(
+    job: PrdJob,
+    context: dict,
+    session_id: str,
+    auth_client: Any,
+    auth_user_id: str,
+    sm: SessionManager,
+    current_state: dict,
+) -> None:
+    """
+    Background task for PRD generation. Runs independently of the HTTP connection so
+    the result survives a client disconnect. Pushes phase-update events to job.queue
+    for the initial SSE consumer, then calls finish_prd_job() which signals done_event
+    and writes to the jobs table so reconnecting clients can retrieve the outcome.
+    """
+    try:
+        repo = JobRepository()
+        await repo.update_status(job.job_id, "running")
+
+        agent = AgentFactory.create("prd")
+        result_container: dict = {}
+
+        async def run_agent() -> None:
+            result, quality = await agent.run(context)
+            result_container["result"] = result
+            result_container["quality"] = quality
+
+        agent_task = asyncio.create_task(run_agent())
+
+        progress = 30
+        await job.queue.put({"type": "phase", "phase": "Drafting PRD...", "progress": progress})
+        while not agent_task.done():
+            await asyncio.sleep(2)
+            if not agent_task.done():
+                progress = min(progress + 10, 85)
+                await job.queue.put({"type": "phase", "phase": "Drafting PRD...", "progress": progress})
+
+        await agent_task  # propagate exceptions
+
+        result = result_container["result"]
+        quality = result_container["quality"]
+        result = Pipeline._strip_reasoning_field(result)
+        quality = Pipeline._strip_reasoning_field(quality)
+        _, citation_metadata = Pipeline._extract_citation_metadata(
+            result.get("features", []) if isinstance(result, dict) else result
+        )
+
+        await job.queue.put({"type": "phase", "phase": "Quality check...", "progress": 90})
+
+        entry = MemoryEntry(
+            session_id=session_id,
+            user_id=auth_user_id,
+            agent_name="prd",
+            memory_key="prd",
+            content=result if isinstance(result, dict) else {"data": result},
+            metadata={"quality_score": quality, "citations": citation_metadata},
+        )
+        memory_repo = MemoryRepository(client=auth_client)
+        await memory_repo.save_for_session(entry)
+
+        # Increment PRD regeneration counter.
+        regen_counts = (current_state or {}).get("regeneration_counts", {})
+        regen_counts["prd"] = regen_counts.get("prd", 0) + 1
+        current_state["regeneration_counts"] = regen_counts
+        await sm.update_state(
+            session_id,
+            current_state,
+            step=current_state.get("last_completed_step", "prd"),
+        )
+
+        complete_payload = {
+            "type": "complete",
+            "prd": result,
+            "quality_score": quality,
+            "citations": citation_metadata,
+            "progress": 100,
+        }
+        await finish_prd_job(job.job_id, payload=complete_payload)
+
+    except Exception:
+        import traceback
+        traceback.print_exc()
+        await finish_prd_job(job.job_id, error="Internal server error")
+
+
 @app.post("/session/{session_id}/prd/stream")
 @limiter.limit(RATE_LIMIT_AI)
-async def generate_prd_stream(request: Request, session_id: str, auth: AuthContext = Depends(require_auth_context)):
-    """SSE streaming PRD generation. Sends phase updates then final result."""
+async def generate_prd_stream(
+    request: Request,
+    session_id: str,
+    job_id: Optional[str] = Query(None),
+    auth: AuthContext = Depends(require_auth_context),
+):
+    """
+    SSE streaming PRD generation. Sends phase updates then final result.
 
+    Pass ?job_id=<id> to reconnect after a disconnect rather than restarting generation.
+    Reconnect behaviour:
+      - Job in memory + running  → wait for completion, then emit stored result/error
+      - Job in memory + done     → emit stored result/error immediately
+      - Job in DB as completed   → fetch from memory_entries, emit complete event
+      - Job in DB as failed      → emit error event
+      - Orphaned / not found     → emit error asking user to regenerate
+    """
+    _SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+
+    # ── Reconnect path ────────────────────────────────────────────────────────
+    if job_id:
+        async def reconnect_stream():
+            prd_job = get_prd_job(job_id)
+            if prd_job is not None:
+                # Verify ownership
+                if prd_job.session_id != session_id or prd_job.user_id != auth.user_id:
+                    yield f"data: {json.dumps({'type': 'error', 'message': 'Job not found.'})}\n\n"
+                    return
+                if not prd_job.done_event.is_set():
+                    yield f"data: {json.dumps({'type': 'phase', 'phase': 'Resuming generation...', 'progress': 50})}\n\n"
+                    await prd_job.done_event.wait()
+                if prd_job.complete_payload:
+                    yield f"data: {json.dumps(prd_job.complete_payload)}\n\n"
+                else:
+                    msg = prd_job.error_message or "PRD generation failed"
+                    yield f"data: {json.dumps({'type': 'error', 'message': msg})}\n\n"
+                return
+
+            # Job evicted from memory — check DB
+            repo = JobRepository()
+            row = await repo.get_by_id(job_id)
+            if (
+                not row
+                or row.get("session_id") != session_id
+                or row.get("user_id") != auth.user_id
+            ):
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Job not found. Please generate a new PRD.'})}\n\n"
+                return
+
+            db_status = row.get("status")
+            if db_status == "completed":
+                memory_repo = MemoryRepository(client=auth.client)
+                mem_entry = await memory_repo.get_by_session_and_key(session_id, "prd")
+                if mem_entry:
+                    stored = Pipeline._unwrap_persisted_content(mem_entry.content)
+                    meta = mem_entry.metadata or {}
+                    yield f"data: {json.dumps({'type': 'complete', 'prd': stored, 'quality_score': meta.get('quality_score'), 'citations': meta.get('citations'), 'progress': 100})}\n\n"
+                else:
+                    yield f"data: {json.dumps({'type': 'error', 'message': 'PRD result not found in storage. Please regenerate.'})}\n\n"
+            elif db_status == "failed":
+                err = row.get("error") or "PRD generation failed on the server."
+                yield f"data: {json.dumps({'type': 'error', 'message': err})}\n\n"
+            else:
+                # running in DB but not in memory = orphaned by backend restart
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Generation was interrupted by a server restart. Please generate again.'})}\n\n"
+
+        return StreamingResponse(reconnect_stream(), media_type="text/event-stream", headers=_SSE_HEADERS)
+
+    # ── New generation path ───────────────────────────────────────────────────
     async def event_stream():
         try:
             sm = SessionManager(client=auth.client)
@@ -814,75 +1028,46 @@ async def generate_prd_stream(request: Request, session_id: str, auth: AuthConte
                 yield f"data: {json.dumps({'type': 'error', 'message': f'Run {chr(44).join(missing)} first'})}\n\n"
                 return
 
+            # Create background job and emit job_id so client can resume on disconnect
+            prd_job = await create_prd_job(session_id, auth.user_id)
+            yield f"data: {json.dumps({'type': 'job_created', 'job_id': prd_job.job_id})}\n\n"
+
             yield f"data: {json.dumps({'type': 'phase', 'phase': 'Loading context...', 'progress': 10})}\n\n"
             await asyncio.sleep(0.1)
 
-            yield f"data: {json.dumps({'type': 'phase', 'phase': 'Drafting PRD...', 'progress': 30})}\n\n"
-
-            agent = AgentFactory.create("prd")
-            result_container = {}
-
-            async def run_agent():
-                result, quality = await agent.run(context)
-                result_container["result"] = result
-                result_container["quality"] = quality
-
-            agent_task = asyncio.create_task(run_agent())
-
-            progress = 30
-            while not agent_task.done():
-                await asyncio.sleep(2)
-                if not agent_task.done():
-                    progress = min(progress + 10, 85)
-                    yield f"data: {json.dumps({'type': 'phase', 'phase': 'Drafting PRD...', 'progress': progress})}\n\n"
-
-            await agent_task  # propagate exceptions
-
-            result = result_container["result"]
-            quality = result_container["quality"]
-            result = Pipeline._strip_reasoning_field(result)
-            quality = Pipeline._strip_reasoning_field(quality)
-            _, citation_metadata = Pipeline._extract_citation_metadata(
-                result.get("features", []) if isinstance(result, dict) else result
+            # Launch background task — survives client disconnect
+            asyncio.create_task(
+                _run_prd_background(
+                    job=prd_job,
+                    context=context,
+                    session_id=session_id,
+                    auth_client=auth.client,
+                    auth_user_id=auth.user_id,
+                    sm=sm,
+                    current_state=current_state,
+                )
             )
 
-            yield f"data: {json.dumps({'type': 'phase', 'phase': 'Quality check...', 'progress': 90})}\n\n"
+            # Stream phase updates from background task queue until _done sentinel
+            while True:
+                event = await prd_job.queue.get()
+                if event.get("type") == "_done":
+                    break
+                yield f"data: {json.dumps(event)}\n\n"
 
-            entry = MemoryEntry(
-                session_id=session_id,
-                user_id=auth.user_id,
-                agent_name="prd",
-                memory_key="prd",
-                content=result if isinstance(result, dict) else {"data": result},
-                metadata={"quality_score": quality, "citations": citation_metadata},
-            )
-            memory_repo = MemoryRepository(client=auth.client)
-            await memory_repo.save_for_session(entry)
+            # Emit final result (already stored in prd_job by finish_prd_job)
+            if prd_job.complete_payload:
+                yield f"data: {json.dumps(prd_job.complete_payload)}\n\n"
+            else:
+                msg = prd_job.error_message or "PRD generation failed"
+                yield f"data: {json.dumps({'type': 'error', 'message': msg})}\n\n"
 
-            # Increment PRD regeneration counter.
-            regen_counts["prd"] = regen_counts.get("prd", 0) + 1
-            current_state["regeneration_counts"] = regen_counts
-            await sm.update_state(
-                session_id,
-                current_state,
-                step=current_state.get("last_completed_step", "prd"),
-            )
-
-            yield f"data: {json.dumps({'type': 'complete', 'prd': result, 'quality_score': quality, 'citations': citation_metadata, 'progress': 100})}\n\n"
-
-        except Exception as e:
+        except Exception:
             import traceback
             traceback.print_exc()
             yield f"data: {json.dumps({'type': 'error', 'message': 'Internal server error'})}\n\n"
 
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",
-        },
-    )
+    return StreamingResponse(event_stream(), media_type="text/event-stream", headers=_SSE_HEADERS)
 
 
 @app.get("/session/{session_id}/prd")
@@ -1651,6 +1836,62 @@ async def stream_conversation(
     )
 
 
+@app.post("/session/{session_id}/query")
+@limiter.limit(RATE_LIMIT_AI)
+async def query_session(
+    request: Request,
+    session_id: str,
+    body: QueryRequest,
+    auth: AuthContext = Depends(require_auth_context),
+):
+    """Answer a question grounded in the session's research entries, problems, and PRD."""
+    from services.rag.retrieval_service import RetrievalService
+
+    try:
+        sm = SessionManager(client=auth.client)
+        try:
+            await sm.load_session(session_id)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        retrieval = RetrievalService()
+        entries = await retrieval.retrieve(
+            query=body.question,
+            user_id=auth.user_id,
+            session_id=session_id,
+            top_k=12,
+        )
+
+        memory_repo = MemoryRepository(client=auth.client)
+        problems_entry = await memory_repo.get_by_session_and_key(session_id, "problems")
+        problems = Pipeline._unwrap_persisted_content(
+            problems_entry.content if problems_entry else []
+        )
+        prd_entry = await memory_repo.get_by_session_and_key(session_id, "prd")
+        prd = Pipeline._unwrap_persisted_content(prd_entry.content) if prd_entry else None
+
+        agent = AgentFactory.create("query")
+        result = await agent.execute_async(
+            task=body.question,
+            context={"research_entries": entries, "problems": problems, "prd": prd},
+        )
+
+        if isinstance(result, dict):
+            return {
+                "answer": result.get("answer", ""),
+                "cited_sources": result.get("cited_sources", []),
+                "suggested_next_steps": result.get("suggested_next_steps", []),
+            }
+
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+    except HTTPException:
+        raise
+    except Exception:
+        logger.error("query_session failed", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @app.get("/session/{session_id}")
 @limiter.limit(RATE_LIMIT_DEFAULT)
 async def get_session(request: Request, session_id: str, auth: AuthContext = Depends(require_auth_context)):
@@ -1736,4 +1977,32 @@ async def embed_research_entry(request: Request, req: EmbedRequest, auth: AuthCo
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=PIPELINE_PORT, reload=True)
+
+    # Default: reload only src/ + config/ (not whole backend/) to avoid reload storms
+    # from __pycache__, tests, tooling, etc. Set PIPELINE_RELOAD=false for a stable process.
+    _here = os.path.dirname(os.path.abspath(__file__))
+    _backend_root = os.path.abspath(os.path.join(_here, ".."))
+    _reload_dirs = [
+        os.path.join(_backend_root, "src"),
+        os.path.join(_backend_root, "config"),
+    ]
+    _reload = os.environ.get("PIPELINE_RELOAD", "true").lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    _run_kw: dict = {"host": "0.0.0.0", "port": PIPELINE_PORT}
+    if _reload:
+        _run_kw["reload"] = True
+        _run_kw["reload_dirs"] = _reload_dirs
+        _run_kw["reload_excludes"] = [
+            "**/__pycache__/**",
+            "**/*.py[cod]",
+            "**/.pytest_cache/**",
+            "**/.ruff_cache/**",
+            "**/.mypy_cache/**",
+        ]
+    else:
+        _run_kw["reload"] = False
+
+    uvicorn.run("main:app", **_run_kw)

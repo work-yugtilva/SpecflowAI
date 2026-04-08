@@ -15,11 +15,11 @@ def _make_repo(insert_result_data=None, select_result_data=None):
     """Build a ResearchRepository with a fully mocked Supabase client."""
     client = MagicMock()
 
-    insert_result = MagicMock()
-    insert_result.data = insert_result_data or []
-    insert_chain = MagicMock()
-    insert_chain.execute.return_value = insert_result
-    client.table.return_value.insert.return_value = insert_chain
+    upsert_result = MagicMock()
+    upsert_result.data = insert_result_data or []
+    upsert_chain = MagicMock()
+    upsert_chain.execute.return_value = upsert_result
+    client.table.return_value.upsert.return_value = upsert_chain
 
     select_result = MagicMock()
     select_result.data = select_result_data or []
@@ -49,7 +49,7 @@ async def test_save_global_ingest_inserts_all_items():
         {"title": "Item 2", "type": "review", "content": "content2", "tags": []},
     ]
     await repo.save_global_ingest("proj-1", items)
-    assert repo.client.table.return_value.insert.call_count == 2
+    assert repo.client.table.return_value.upsert.call_count == 2
 
 
 @pytest.mark.asyncio
@@ -72,14 +72,14 @@ async def test_save_global_ingest_falls_back_title_from_content():
     repo = _make_repo()
     items = [{"content": "A" * 100}]  # no title key
     await repo.save_global_ingest("proj-1", items)
-    call_kwargs = repo.client.table.return_value.insert.call_args[0][0]
+    call_kwargs = repo.client.table.return_value.upsert.call_args[0][0]
     assert call_kwargs["title"] == "A" * 80
 
 
 @pytest.mark.asyncio
 async def test_save_global_ingest_raises_on_db_error():
     repo = _make_repo()
-    repo.client.table.return_value.insert.return_value.execute.side_effect = Exception("DB down")
+    repo.client.table.return_value.upsert.return_value.execute.side_effect = Exception("DB down")
     with pytest.raises(Exception, match="DB down"):
         await repo.save_global_ingest("proj-1", [{"title": "x", "content": "y"}])
 

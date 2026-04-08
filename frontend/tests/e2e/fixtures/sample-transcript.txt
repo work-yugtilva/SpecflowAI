@@ -1,0 +1,7 @@
+E2E smoke transcript (sample research ingest)
+
+Facilitator: What slows you down most when turning discovery into specs?
+Participant: Rewriting call notes into something engineers can use. It takes hours and we still miss acceptance criteria.
+
+Facilitator: What would good look like?
+Participant: Paste a transcript, get a structured problem list and features with citations back to the call. Under twenty minutes end to end.

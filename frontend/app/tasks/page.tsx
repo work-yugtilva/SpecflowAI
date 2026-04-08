@@ -38,6 +38,15 @@ const TextShimmer = dynamic(
   () => import("@/components/ui/text-shimmer").then((m) => m.TextShimmer)
 );
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface LinearPayloadMeta {
+  session_id: string;
+  session_name: string;
+  task_count: number;
+  generated_at: string; // ISO string from linear_payload.metadata.generated_at
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const GROUPS: TaskType[] = ["Frontend", "Backend", "API", "Infrastructure"];
@@ -554,6 +563,8 @@ export default function TasksPage() {
   const [linearPushStatus, setLinearPushStatus] = useState<"success" | "error" | null>(null);
   const [linearPushError, setLinearPushError] = useState<string | null>(null);
   const [linearNotConnected, setLinearNotConnected] = useState(false);
+  const [linearPayloadMeta, setLinearPayloadMeta] = useState<LinearPayloadMeta | null>(null);
+  const [showLinearConfirm, setShowLinearConfirm] = useState(false);
   const [handoff, setHandoff] = useState<AgentHandoff | null>(null);
   const [handoffGenerating, setHandoffGenerating] = useState(false);
   const [handoffStatus, setHandoffStatus] = useState<"success" | "error" | null>(null);
@@ -579,6 +590,8 @@ export default function TasksPage() {
     setFromSession(false);
     setSessionDetail(null);
     setLinearPayload(null);
+    setLinearPayloadMeta(null);
+    setShowLinearConfirm(false);
     setLinearNotConnected(false);
     setHandoff(null);
     if (!activeSessionId) return;
@@ -599,7 +612,15 @@ export default function TasksPage() {
           if (adapted.length > 0) setSelectedId(adapted[0].id);
         }
         const lp = out?.linear_payload as LinearPayload | undefined;
-        if (lp) setLinearPayload(lp);
+        if (lp) {
+          setLinearPayload(lp);
+          setLinearPayloadMeta({
+            session_id: activeSessionId,
+            session_name: d.session?.session_name ?? activeSessionId ?? "Unknown session",
+            task_count: lp.metadata.total_issues,
+            generated_at: lp.metadata.generated_at,
+          });
+        }
         // Load existing handoff (404 = never generated, not an error)
         getHandoff(activeSessionId)
           .then((r) => { if (!cancelled && r.handoff) setHandoff(r.handoff); })
@@ -649,6 +670,9 @@ export default function TasksPage() {
     setStepsMap({});
     setFromSession(false);
     const isAutorun = isAutorunPending(activeSessionId ?? undefined);
+    setLinearPayload(null);
+    setLinearPayloadMeta(null);
+    setShowLinearConfirm(false);
     try {
       const inputData: PipelineInput = buildPipelineInputFromStorage(
         activeSessionId ?? undefined
@@ -895,40 +919,97 @@ export default function TasksPage() {
                 {linearPushError ? `Linear error: ${linearPushError}` : "Push failed — try again"}
               </span>
             )}
-            {/* Push to Linear */}
-            <button
-              onClick={handlePushToLinear}
-              disabled={linearPushing || !linearPayload || !activeSessionId}
-              title={
-                !activeSessionId
-                  ? "Select a session first"
-                  : !linearPayload
-                  ? "Run the full pipeline to generate the Linear payload first"
-                  : undefined
-              }
-              style={{
+            {/* Push to Linear — two-step confirm flow */}
+            {!showLinearConfirm ? (
+              <button
+                onClick={() => setShowLinearConfirm(true)}
+                disabled={!linearPayload || !activeSessionId}
+                title={
+                  !activeSessionId
+                    ? "Select a session first"
+                    : !linearPayload
+                    ? "Run the full pipeline to generate the Linear payload first"
+                    : "Review payload before pushing"
+                }
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 5,
+                  padding: "0.4rem 0.875rem",
+                  borderRadius: 8,
+                  fontSize: "0.8125rem",
+                  fontWeight: 500,
+                  background: !linearPayload || !activeSessionId ? "#F8F4EF" : "#FFFFFF",
+                  border: "1.5px solid #E4DDD4",
+                  color: !linearPayload || !activeSessionId ? "#9E9E9E" : "#0D0D0D",
+                  cursor: !linearPayload || !activeSessionId ? "not-allowed" : "pointer",
+                  fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                  opacity: !linearPayload || !activeSessionId ? 0.6 : 1,
+                  transition: "background 150ms ease, border-color 150ms ease",
+                }}
+              >
+                <svg width="11" height="11" viewBox="0 0 11 11" fill="none" style={{ opacity: !linearPayload ? 0.4 : 0.7 }}>
+                  <polygon points="5.5,1 10,9.5 1,9.5" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" fill="none" />
+                </svg>
+                Push to Linear
+              </button>
+            ) : (
+              <div style={{
                 display: "inline-flex",
                 alignItems: "center",
-                gap: 5,
-                padding: "0.4rem 0.875rem",
+                gap: 8,
+                padding: "5px 10px",
                 borderRadius: 8,
-                fontSize: "0.8125rem",
-                fontWeight: 500,
-                background: linearPushing || !linearPayload || !activeSessionId ? "#F8F4EF" : "#FFFFFF",
                 border: "1.5px solid #E4DDD4",
-                color: linearPushing || !linearPayload || !activeSessionId ? "#9E9E9E" : "#0D0D0D",
-                cursor: linearPushing || !linearPayload || !activeSessionId ? "not-allowed" : "pointer",
+                background: "#FDFCFB",
+                fontSize: "0.75rem",
                 fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
-                opacity: !linearPayload || !activeSessionId ? 0.6 : 1,
-                transition: "background 150ms ease, border-color 150ms ease",
-              }}
-            >
-              {/* Linear-style triangle icon */}
-              <svg width="11" height="11" viewBox="0 0 11 11" fill="none" style={{ opacity: linearPushing || !linearPayload ? 0.4 : 0.7 }}>
-                <polygon points="5.5,1 10,9.5 1,9.5" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" fill="none" />
-              </svg>
-              {linearPushing ? "Pushing…" : "Push to Linear"}
-            </button>
+              }}>
+                <span style={{ color: "#6B6B6B", whiteSpace: "nowrap" }}>
+                  <strong style={{ color: "#0D0D0D" }}>{linearPayloadMeta?.task_count ?? 0} tasks</strong>
+                  {" · "}
+                  {linearPayloadMeta?.session_name}
+                  {" · "}
+                  {linearPayloadMeta?.generated_at
+                    ? new Date(linearPayloadMeta.generated_at).toLocaleString()
+                    : "unknown time"}
+                </span>
+                <button
+                  onClick={async () => { await handlePushToLinear(); setShowLinearConfirm(false); }}
+                  disabled={linearPushing}
+                  style={{
+                    padding: "2px 10px",
+                    borderRadius: 6,
+                    fontSize: "0.75rem",
+                    fontWeight: 600,
+                    background: "#E8561B",
+                    color: "#FFFFFF",
+                    border: "none",
+                    cursor: linearPushing ? "not-allowed" : "pointer",
+                    opacity: linearPushing ? 0.6 : 1,
+                    fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                  }}
+                >
+                  {linearPushing ? "Pushing…" : "Confirm Push"}
+                </button>
+                <button
+                  onClick={() => setShowLinearConfirm(false)}
+                  style={{
+                    padding: "2px 8px",
+                    borderRadius: 6,
+                    fontSize: "0.75rem",
+                    fontWeight: 500,
+                    background: "transparent",
+                    color: "#6B6B6B",
+                    border: "1px solid #E4DDD4",
+                    cursor: "pointer",
+                    fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
             {/* Handoff status chips */}
             {handoffStatus === "success" && (
               <span style={{ fontSize: 11.5, fontWeight: 600, padding: "2px 10px", borderRadius: 20, background: "rgba(34,197,94,0.12)", color: "#15803D" }}>

@@ -1,4 +1,3 @@
-import { appendFileSync } from "fs";
 import { NextRequest, NextResponse } from "next/server";
 import {
   getRequiredAuthHeader,
@@ -6,9 +5,6 @@ import {
 } from "@/lib/supabase/get-auth-header";
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_PIPELINE_URL ?? "http://localhost:8001";
-
-const DEBUG_LOG_PATH =
-  "/Users/yug/Desktop/SpecFlow/.cursor/debug-a195e9.log";
 
 export async function GET(
   _req: NextRequest,
@@ -20,29 +16,6 @@ export async function GET(
       headers: authHeaders,
     });
     const data = await res.json();
-    // #region agent log
-    try {
-      const entries = (data as { entries?: unknown }).entries;
-      appendFileSync(
-        DEBUG_LOG_PATH,
-        `${JSON.stringify({
-          sessionId: "a195e9",
-          hypothesisId: "H-proxy",
-          location: "feedback/route.ts:GET",
-          message: "feedback proxy response",
-          data: {
-            httpStatus: res.status,
-            entriesIsArray: Array.isArray(entries),
-            entryCount: Array.isArray(entries) ? entries.length : null,
-            sessionTail: params.session_id.slice(-8),
-          },
-          timestamp: Date.now(),
-        })}\n`
-      );
-    } catch {
-      /* debug log write failed */
-    }
-    // #endregion
     return NextResponse.json(data, { status: res.status });
   } catch (error) {
     if (isMissingAuthSessionError(error)) {

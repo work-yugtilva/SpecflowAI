@@ -3,6 +3,7 @@
 import os
 import httpx
 import asyncio
+from cachetools import TTLCache
 from supabase import create_client, Client
 
 from services.config.load_env import load_root_env
@@ -11,6 +12,7 @@ from services.db.supabase_async import first_row_from_result
 load_root_env()
 
 _client: Client | None = None
+_jwt_cache: TTLCache = TTLCache(maxsize=500, ttl=60)
 
 
 def _read_supabase_url() -> str | None:
@@ -44,7 +46,13 @@ async def verify_supabase_jwt(jwt: str) -> str:
     Verify a Supabase access token against the Auth API and return the user id.
     This avoids trusting unsigned JWT payload fields inside request handlers.
     Uses async httpx to avoid blocking the event loop.
+    Results are cached in-memory (TTL=60s, max 500 entries) to eliminate
+    redundant round-trips on back-to-back requests.
     """
+    cached = _jwt_cache.get(jwt)
+    if cached is not None:
+        return cached
+
     url = _read_supabase_url()
     key = _read_supabase_anon_key()
     if not url or not key:
@@ -69,6 +77,7 @@ async def verify_supabase_jwt(jwt: str) -> str:
     user_id = payload.get("id")
     if not user_id:
         raise ValueError("Verified token missing user id")
+    _jwt_cache[jwt] = str(user_id)
     return str(user_id)
 
 

@@ -20,9 +20,11 @@ export default async function globalSetup() {
 
   const browser = await chromium.launch();
   const page = await browser.newPage();
-  await page.goto("http://localhost:3000/login");
-  await page.getByLabel(/email/i).fill(email);
-  await page.getByLabel(/password/i).fill(password);
+  await page.goto("http://localhost:3000/login", { waitUntil: "domcontentloaded" });
+  // Login inputs use placeholders only (no <label htmlFor>), so getByLabel fails.
+  await page.getByPlaceholder("Email address").waitFor({ state: "visible", timeout: 30_000 });
+  await page.getByPlaceholder("Email address").fill(email);
+  await page.getByPlaceholder("Password").first().fill(password);
   await page.getByRole("button", { name: /sign in|log in/i }).click();
   await page.waitForURL("**/dashboard", { timeout: 15_000 });
   await page.context().storageState({ path: path.join(authDir, "auth.json") });
