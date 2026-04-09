@@ -576,7 +576,7 @@ async def run_session(request: Request, session_id: str, req: SessionRunRequest,
 
 
 @app.post("/session/{session_id}/run/async", status_code=202)
-@limiter.limit(RATE_LIMIT_DEFAULT)
+@limiter.limit(RATE_LIMIT_AI)
 async def run_session_async(request: Request, session_id: str, req: SessionRunRequest, auth: AuthContext = Depends(require_auth_context)):
     """
     Non-blocking pipeline start. Immediately returns {job_id} with 202 Accepted
@@ -1965,7 +1965,7 @@ class EmbedRequest(BaseModel):
 
 
 @app.post("/research/embed")
-@limiter.limit(RATE_LIMIT_DEFAULT)
+@limiter.limit(RATE_LIMIT_AI)
 async def embed_research_entry(request: Request, req: EmbedRequest, auth: AuthContext = Depends(require_auth_context)):
     """Generate and store a vector embedding for a research entry."""
     try:
