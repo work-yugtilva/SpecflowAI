@@ -14,6 +14,72 @@ os.environ.setdefault("ANTHROPIC_API_KEY", "sk-test-key")
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src"))
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def clean_db():
+    """
+    Autouse fixture: Clean Supabase test database before each test.
+    
+    Deletes all rows from:
+    - pipelines
+    - memory_entries
+    - sessions
+    - context_entries
+    - research_entries
+    - session_events
+    - auth.users (best-effort, logs failures but doesn't fail the test)
+    
+    Skips cleanup if SUPABASE_URL is not a valid Supabase instance.
+    Uses service-role credentials (get_supabase_client()) to bypass RLS.
+    """
+    try:
+        from services.db.supabase_client import get_supabase_client
+        
+        # Skip cleanup if using test mock URL
+        url = os.environ.get("SUPABASE_URL", "").strip()
+        if not url or url == "https://test.supabase.co" or "test" in url.lower():
+            # Mocked Supabase, skip cleanup
+            yield
+            return
+        
+        client = get_supabase_client()
+        
+        # Tables to clean, in dependency order (FK constraints)
+        tables_to_clean = [
+            "pipelines",
+            "memory_entries", 
+            "sessions",
+            "context_entries",
+            "research_entries",
+            "session_events",
+        ]
+        
+        for table_name in tables_to_clean:
+            try:
+                response = client.table(table_name).delete().neq("id", None).execute()
+                row_count = len(response.data) if response.data else 0
+                if row_count > 0:
+                    print(f"[cleanup] Deleted {row_count} rows from {table_name}")
+            except Exception as e:
+                print(f"[cleanup] Warning: Failed to clean {table_name}: {e}")
+        
+        # Attempt to clean auth.users (best-effort, may fail if RLS denies access)
+        try:
+            response = client.table("users").delete().neq("id", None).execute()
+            row_count = len(response.data) if response.data else 0
+            if row_count > 0:
+                print(f"[cleanup] Deleted {row_count} rows from auth.users")
+        except Exception as e:
+            # Don't fail the test if auth.users cleanup fails
+            print(f"[cleanup] Info: auth.users cleanup skipped or failed: {e}")
+        
+        yield
+        
+    except Exception as e:
+        # If client creation fails, just skip cleanup and continue
+        print(f"[cleanup] Skipping cleanup: {e}")
+        yield
+
+
 @pytest_asyncio.fixture
 async def client():
     from httpx import AsyncClient, ASGITransport
