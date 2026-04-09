@@ -30,7 +30,7 @@ router.get('/', verifyAuth, async (req: AuthRequest, res) => {
     }
 
     const { scope, sessionId } = resolveScope(req);
-    const context = await contextService.getContext(req.user.id, scope, sessionId);
+    const context = await contextService.getContext(req.user.id, scope, sessionId, req.userClient);
 
     res.json({
       success: true,
@@ -57,7 +57,7 @@ router.get('/merged', verifyAuth, async (req: AuthRequest, res) => {
       throw new AppError(400, 'sessionId query param is required', 'MISSING_PARAM');
     }
 
-    const bundle = await contextService.getMergedContext(req.user.id, sessionId);
+    const bundle = await contextService.getMergedContext(req.user.id, sessionId, req.userClient);
 
     res.json({
       success: true,
@@ -91,7 +91,8 @@ router.post('/', verifyAuth, async (req: AuthRequest, res) => {
       req.user.id,
       req.body,
       scope,
-      sessionId
+      sessionId,
+      req.userClient
     );
 
     res.json({
@@ -119,7 +120,7 @@ router.post('/import-global', verifyAuth, async (req: AuthRequest, res) => {
       throw new AppError(400, 'sessionId is required', 'MISSING_PARAM');
     }
 
-    const copied = await contextService.importGlobalToSession(req.user.id, sessionId);
+    const copied = await contextService.importGlobalToSession(req.user.id, sessionId, req.userClient);
     res.json({
       success: true,
       data: copied,
@@ -141,7 +142,7 @@ router.delete('/', verifyAuth, async (req: AuthRequest, res) => {
     }
 
     const { scope, sessionId } = resolveScope(req);
-    await contextService.deleteContext(req.user.id, scope, sessionId);
+    await contextService.deleteContext(req.user.id, scope, sessionId, req.userClient);
 
     res.json({
       success: true,

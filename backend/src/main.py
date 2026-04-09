@@ -614,9 +614,11 @@ async def run_session_async(request: Request, session_id: str, req: SessionRunRe
         job = await create_job(session_id, user_id=auth.user_id)
 
         async def _run_bg():
-            # Use service-role client for all DB operations inside the background task.
-            # The user's JWT (auth.client) expires during long-running pipeline runs.
+            # INTERNAL BACKGROUND OPERATION: Use service-role client for all DB operations.
+            # Rationale: The user's JWT (auth.client) expires during long-running pipeline runs.
             # Authorization was already verified above before this task was queued.
+            # This is necessary to persist job status, session state, and memory entries
+            # independent of the user's session lifetime.
             bg_sm = SessionManager(client=get_supabase_client())
             repo = JobRepository()
             job.status = "running"

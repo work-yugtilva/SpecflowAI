@@ -1,3 +1,4 @@
+import { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseClient } from '@/lib/supabase.js';
 import {
   ContextScope,
@@ -86,9 +87,10 @@ export class ResearchService {
     userId: string,
     entry: ResearchEntry,
     scope: ContextScope = 'global',
-    sessionId?: string
+    sessionId?: string,
+    client?: SupabaseClient
   ): Promise<ResearchEntry> {
-    const supabase = getSupabaseClient();
+    const supabase = client || getSupabaseClient();
     const scopeKey = this.buildScopeKey(scope, sessionId);
 
     const payload = {
@@ -129,9 +131,10 @@ export class ResearchService {
    */
   async getEntries(
     userId: string,
-    options: ResearchListOptions = {}
+    options: ResearchListOptions = {},
+    client?: SupabaseClient
   ): Promise<PaginatedResponse<ResearchEntry>> {
-    const supabase = getSupabaseClient();
+    const supabase = client || getSupabaseClient();
     const scope = options.scope ?? 'global';
     const page = Math.max(1, options.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, options.pageSize ?? 25));
@@ -167,8 +170,8 @@ export class ResearchService {
   /**
    * Get a single research entry owned by the user.
    */
-  async getEntry(userId: string, entryId: string): Promise<ResearchEntry | null> {
-    const supabase = getSupabaseClient();
+  async getEntry(userId: string, entryId: string, client?: SupabaseClient): Promise<ResearchEntry | null> {
+    const supabase = client || getSupabaseClient();
 
     const { data, error } = await supabase
       .from(RESEARCH_TABLE)
@@ -191,9 +194,10 @@ export class ResearchService {
   async updateEntry(
     userId: string,
     entryId: string,
-    updates: Partial<ResearchEntry>
+    updates: Partial<ResearchEntry>,
+    client?: SupabaseClient
   ): Promise<ResearchEntry> {
-    const supabase = getSupabaseClient();
+    const supabase = client || getSupabaseClient();
 
     const payload: Record<string, unknown> = {};
     if (updates.type) payload.type = updates.type;
@@ -228,8 +232,8 @@ export class ResearchService {
   /**
    * Delete a single research entry owned by the user.
    */
-  async deleteEntry(userId: string, entryId: string): Promise<boolean> {
-    const supabase = getSupabaseClient();
+  async deleteEntry(userId: string, entryId: string, client?: SupabaseClient): Promise<boolean> {
+    const supabase = client || getSupabaseClient();
 
     const { error } = await supabase
       .from(RESEARCH_TABLE)
@@ -251,9 +255,10 @@ export class ResearchService {
     userId: string,
     query: string,
     scope: ContextScope = 'global',
-    sessionId?: string
+    sessionId?: string,
+    client?: SupabaseClient
   ): Promise<ResearchEntry[]> {
-    const supabase = getSupabaseClient();
+    const supabase = client || getSupabaseClient();
     const scopeKey = this.buildScopeKey(scope, sessionId);
     const term = query.trim();
 

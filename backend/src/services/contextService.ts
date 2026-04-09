@@ -1,3 +1,4 @@
+import { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabaseClient } from '@/lib/supabase.js';
 import { ContextData, ContextScope, ContextBundle } from '@/types/index.js';
 
@@ -48,9 +49,10 @@ export class ContextService {
     userId: string,
     context: ContextData,
     scope: ContextScope = 'global',
-    sessionId?: string
+    sessionId?: string,
+    client?: SupabaseClient
   ): Promise<ContextData> {
-    const supabase = getSupabaseClient();
+    const supabase = client || getSupabaseClient();
     const scopeKey = this.buildScopeKey(scope, sessionId);
 
     const { data, error } = await supabase
@@ -81,9 +83,10 @@ export class ContextService {
   async getContext(
     userId: string,
     scope: ContextScope = 'global',
-    sessionId?: string
+    sessionId?: string,
+    client?: SupabaseClient
   ): Promise<ContextData | null> {
-    const supabase = getSupabaseClient();
+    const supabase = client || getSupabaseClient();
     const scopeKey = this.buildScopeKey(scope, sessionId);
 
     const { data, error } = await supabase
@@ -101,9 +104,13 @@ export class ContextService {
     return this.toContextData(data as ContextRow);
   }
 
-  async getMergedContext(userId: string, sessionId: string): Promise<ContextBundle> {
-    const globalContext = await this.getContext(userId, 'global');
-    const sessionContext = await this.getContext(userId, 'session', sessionId);
+  async getMergedContext(
+    userId: string,
+    sessionId: string,
+    client?: SupabaseClient
+  ): Promise<ContextBundle> {
+    const globalContext = await this.getContext(userId, 'global', undefined, client);
+    const sessionContext = await this.getContext(userId, 'session', sessionId, client);
 
     return {
       global: globalContext,
@@ -118,11 +125,12 @@ export class ContextService {
 
   async importGlobalToSession(
     userId: string,
-    sessionId: string
+    sessionId: string,
+    client?: SupabaseClient
   ): Promise<ContextData | null> {
-    const globalContext = await this.getContext(userId, 'global');
+    const globalContext = await this.getContext(userId, 'global', undefined, client);
     if (!globalContext) return null;
-    return this.saveContext(userId, globalContext, 'session', sessionId);
+    return this.saveContext(userId, globalContext, 'session', sessionId, client);
   }
 
   /**
@@ -131,9 +139,10 @@ export class ContextService {
   async deleteContext(
     userId: string,
     scope: ContextScope = 'global',
-    sessionId?: string
+    sessionId?: string,
+    client?: SupabaseClient
   ): Promise<boolean> {
-    const supabase = getSupabaseClient();
+    const supabase = client || getSupabaseClient();
     const scopeKey = this.buildScopeKey(scope, sessionId);
 
     const { error } = await supabase

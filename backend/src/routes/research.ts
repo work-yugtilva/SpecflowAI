@@ -49,7 +49,7 @@ router.get('/', verifyAuth, async (req: AuthRequest, res) => {
       sessionId,
       page,
       pageSize,
-    });
+    }, req.userClient);
 
     res.json(result);
   } catch (error) {
@@ -86,7 +86,7 @@ router.post('/', verifyAuth, async (req: AuthRequest, res) => {
     }
 
     const { scope, sessionId } = resolveScope(req);
-    const entry = await researchService.createEntry(req.user.id, req.body, scope, sessionId);
+    const entry = await researchService.createEntry(req.user.id, req.body, scope, sessionId, req.userClient);
 
     res.status(201).json({
       success: true,
@@ -116,7 +116,7 @@ router.get('/search', verifyAuth, async (req: AuthRequest, res) => {
     }
 
     const { scope, sessionId } = resolveScope(req);
-    const results = await researchService.searchEntries(req.user.id, query, scope, sessionId);
+    const results = await researchService.searchEntries(req.user.id, query, scope, sessionId, req.userClient);
 
     res.json({
       success: true,
@@ -135,7 +135,7 @@ router.get('/:id', verifyAuth, async (req: AuthRequest, res) => {
       throw new AppError(401, 'User not authenticated', 'UNAUTHORIZED');
     }
 
-    const entry = await researchService.getEntry(req.user.id, req.params.id);
+    const entry = await researchService.getEntry(req.user.id, req.params.id, req.userClient);
 
     if (!entry) {
       throw new AppError(404, 'Research entry not found', 'NOT_FOUND');
@@ -178,7 +178,7 @@ router.put('/:id', verifyAuth, async (req: AuthRequest, res) => {
       });
     }
 
-    const entry = await researchService.updateEntry(req.user.id, req.params.id, req.body);
+    const entry = await researchService.updateEntry(req.user.id, req.params.id, req.body, req.userClient);
 
     res.json({
       success: true,
@@ -198,7 +198,7 @@ router.delete('/:id', verifyAuth, async (req: AuthRequest, res) => {
       throw new AppError(401, 'User not authenticated', 'UNAUTHORIZED');
     }
 
-    await researchService.deleteEntry(req.user.id, req.params.id);
+    await researchService.deleteEntry(req.user.id, req.params.id, req.userClient);
 
     res.json({
       success: true,

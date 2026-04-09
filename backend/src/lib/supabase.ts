@@ -47,6 +47,31 @@ export function getSupabaseClient(): SupabaseClient {
   return supabaseClient;
 }
 
+export function getUserSupabaseClient(jwt: string): SupabaseClient {
+  /**
+   * Create a fresh user-scoped Supabase client.
+   * Uses the anon key so Supabase RLS policies (user_id = auth.uid()) are enforced.
+   * Do NOT use as a singleton — create a new client per JWT/user.
+   */
+  const url = readSupabaseUrl();
+  const key = readSupabaseKey();
+  
+  if (!url || !key) {
+    throw new SupabaseConfigError(
+      'Missing Supabase environment variables. Set SUPABASE_URL and SUPABASE_ANON_KEY in the repo root .env.'
+    );
+  }
+
+  const client = createClient(url, key);
+  // Set JWT for authenticated requests - the client will use it in Authorization headers
+  client.auth.setSession({
+    access_token: jwt,
+    refresh_token: '',
+  });
+  
+  return client;
+}
+
 export function isSupabaseConfigError(error: unknown): error is SupabaseConfigError {
   return error instanceof SupabaseConfigError;
 }
