@@ -29,10 +29,11 @@ function randomId(): string {
 }
 
 const STREAMING_ID = "streaming";
+const EMPTY_CONTEXT_KEYS: string[] = [];
 
 export function useConversation({
   sessionId,
-  contextKeys = [],
+  contextKeys = EMPTY_CONTEXT_KEYS,
   maxHistory = 20,
 }: UseConversationOptions): UseConversationReturn {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -52,14 +53,14 @@ export function useConversation({
 
   const abortStream = useCallback(() => {
     abortControllerRef.current?.abort();
-  }, []);
+  }, [abortControllerRef]);
 
   const clearMessages = useCallback(() => {
-    abortControllerRef.current?.abort();
+    abortStream();
     setMessages([]);
     setError(null);
     setIsStreaming(false);
-  }, []);
+  }, [abortStream, setMessages, setError, setIsStreaming]);
 
   const sendMessage = useCallback(
     async (content: string) => {
@@ -185,7 +186,17 @@ export function useConversation({
         abortControllerRef.current = null;
       }
     },
-    [sessionId, contextKeys, maxHistory]
+    [
+      sessionId,
+      contextKeys,
+      maxHistory,
+      messagesRef,
+      isStreamingRef,
+      abortControllerRef,
+      setMessages,
+      setError,
+      setIsStreaming,
+    ]
   );
 
   return { messages, isStreaming, error, sendMessage, clearMessages, abortStream };

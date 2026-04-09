@@ -11,17 +11,17 @@ function readSupabaseUrl(): string | undefined {
   return process.env.SUPABASE_URL?.trim() || process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
 }
 
-function readSupabaseKey(): string | undefined {
-  return (
-    process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ||
-    process.env.SUPABASE_ANON_KEY?.trim() ||
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim()
-  );
+function readSupabaseServiceRoleKey(): string | undefined {
+  return process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
+}
+
+function readSupabaseAnonKey(): string | undefined {
+  return process.env.SUPABASE_ANON_KEY?.trim() || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
 }
 
 function requireSupabaseConfig(): { url: string; key: string } {
   const url = readSupabaseUrl();
-  const key = readSupabaseKey();
+  const key = readSupabaseServiceRoleKey();
   const missing: string[] = [];
 
   if (!url) missing.push('SUPABASE_URL');
@@ -54,22 +54,21 @@ export function getUserSupabaseClient(jwt: string): SupabaseClient {
    * Do NOT use as a singleton — create a new client per JWT/user.
    */
   const url = readSupabaseUrl();
-  const key = readSupabaseKey();
-  
+  const key = readSupabaseAnonKey();
+
   if (!url || !key) {
     throw new SupabaseConfigError(
       'Missing Supabase environment variables. Set SUPABASE_URL and SUPABASE_ANON_KEY in the repo root .env.'
     );
   }
 
-  const client = createClient(url, key);
-  // Set JWT for authenticated requests - the client will use it in Authorization headers
-  client.auth.setSession({
-    access_token: jwt,
-    refresh_token: '',
+  return createClient(url, key, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+    accessToken: async () => jwt,
   });
-  
-  return client;
 }
 
 export function isSupabaseConfigError(error: unknown): error is SupabaseConfigError {

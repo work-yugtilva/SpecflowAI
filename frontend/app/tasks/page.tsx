@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
 import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
@@ -632,7 +632,21 @@ export default function TasksPage() {
     return () => {
       cancelled = true;
     };
-  }, [activeSessionId]);
+  }, [
+    activeSessionId,
+    setTasks,
+    setSelectedId,
+    setStatusMap,
+    setStepsMap,
+    setFromSession,
+    setSessionDetail,
+    setLinearPayload,
+    setLinearPayloadMeta,
+    setShowLinearConfirm,
+    setLinearNotConnected,
+    setHandoff,
+    setQualityScore,
+  ]);
 
   const tasksByGroup = GROUPS.map((type) => ({
     type,
@@ -663,7 +677,7 @@ export default function TasksPage() {
     return stepsMap[taskId]?.[step.id] ?? step.done;
   }
 
-  async function handleGenerate() {
+  const handleGenerate = useCallback(async () => {
     setGenerating(true);
     setSelectedId(null);
     setStatusMap({});
@@ -704,7 +718,21 @@ export default function TasksPage() {
       if (isAutorun) clearAutorunFlag(activeSessionId ?? undefined);
       setGenerating(false);
     }
-  }
+  }, [
+    activeSessionId,
+    triggerOrphanedPrompt,
+    setGenerating,
+    setSelectedId,
+    setStatusMap,
+    setStepsMap,
+    setFromSession,
+    setLinearPayload,
+    setLinearPayloadMeta,
+    setShowLinearConfirm,
+    setQualityScore,
+    setTasks,
+    setSessionDetail,
+  ]);
 
   async function handleGeneratePrd() {
     if (!activeSessionId || prdGenerating) return;
@@ -737,7 +765,7 @@ export default function TasksPage() {
     if (prdStatus === null) return;
     const t = setTimeout(() => setPrdStatus(null), 5000);
     return () => clearTimeout(t);
-  }, [prdStatus]);
+  }, [prdStatus, setPrdStatus]);
 
   async function handlePushToLinear() {
     if (!linearPayload || linearPushing) return;
@@ -774,7 +802,7 @@ export default function TasksPage() {
     if (linearPushStatus === null) return;
     const t = setTimeout(() => setLinearPushStatus(null), 5000);
     return () => clearTimeout(t);
-  }, [linearPushStatus]);
+  }, [linearPushStatus, setLinearPushStatus]);
 
   async function handleGenerateHandoff() {
     if (!activeSessionId || handoffGenerating) return;
@@ -798,7 +826,7 @@ export default function TasksPage() {
     if (handoffStatus === null) return;
     const t = setTimeout(() => setHandoffStatus(null), 5000);
     return () => clearTimeout(t);
-  }, [handoffStatus]);
+  }, [handoffStatus, setHandoffStatus]);
 
   useEffect(() => {
     if (!showExportDropdown) return;
@@ -809,13 +837,12 @@ export default function TasksPage() {
     }
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, [showExportDropdown]);
+  }, [showExportDropdown, exportDropdownRef, setShowExportDropdown]);
 
   useEffect(() => {
     if (!activeSessionId || !isAutorunPending(activeSessionId)) return;
     handleGenerate();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSessionId]);
+  }, [activeSessionId, handleGenerate]);
 
   return (
     <div

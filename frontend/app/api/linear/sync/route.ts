@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getUserIntegrationAccessToken } from "@/lib/server/user-integrations";
 
 const LINEAR_API = "https://api.linear.app/graphql";
 const ALLOWED_OPERATIONS = new Set([
@@ -33,20 +34,19 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const { data: integration, error: integrationError } = await supabase
-    .from("user_integrations")
-    .select("access_token")
-    .eq("user_id", user.id)
-    .eq("provider", "linear")
-    .maybeSingle();
-  if (integrationError) {
+  let apiKey: string | null;
+  try {
+    apiKey = await getUserIntegrationAccessToken(user.id, "linear");
+  } catch (error) {
     return NextResponse.json(
-      { success: false, error: integrationError.message },
+      {
+        success: false,
+        error: error instanceof Error ? error.message : "Failed to load Linear integration",
+      },
       { status: 500 }
     );
   }
 
-  const apiKey = integration?.access_token ?? undefined;
   if (!apiKey) {
     return NextResponse.json(
       {

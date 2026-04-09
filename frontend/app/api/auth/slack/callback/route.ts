@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { upsertUserIntegration } from "@/lib/server/user-integrations";
 import {
   getOAuthAppOrigin,
   slackOAuthRedirectUri,
@@ -90,18 +91,14 @@ export async function GET(request: NextRequest) {
     app_id,
   };
 
-  const { error: dbError } = await supabase.from("user_integrations").upsert(
-    {
-      user_id: user.id,
+  try {
+    await upsertUserIntegration({
+      userId: user.id,
       provider: "slack",
-      access_token,
-      workspace_info: workspaceInfo,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "user_id,provider" }
-  );
-
-  if (dbError) {
+      accessToken: access_token,
+      workspaceInfo,
+    });
+  } catch {
     return NextResponse.redirect(
       `${origin}/settings/integrations?error=slack_save_failed`
     );

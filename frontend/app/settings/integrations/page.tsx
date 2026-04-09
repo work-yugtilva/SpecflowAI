@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getUserIntegrationWorkspaceInfo } from "@/lib/server/user-integrations";
 import { Sidebar } from "@/components/ui/sidebar";
 import LinearIntegrationCard from "./_components/LinearIntegrationCard";
 import SlackIntegrationCard from "./_components/SlackIntegrationCard";
@@ -15,29 +16,19 @@ export default async function IntegrationsPage() {
   let slackWorkspaceInfo: Record<string, unknown> = {};
 
   if (user) {
-    const [linearResult, slackResult] = await Promise.all([
-      supabase
-        .from("user_integrations")
-        .select("workspace_info")
-        .eq("user_id", user.id)
-        .eq("provider", "linear")
-        .single(),
-      supabase
-        .from("user_integrations")
-        .select("workspace_info")
-        .eq("user_id", user.id)
-        .eq("provider", "slack")
-        .single(),
+    const [linearInfo, slackInfo] = await Promise.all([
+      getUserIntegrationWorkspaceInfo(user.id, "linear"),
+      getUserIntegrationWorkspaceInfo(user.id, "slack"),
     ]);
 
-    if (linearResult.data) {
+    if (linearInfo) {
       linearConnected = true;
-      linearWorkspaceInfo = (linearResult.data.workspace_info as Record<string, unknown>) ?? {};
+      linearWorkspaceInfo = linearInfo;
     }
 
-    if (slackResult.data) {
+    if (slackInfo) {
       slackConnected = true;
-      slackWorkspaceInfo = (slackResult.data.workspace_info as Record<string, unknown>) ?? {};
+      slackWorkspaceInfo = slackInfo;
     }
   }
 

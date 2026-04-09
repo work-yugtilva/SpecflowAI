@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getUserIntegrationAccessToken } from "@/lib/server/user-integrations";
 
 interface SlackChannel {
   id: string;
@@ -22,18 +23,16 @@ export async function GET() {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { data: integration, error: integrationError } = await supabase
-    .from("user_integrations")
-    .select("access_token")
-    .eq("user_id", user.id)
-    .eq("provider", "slack")
-    .maybeSingle();
-
-  if (integrationError) {
-    return NextResponse.json({ error: integrationError.message }, { status: 500 });
+  let slackToken: string | null;
+  try {
+    slackToken = await getUserIntegrationAccessToken(user.id, "slack");
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Failed to load Slack integration" },
+      { status: 500 }
+    );
   }
 
-  const slackToken = integration?.access_token ?? undefined;
   if (!slackToken) {
     return NextResponse.json(
       {

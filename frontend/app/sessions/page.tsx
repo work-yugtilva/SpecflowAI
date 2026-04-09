@@ -26,7 +26,6 @@ import {
 import {
   getContextObject,
   getResearchPayload,
-  hasContextSaved,
   LS_CONTEXT,
   setAutorunFlag,
 } from "@/lib/pipeline-input";
@@ -103,11 +102,10 @@ function formatTs(iso: string): string {
 /** Merge API merged context with session-scoped localStorage (same source as pipeline input). */
 function mergedContextForSession(
   apiMerged: MergedContextPayload["merged"] | undefined,
-  sessionId: string | null
+  localContext: Record<string, unknown>
 ): Record<string, unknown> {
-  const local = getContextObject(sessionId) as Record<string, unknown>;
   const remote = (apiMerged ?? {}) as Record<string, unknown>;
-  return { ...local, ...remote };
+  return { ...localContext, ...remote };
 }
 
 function isContextGateComplete(m: Record<string, unknown>): boolean {
@@ -349,10 +347,22 @@ export default function SessionsPage() {
     ready: boolean;
   } | null>(null);
   const [contextPreviewLoading, setContextPreviewLoading] = useState(false);
+  const [localSessionContext, setLocalSessionContext] = useState<Record<string, unknown>>({});
+  const [localResearchCount, setLocalResearchCount] = useState(0);
+  const [localContextSaved, setLocalContextSaved] = useState(false);
+
+  const merged = contextPreview?.context?.merged;
+
+  const refreshLocalSessionData = useCallback((sessionId: string | null) => {
+    const nextContext = getContextObject(sessionId);
+    setLocalSessionContext(nextContext);
+    setLocalResearchCount(getResearchPayload(sessionId).length);
+    setLocalContextSaved(Object.keys(nextContext).length > 0);
+  }, [setLocalSessionContext, setLocalResearchCount, setLocalContextSaved]);
 
   const mergedForContextPanel = useMemo(
-    () => mergedContextForSession(contextPreview?.context?.merged, selectedId),
-    [contextPreview, selectedId]
+    () => mergedContextForSession(merged, localSessionContext),
+    [merged, localSessionContext]
   );
 
   const contextGateReady = useMemo(
@@ -390,7 +400,7 @@ export default function SessionsPage() {
   const openCreateModal = useCallback(() => {
     setIsCreating(true);
     setCreateError(null);
-  }, []);
+  }, [setIsCreating, setCreateError]);
 
   // Load sessions from localStorage
   useEffect(() => {
@@ -406,7 +416,7 @@ export default function SessionsPage() {
   const persistSessions = useCallback((updated: StoredSession[]) => {
     localStorage.setItem(LS_KEY, JSON.stringify(updated));
     setSessions(updated);
-  }, []);
+  }, [setSessions]);
 
   // Load detail when session selected
   const loadDetail = useCallback(async (id: string) => {
@@ -445,7 +455,15 @@ export default function SessionsPage() {
     } finally {
       setIsLoadingDetail(false);
     }
-  }, []);
+  }, [
+    selectedIdRef,
+    setIsLoadingDetail,
+    setRunError,
+    setDetail,
+    setSessions,
+    setSessionHandoff,
+    setBackendOffline,
+  ]);
 
   const handleSelectSession = useCallback(
     (id: string) => {
@@ -461,6 +479,10 @@ export default function SessionsPage() {
   );
 
   // Fetch context preview when a session is selected (Bearer required — Express /api/context/merged uses verifyAuth)
+  useEffect(() => {
+    refreshLocalSessionData(selectedId);
+  }, [selectedId, refreshLocalSessionData]);
+
   useEffect(() => {
     if (!selectedId) {
       setContextPreview(null);
@@ -503,7 +525,7 @@ export default function SessionsPage() {
       cancelled = true;
       ac.abort();
     };
-  }, [selectedId]);
+  }, [selectedId, setContextPreview, setContextPreviewLoading]);
 
   // Refetch when returning from /context (same tab — storage does not fire)
   useEffect(() => {
@@ -532,12 +554,14 @@ export default function SessionsPage() {
           setContextPreview(data);
         } catch {
           /* keep prior preview */
+        } finally {
+          refreshLocalSessionData(selectedId);
         }
       })();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [selectedId]);
+  }, [selectedId, refreshLocalSessionData, setContextPreview]);
 
   // Create session
   const handleCreate = useCallback(async () => {
@@ -574,7 +598,23 @@ export default function SessionsPage() {
     } finally {
       setIsCreatingSession(false);
     }
-  }, [newSessionName, sessions, persistSessions, loadDetail, selectSession]);
+  }, [
+    newSessionName,
+    sessions,
+    persistSessions,
+    loadDetail,
+    selectSession,
+    setCreateError,
+    setIsCreatingSession,
+    setSessionMode,
+    setNewSessionName,
+    setIsCreating,
+    setSelectedId,
+    setBootstrapSessionId,
+    setBootstrapError,
+    setShowContextBootstrap,
+    setBackendOffline,
+  ]);
 
   const handleBootstrapChoice = useCallback(
     async (mode: "import" | "fresh") => {
@@ -593,6 +633,7 @@ export default function SessionsPage() {
         } else {
           removeScopedRaw(bootstrapSessionId, "context");
         }
+        refreshLocalSessionData(bootstrapSessionId);
         setShowContextBootstrap(false);
         setBootstrapSessionId(null);
         // Context editing is handled inline on the Sessions page
@@ -602,7 +643,14 @@ export default function SessionsPage() {
         setIsApplyingBootstrap(false);
       }
     },
-    [bootstrapSessionId, router]
+    [
+      bootstrapSessionId,
+      refreshLocalSessionData,
+      setBootstrapError,
+      setIsApplyingBootstrap,
+      setShowContextBootstrap,
+      setBootstrapSessionId,
+    ]
   );
 
   // Build inputData from the ingest form (scoped to sessionId)
@@ -718,20 +766,28 @@ export default function SessionsPage() {
     } finally {
       setHandoffGenerating(false);
     }
-  }, [selectedId, isRunning]);
+  }, [
+    selectedId,
+    handoffGenerating,
+    isRunning,
+    setHandoffGenerating,
+    setHandoffGenerateError,
+    setHandoffGenerateOk,
+    setSessionHandoff,
+  ]);
 
   useEffect(() => {
     if (!handoffGenerateOk) return;
     const t = setTimeout(() => setHandoffGenerateOk(false), 5000);
     return () => clearTimeout(t);
-  }, [handoffGenerateOk]);
+  }, [handoffGenerateOk, setHandoffGenerateOk]);
 
   const stepStatuses = computeStepStatuses(detail);
   const nextStep = getNextStep(stepStatuses);
   const isSessionDone = detail?.session.status === "completed";
   const isSessionFailed = detail?.session.status === "failed";
-  const researchCount = getResearchPayload(selectedId ?? undefined).length;
-  const contextSaved = hasContextSaved(selectedId ?? undefined);
+  const researchCount = localResearchCount;
+  const contextSaved = localContextSaved;
 
   return (
     <>
