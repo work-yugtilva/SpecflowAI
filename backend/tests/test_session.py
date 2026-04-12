@@ -3,11 +3,12 @@ from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
-def _mock_session(session_id="sess-abc", name="My Session", status="active"):
+def _mock_session(session_id="sess-abc", name="My Session", status="active", user_id="test-user-id"):
     s = MagicMock()
     s.id = session_id
     s.session_name = name
     s.status = status
+    s.user_id = user_id
     s.created_at = datetime(2026, 1, 1)
     s.model_dump.return_value = {
         "id": session_id,

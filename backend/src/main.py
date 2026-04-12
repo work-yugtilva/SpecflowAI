@@ -64,7 +64,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 import asyncio
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Any, Literal, Optional
 from urllib.parse import urlparse
 from supabase import AsyncClient, acreate_client
@@ -183,7 +183,7 @@ def _is_production() -> bool:
 
 
 def _build_allowed_hosts() -> list[str]:
-    hosts = {"localhost", "127.0.0.1", "test", "*.vercel.app"}
+    hosts = {"localhost", "127.0.0.1", "test"}
     if not _is_production():
         hosts.update({"*.loca.lt", "*.ngrok-free.app", "*.trycloudflare.com"})
     raw_hosts = os.environ.get("ALLOWED_HOSTS", "")
@@ -417,9 +417,29 @@ async def value_error_handler(request: Request, exc: ValueError):
 # Request / Response models
 # ---------------------------------------------------------------------------
 
+_MAX_INPUT_NESTING = 10
+
+
+def _check_dict_depth(value: Any, max_depth: int = _MAX_INPUT_NESTING, current: int = 0) -> None:
+    """Reject payloads with dict/list nesting deeper than max_depth to prevent memory exhaustion."""
+    if current > max_depth:
+        raise ValueError(f"Input data nesting depth exceeds maximum of {max_depth} levels")
+    if isinstance(value, dict):
+        for v in value.values():
+            _check_dict_depth(v, max_depth, current + 1)
+    elif isinstance(value, list):
+        for item in value:
+            _check_dict_depth(item, max_depth, current + 1)
+
+
 class RunRequest(BaseModel):
     input_data: dict[str, Any]
     project_id: Optional[str] = None
+
+    @model_validator(mode="after")
+    def validate_nesting_depth(self) -> "RunRequest":
+        _check_dict_depth(self.input_data)
+        return self
 
 
 class CreateSessionRequest(BaseModel):
@@ -431,6 +451,11 @@ class CreateSessionRequest(BaseModel):
 class SessionRunRequest(BaseModel):
     input_data: dict[str, Any]
     step: Optional[str] = None      # agent name for interactive step-by-step mode
+
+    @model_validator(mode="after")
+    def validate_nesting_depth(self) -> "SessionRunRequest":
+        _check_dict_depth(self.input_data)
+        return self
 
 
 class AttachPipelineRequest(BaseModel):
@@ -661,6 +686,8 @@ async def run_session(request: Request, session_id: str, req: SessionRunRequest,
     try:
         sm = SessionManager(client=auth.client)
         session = await sm.load_session(session_id)
+        if session.user_id != auth.user_id:
+            raise HTTPException(status_code=404, detail="Session not found")
 
         # Only block full-pipeline re-runs on completed sessions.
         # Single-step re-runs (req.step is set) are always allowed so users
@@ -740,6 +767,8 @@ async def run_session_async(request: Request, session_id: str, req: SessionRunRe
     try:
         sm = SessionManager(client=auth.client)
         session = await sm.load_session(session_id)
+        if session.user_id != auth.user_id:
+            raise HTTPException(status_code=404, detail="Session not found")
 
         if session.status == SESSION_STATUS_COMPLETED and req.step is None:
             raise HTTPException(
@@ -776,6 +805,15 @@ async def run_session_async(request: Request, session_id: str, req: SessionRunRe
             repo = JobRepository()
             job.status = "running"
             await repo.update_status(job.job_id, "running")
+            # Defense-in-depth: re-verify session ownership with service-role client.
+            bg_session = await bg_sm.load_session(session_id)
+            if bg_session.user_id != auth.user_id:
+                logger.error("_run_bg ownership mismatch for session_id=%s user_id=%s", session_id, auth.user_id)
+                job.status = "failed"
+                await repo.update_status(job.job_id, "failed", error="Internal server error")
+                await job.queue.put({"type": "error", "message": "Internal server error"})
+                await job.queue.put(None)
+                return
             try:
                 async def _cb(event: dict):
                     await job.queue.put(event)
@@ -870,8 +908,12 @@ async def stream_run(request: Request, session_id: str, job_id: str, auth: Supab
         raise HTTPException(status_code=404, detail="Job not found")
 
     async def _generate():
+        deadline = asyncio.get_event_loop().time() + 600
         yield f"data: {json.dumps({'type': 'connected'})}\n\n"
         while True:
+            if asyncio.get_event_loop().time() > deadline:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Stream timeout'})}\n\n"
+                break
             try:
                 event = await asyncio.wait_for(job.queue.get(), timeout=25.0)
             except asyncio.TimeoutError:
@@ -930,7 +972,9 @@ async def generate_prd(request: Request, session_id: str, auth: SupabaseUser = D
     """
     try:
         sm = SessionManager(client=auth.client)
-        await sm.load_session(session_id)
+        session = await sm.load_session(session_id)
+        if session.user_id != auth.user_id:
+            raise HTTPException(status_code=404, detail="Session not found")
 
         current_state = await sm.get_current_state(session_id)
 
@@ -993,8 +1037,8 @@ async def generate_prd(request: Request, session_id: str, auth: SupabaseUser = D
     except HTTPException:
         raise
     except ValueError as e:
-        logger.error("generate_prd failed: %s", e, exc_info=True)
-        raise HTTPException(status_code=404, detail="Internal server error")
+        logger.error("generate_prd ValueError: %s", e, exc_info=True)
+        raise HTTPException(status_code=422, detail="Invalid input data")
     except Exception:
         logger.exception("generate_prd failed for session_id=%s", session_id)
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -1017,6 +1061,13 @@ async def _run_prd_background(
     try:
         repo = JobRepository()
         await repo.update_status(job.job_id, "running")
+        # Defense-in-depth: re-verify session ownership with service-role client.
+        svc_sm = SessionManager(client=get_supabase_client())
+        bg_session = await svc_sm.load_session(session_id)
+        if bg_session.user_id != auth_user_id:
+            logger.error("_run_prd_background ownership mismatch for session_id=%s user_id=%s", session_id, auth_user_id)
+            await finish_prd_job(job.job_id, error="Internal server error")
+            return
 
         agent = AgentFactory.create("prd")
         result_container: dict = {}
@@ -1157,7 +1208,10 @@ async def generate_prd_stream(
     async def event_stream():
         try:
             sm = SessionManager(client=auth.client)
-            await sm.load_session(session_id)
+            session = await sm.load_session(session_id)
+            if session.user_id != auth.user_id:
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Session not found'})}\n\n"
+                return
             current_state = await sm.get_current_state(session_id)
 
             # Check regeneration limit for PRD (3 regenerations max).

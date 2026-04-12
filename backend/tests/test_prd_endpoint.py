@@ -15,6 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 @pytest.mark.asyncio
 async def test_generate_prd_success(client):
     mock_sm = AsyncMock()
+    mock_sm.load_session.return_value.user_id = "test-user-id"
     mock_sm.get_current_state.return_value = {
         "outputs": {
             "product_context": {"companyName": "Acme"},
@@ -47,6 +48,7 @@ async def test_generate_prd_success(client):
 @pytest.mark.asyncio
 async def test_generate_prd_missing_prerequisites_returns_422(client):
     mock_sm = AsyncMock()
+    mock_sm.load_session.return_value.user_id = "test-user-id"
     mock_sm.get_current_state.return_value = {
         "outputs": {
             "problems": [{"title": "p1"}],
@@ -64,6 +66,7 @@ async def test_generate_prd_missing_prerequisites_returns_422(client):
 @pytest.mark.asyncio
 async def test_generate_prd_passes_product_context_to_agent(client):
     mock_sm = AsyncMock()
+    mock_sm.load_session.return_value.user_id = "test-user-id"
     mock_sm.get_current_state.return_value = {
         "outputs": {
             "product_context": {"companyName": "TestCo"},
