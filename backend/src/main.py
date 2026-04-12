@@ -64,7 +64,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
 import asyncio
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Any, Literal, Optional
 from urllib.parse import urlparse
 from supabase import AsyncClient, acreate_client
@@ -232,6 +232,8 @@ async def lifespan(app):
         logger.warning(f"Startup stale-job cleanup failed: {e}")
     yield
 
+
+_background_tasks: set[asyncio.Task] = set()
 
 app = FastAPI(
     title="SpecFlow Pipeline API",
@@ -421,9 +423,9 @@ class RunRequest(BaseModel):
 
 
 class CreateSessionRequest(BaseModel):
-    session_name: str
+    session_name: str = Field(..., min_length=1, max_length=200)
     project_id: Optional[str] = None
-    metadata: Optional[dict] = {}
+    metadata: Optional[dict] = Field(default={})
 
 
 class SessionRunRequest(BaseModel):
@@ -437,8 +439,8 @@ class AttachPipelineRequest(BaseModel):
 
 
 class EditPRDSectionRequest(BaseModel):
-    section_key: str
-    instruction: str
+    section_key: str = Field(..., max_length=200)
+    instruction: str = Field(..., max_length=10_000)
     current_section_value: Any
     full_prd: dict
 
@@ -454,7 +456,7 @@ class FeedbackEntry(BaseModel):
 
 class ConversationMessage(BaseModel):
     role: Literal["user", "assistant"]
-    content: str
+    content: str = Field(..., max_length=50_000)
 
 
 class ConversationRequest(BaseModel):
@@ -463,12 +465,12 @@ class ConversationRequest(BaseModel):
 
 
 class QueryRequest(BaseModel):
-    question: str
+    question: str = Field(..., max_length=10_000)
 
 
 class IntegrationUpsertRequest(BaseModel):
-    access_token: str
-    refresh_token: Optional[str] = None
+    access_token: str = Field(..., max_length=4_096)
+    refresh_token: Optional[str] = Field(None, max_length=4_096)
     metadata: Optional[dict[str, Any]] = None
 
 
@@ -583,6 +585,7 @@ async def run_pipeline(request: Request, req: RunRequest, auth: SupabaseUser = D
 # ---------------------------------------------------------------------------
 
 @app.get("/user/plan")
+@limiter.limit(GENERAL_API_LIMIT)
 async def get_user_plan(request: Request, auth: SupabaseUser = Depends(require_auth)):
     """Return the authenticated user's plan and current usage."""
     try:
@@ -602,6 +605,7 @@ async def get_user_plan(request: Request, auth: SupabaseUser = Depends(require_a
 # ---------------------------------------------------------------------------
 
 @app.get("/sessions")
+@limiter.limit(GENERAL_API_LIMIT)
 async def list_sessions(request: Request, auth: SupabaseUser = Depends(require_auth)):
     """Return all sessions ordered by created_at DESC."""
     try:
@@ -829,7 +833,9 @@ async def run_session_async(request: Request, session_id: str, req: SessionRunRe
             finally:
                 await job.queue.put(None)  # sentinel — tells SSE generator to close
 
-        asyncio.create_task(_run_bg())
+        task = asyncio.create_task(_run_bg())
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
         return {"job_id": job.job_id, "status": "pending"}
 
     except HTTPException:
@@ -860,7 +866,7 @@ async def stream_run(request: Request, session_id: str, job_id: str, auth: Supab
     await sm.load_session(session_id)
 
     job = get_job(job_id)
-    if not job or job.session_id != session_id:
+    if not job or job.session_id != session_id or job.user_id != auth.user_id:
         raise HTTPException(status_code=404, detail="Job not found")
 
     async def _generate():
@@ -1183,7 +1189,7 @@ async def generate_prd_stream(
             await asyncio.sleep(0.1)
 
             # Launch background task — survives client disconnect
-            asyncio.create_task(
+            _prd_task = asyncio.create_task(
                 _run_prd_background(
                     job=prd_job,
                     context=context,
@@ -1193,6 +1199,8 @@ async def generate_prd_stream(
                     current_state=current_state,
                 )
             )
+            _background_tasks.add(_prd_task)
+            _prd_task.add_done_callback(_background_tasks.discard)
 
             # Stream phase updates from background task queue until _done sentinel
             while True:

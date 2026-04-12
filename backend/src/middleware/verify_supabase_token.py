@@ -14,7 +14,9 @@ load_root_env()
 
 logger = logging.getLogger(__name__)
 
-_async_client: AsyncClient | None = None
+# IMPORTANT: This client is ONLY for auth.get_user() token verification.
+# It uses the service-role key. Never use it for data reads — it bypasses RLS.
+_auth_verification_client: AsyncClient | None = None
 _client_lock = asyncio.Lock()
 
 
@@ -27,13 +29,13 @@ def _read_service_role_key() -> str | None:
 
 
 async def _get_async_supabase_client() -> AsyncClient:
-    global _async_client
-    if _async_client is not None:
-        return _async_client
+    global _auth_verification_client
+    if _auth_verification_client is not None:
+        return _auth_verification_client
 
     async with _client_lock:
-        if _async_client is not None:
-            return _async_client
+        if _auth_verification_client is not None:
+            return _auth_verification_client
 
         url = _read_supabase_url()
         service_role_key = _read_service_role_key()
@@ -43,8 +45,8 @@ async def _get_async_supabase_client() -> AsyncClient:
                 detail="Missing Supabase environment variables",
             )
 
-        _async_client = await acreate_client(url, service_role_key)
-        return _async_client
+        _auth_verification_client = await acreate_client(url, service_role_key)
+        return _auth_verification_client
 
 
 @dataclass
@@ -79,7 +81,7 @@ async def verify_supabase_token(authorization: str | None) -> SupabaseUser:
         raise HTTPException(status_code=401, detail=error_message)
 
     role = getattr(user, "role", "") or ""
-    logger.info("FastAPI auth verified user_id=%s", user.id)
+    logger.debug("FastAPI auth verified user_id=%s", user.id)
     return SupabaseUser(
         id=str(user.id),
         email=str(getattr(user, "email", "") or ""),
