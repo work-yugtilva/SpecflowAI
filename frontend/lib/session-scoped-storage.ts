@@ -6,7 +6,6 @@ const PREFIX = "specflow_s_";
 
 export type SessionScopedSuffix =
   | "context"
-  | "research"
   | "pending_input"
   | "autorun"
   | "ingest_entries";
@@ -29,11 +28,13 @@ function migrationFlagKey(sessionId: string, suffix: SessionScopedSuffix): strin
 
 function hasMigrated(sessionId: string, suffix: SessionScopedSuffix): boolean {
   if (typeof window === "undefined") return false;
+  // SAFE: UI state only — no auth tokens, no user-generated content.
   return localStorage.getItem(migrationFlagKey(sessionId, suffix)) === "1";
 }
 
 function markMigrated(sessionId: string, suffix: SessionScopedSuffix): void {
   try {
+    // SAFE: UI state only — no auth tokens, no user-generated content.
     localStorage.setItem(migrationFlagKey(sessionId, suffix), "1");
   } catch {
     /* ignore */
@@ -46,6 +47,7 @@ export function readScopedRaw(
   suffix: SessionScopedSuffix
 ): string | null {
   if (typeof window === "undefined") return null;
+  // SAFE: UI state only — no auth tokens, no user-generated content.
   return localStorage.getItem(scopedStorageKey(sessionId, suffix));
 }
 
@@ -56,6 +58,7 @@ export function writeScopedRaw(
 ): void {
   if (typeof window === "undefined") return;
   try {
+    // SAFE: UI state only — no auth tokens, no user-generated content.
     localStorage.setItem(scopedStorageKey(sessionId, suffix), value);
   } catch {
     /* ignore */
@@ -68,6 +71,7 @@ export function removeScopedRaw(
 ): void {
   if (typeof window === "undefined") return;
   try {
+    // SAFE: UI state only — no auth tokens, no user-generated content.
     localStorage.removeItem(scopedStorageKey(sessionId, suffix));
   } catch {
     /* ignore */
@@ -84,14 +88,17 @@ export function migrateGlobalToScopedOnce(
 ): void {
   if (typeof window === "undefined" || hasMigrated(sessionId, suffix)) return;
   const scopedKey = scopedStorageKey(sessionId, suffix);
+  // SAFE: UI state only — no auth tokens, no user-generated content.
   const existing = localStorage.getItem(scopedKey);
   if (existing != null && existing !== "") {
     markMigrated(sessionId, suffix);
     return;
   }
+  // SAFE: UI state only — no auth tokens, no user-generated content.
   const globalVal = localStorage.getItem(globalKey);
   if (globalVal != null && globalVal !== "" && globalVal !== "[]" && globalVal !== "{}") {
     try {
+      // SAFE: UI state only — no auth tokens, no user-generated content.
       localStorage.setItem(scopedKey, globalVal);
     } catch {
       /* ignore */

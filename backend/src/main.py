@@ -15,6 +15,7 @@ REQUIRED_ENV_VARS = [
     "SUPABASE_URL",
     "SUPABASE_SERVICE_ROLE_KEY",
     "SUPABASE_ANON_KEY",
+    "TOKEN_ENCRYPTION_KEY",
 ]
 
 
@@ -52,18 +53,21 @@ if dsn := os.environ.get("SENTRY_DSN"):
 
 from dataclasses import dataclass
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
-from slowapi import Limiter
-from slowapi.util import get_remote_address
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from fastapi.responses import JSONResponse, Response, StreamingResponse
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 import asyncio
 from pydantic import BaseModel
 from typing import Any, Literal, Optional
 from urllib.parse import urlparse
+from supabase import AsyncClient, acreate_client
 
 from services.pipeline import Pipeline
 from services.session.session_manager import SessionManager
@@ -83,8 +87,20 @@ from services.job_registry import (
     PrdJob,
 )
 from services.job_repository import JobRepository
-from services.db.supabase_client import get_supabase_client, get_user_supabase_client, verify_supabase_jwt
+from services.db.supabase_client import get_supabase_client
+from middleware.verify_supabase_token import SupabaseUser, require_auth
 from services.plan.plan_service import PlanService
+from services.integration_service import (
+    save_integration,
+    get_integration,
+    delete_integration,
+)
+from services.security.rate_limiter import (
+    limiter,
+    PIPELINE_RUN_LIMIT,
+    AGENT_HANDOFF_LIMIT,
+    GENERAL_API_LIMIT,
+)
 from sentry_sdk.integrations.asgi import SentryAsgiMiddleware
 
 
@@ -92,45 +108,50 @@ from sentry_sdk.integrations.asgi import SentryAsgiMiddleware
 # Auth helpers
 # ---------------------------------------------------------------------------
 
-_bearer_scheme = HTTPBearer(auto_error=False)
-
 
 @dataclass
 class AuthContext:
     user_id: str
-    client: Any  # User-scoped Supabase client (anon key + JWT → RLS enforced)
+    client: Any
+    id: str = ""
+    email: str = ""
+    role: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.id:
+            self.id = self.user_id
 
 
-async def get_auth_context(
-    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_bearer_scheme),
-) -> Optional[AuthContext]:
-    """
-    FastAPI dependency: extracts Bearer JWT from Authorization header.
-    Returns AuthContext(user_id, user-scoped-client) when a valid JWT is present.
-    Invalid or missing credentials return None so callers can choose whether
-    the route is public or protected.
-    """
-    if not credentials:
-        return None
-    jwt = credentials.credentials
-    try:
-        user_id = await verify_supabase_jwt(jwt)
-        client = get_user_supabase_client(jwt)
-        return AuthContext(user_id=user_id, client=client)
-    except Exception:
-        return None
+# Backward-compatible export for existing dependency overrides/tests.
+require_auth_context = require_auth
 
 
-async def require_auth_context(
-    auth: Optional[AuthContext] = Depends(get_auth_context),
-) -> AuthContext:
-    if auth is None:
-        raise HTTPException(
-            status_code=401,
-            detail="Authentication required",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    return auth
+def _read_supabase_url() -> str | None:
+    return os.environ.get("SUPABASE_URL") or os.environ.get("NEXT_PUBLIC_SUPABASE_URL")
+
+
+def _read_supabase_anon_key() -> str | None:
+    return os.environ.get("SUPABASE_ANON_KEY") or os.environ.get("NEXT_PUBLIC_SUPABASE_ANON_KEY")
+
+
+def _parse_bearer_token(auth_header: str | None) -> str:
+    if not auth_header or not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    token = auth_header[len("Bearer "):].strip()
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    return token
+
+
+async def _create_user_async_supabase_client(auth_header: str | None) -> AsyncClient:
+    token = _parse_bearer_token(auth_header)
+    url = _read_supabase_url()
+    anon_key = _read_supabase_anon_key()
+    if not url or not anon_key:
+        raise RuntimeError("Missing Supabase environment variables")
+    client = await acreate_client(url, anon_key)
+    client.postgrest.auth(token)
+    return client
 
 
 # ---------------------------------------------------------------------------
@@ -188,39 +209,23 @@ def _build_allowed_hosts() -> list[str]:
     return sorted(hosts)
 
 
-def _build_allowed_origins() -> list[str]:
-    origins = set(LOCAL_ORIGINS)
-    raw_origins = os.environ.get("ALLOWED_ORIGINS", "")
-
-    for origin in raw_origins.split(","):
-        cleaned = origin.strip()
-        if cleaned:
-            origins.add(cleaned)
-
-    for env_name in (
-        "FRONTEND_URL",
-        "NEXT_PUBLIC_SITE_URL",
-        "NEXT_PUBLIC_APP_URL",
-        "URL",
-    ):
-        value = os.environ.get(env_name)
-        if value:
-            origins.add(value.strip())
-
-    return sorted(origins)
-
-
-def _build_allowed_origin_regex() -> str:
-    return (
-        r"^https:\/\/[a-z0-9-]+\.(vercel\.app|loca\.lt|ngrok-free\.app|trycloudflare\.com)$"
-    )
+def _get_allowed_origins() -> list[str]:
+    raw = os.getenv("ALLOWED_ORIGINS", "")
+    if not raw:
+        if os.getenv("ENVIRONMENT", "").lower() == "production":
+            raise RuntimeError(
+                "[SECURITY] ALLOWED_ORIGINS must be set in production. "
+                "Example: https://app.specflow.ai,https://specflow.ai"
+            )
+        return [
+            "http://localhost:3000",
+            "http://localhost:3001",
+            "http://127.0.0.1:3000",
+        ]
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 
 MAX_REQUEST_BODY_BYTES = 512 * 1024  # 512 KB
-RATE_LIMIT_AI      = "10/minute"   # AI-triggering endpoints
-RATE_LIMIT_DEFAULT = "60/minute"   # All other endpoints
-
-limiter = Limiter(key_func=get_remote_address)
 
 @asynccontextmanager
 async def lifespan(app):
@@ -243,16 +248,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.state.limiter = limiter
-
-LOCAL_ORIGINS = [
-    "http://localhost",
-    "http://127.0.0.1",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:3001",
-    "http://127.0.0.1:3001",
-]
-
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 class RequestBodySizeLimitMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
@@ -303,13 +299,27 @@ class RequestBodySizeLimitMiddleware(BaseHTTPMiddleware):
         return await call_next(request)
 
 
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return response
+
+
+app.add_middleware(SecurityHeadersMiddleware)
+if os.getenv("ENVIRONMENT", "").lower() == "production":
+    app.add_middleware(HTTPSRedirectMiddleware)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_build_allowed_origins(),
-    allow_origin_regex=_build_allowed_origin_regex(),
+    allow_origins=_get_allowed_origins(),
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
+    expose_headers=["RateLimit-Limit", "RateLimit-Remaining", "RateLimit-Reset"],
+    max_age=600,
 )
 app.add_middleware(SentryAsgiMiddleware)
 app.add_middleware(RequestBodySizeLimitMiddleware)
@@ -317,12 +327,84 @@ app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=_build_allowed_hosts())
 
 
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    get_validation_errors = exc.errors
+    validation_errors = get_validation_errors()
+    logger.warning(
+        "Validation error on %s %s: %s",
+        request.method,
+        request.url.path,
+        validation_errors,
+        extra={
+            "user_id": getattr(
+                getattr(request.state, "user", None), "user_id", "anonymous"
+            )
+        },
+    )
+    safe_errors = [
+        {
+            "field": " -> ".join(str(loc) for loc in err.get("loc", [])),
+            "message": err.get("msg", "Invalid value"),
+        }
+        for err in validation_errors
+    ]
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": "Validation failed",
+            "details": safe_errors,
+            "detail": safe_errors,
+        },
+    )
+
+
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(
+    request: Request, exc: StarletteHTTPException
+) -> JSONResponse:
+    if exc.status_code >= 500:
+        logger.error(
+            "HTTP %s on %s %s",
+            exc.status_code,
+            request.method,
+            request.url.path,
+        )
+        return JSONResponse(
+            status_code=exc.status_code,
+            content={
+                "error": "An internal error occurred.",
+                "detail": "An internal error occurred.",
+            },
+        )
+    detail = exc.detail if isinstance(exc.detail, str) else "Request failed"
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": detail, "detail": detail},
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception(
+        "Unhandled exception on %s %s",
+        request.method,
+        request.url.path,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={"error": "An internal error occurred."},
+    )
+
+
 # NOTE: This handler catches all unguarded ValueErrors across the application.
 # Any route that needs a different status code for ValueError (e.g., 404)
 # must catch the exception locally before it reaches this handler.
 @app.exception_handler(ValueError)
 async def value_error_handler(request: Request, exc: ValueError):
-    msg = str(exc)
+    msg = exc.__str__()
     if msg.startswith("INCOMPLETE_CONTEXT:"):
         fields = msg.split(":", 1)[1].split(",")
         return JSONResponse(
@@ -390,6 +472,12 @@ class QueryRequest(BaseModel):
     question: str
 
 
+class IntegrationUpsertRequest(BaseModel):
+    access_token: str
+    refresh_token: Optional[str] = None
+    metadata: Optional[dict[str, Any]] = None
+
+
 # ---------------------------------------------------------------------------
 # Routes — health + legacy /run (unchanged)
 # ---------------------------------------------------------------------------
@@ -398,26 +486,97 @@ PIPELINE_PORT = int(os.environ.get("PIPELINE_PORT", "8001"))
 
 
 @app.get("/health")
-@limiter.limit(RATE_LIMIT_DEFAULT)
 async def health(request: Request):
     return {"status": "ok", "service": "specflow-pipeline"}
 
 
+@app.get("/integrations/{provider}")
+async def get_user_integration(
+    request: Request,
+    provider: str,
+    auth: SupabaseUser = Depends(require_auth),
+):
+    try:
+        user_client = await _create_user_async_supabase_client(
+            request.headers.get("authorization")
+        )
+        integration = await get_integration(user_client, auth.user_id, provider)
+        return {"success": True, "data": integration}
+    except ValueError:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to decrypt integration token",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("get_user_integration error: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.put("/integrations/{provider}")
+@limiter.limit(GENERAL_API_LIMIT)
+async def upsert_user_integration(
+    request: Request,
+    provider: str,
+    req: IntegrationUpsertRequest,
+    auth: SupabaseUser = Depends(require_auth),
+):
+    try:
+        user_client = await _create_user_async_supabase_client(
+            request.headers.get("authorization")
+        )
+        saved = await save_integration(
+            client=user_client,
+            user_id=auth.user_id,
+            provider=provider,
+            access_token=req.access_token,
+            refresh_token=req.refresh_token,
+            metadata=req.metadata,
+        )
+        return {"success": True, "data": saved}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("upsert_user_integration error: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.delete("/integrations/{provider}")
+@limiter.limit(GENERAL_API_LIMIT)
+async def remove_user_integration(
+    request: Request,
+    provider: str,
+    auth: SupabaseUser = Depends(require_auth),
+):
+    try:
+        user_client = await _create_user_async_supabase_client(
+            request.headers.get("authorization")
+        )
+        await delete_integration(user_client, auth.user_id, provider)
+        return {"success": True}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("remove_user_integration error: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 @app.post("/run")
-@limiter.limit(RATE_LIMIT_AI)
-async def run_pipeline(request: Request, req: RunRequest, auth: AuthContext = Depends(require_auth_context)):
+@limiter.limit(GENERAL_API_LIMIT)
+async def run_pipeline(request: Request, req: RunRequest, auth: SupabaseUser = Depends(require_auth)):
     try:
         print(f"[pipeline] Starting run | project_id={req.project_id}")
         pipeline = Pipeline()
         result = await pipeline.run(req.input_data, req.project_id)
         print(f"[pipeline] Run complete | keys={list(result.keys())}")
         return {"success": True, "data": result}
-    except ValueError as e:
+    except ValueError:
         raise
     except Exception as e:
-        import traceback
-        print(f"[pipeline] Error: {e}")
-        traceback.print_exc()
+        logger.exception("[pipeline] Error")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -426,8 +585,7 @@ async def run_pipeline(request: Request, req: RunRequest, auth: AuthContext = De
 # ---------------------------------------------------------------------------
 
 @app.get("/user/plan")
-@limiter.limit(RATE_LIMIT_DEFAULT)
-async def get_user_plan(request: Request, auth: AuthContext = Depends(require_auth_context)):
+async def get_user_plan(request: Request, auth: SupabaseUser = Depends(require_auth)):
     """Return the authenticated user's plan and current usage."""
     try:
         plan_svc = PlanService()
@@ -435,8 +593,7 @@ async def get_user_plan(request: Request, auth: AuthContext = Depends(require_au
     except HTTPException:
         raise
     except Exception:
-        import traceback
-        traceback.print_exc()
+        logger.exception("get_user_plan failed")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -447,8 +604,7 @@ async def get_user_plan(request: Request, auth: AuthContext = Depends(require_au
 # ---------------------------------------------------------------------------
 
 @app.get("/sessions")
-@limiter.limit(RATE_LIMIT_DEFAULT)
-async def list_sessions(request: Request, auth: AuthContext = Depends(require_auth_context)):
+async def list_sessions(request: Request, auth: SupabaseUser = Depends(require_auth)):
     """Return all sessions ordered by created_at DESC."""
     try:
         print(f"[session] Listing sessions")
@@ -458,15 +614,13 @@ async def list_sessions(request: Request, auth: AuthContext = Depends(require_au
         print(f"[session] Found {len(sessions)} sessions")
         return {"sessions": [s.model_dump() for s in sessions]}
     except Exception as e:
-        import traceback
-        print(f"[session] Error listing sessions: {e}")
-        traceback.print_exc()
+        logger.exception("[session] Error listing sessions")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post("/session/create")
-@limiter.limit(RATE_LIMIT_DEFAULT)
-async def create_session(request: Request, req: CreateSessionRequest, auth: AuthContext = Depends(require_auth_context)):
+@limiter.limit(GENERAL_API_LIMIT)
+async def create_session(request: Request, req: CreateSessionRequest, auth: SupabaseUser = Depends(require_auth)):
     """Create a new session. Returns session_id to use in subsequent /session/{id}/run calls."""
     try:
         print(f"[session] Creating session: {req.session_name}")
@@ -486,15 +640,13 @@ async def create_session(request: Request, req: CreateSessionRequest, auth: Auth
             "created_at": session.created_at.isoformat() if session.created_at else None,
         }
     except Exception as e:
-        import traceback
-        print(f"[session] Error creating session: {e}")
-        traceback.print_exc()
+        logger.exception("[session] Error creating session")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post("/session/{session_id}/run")
-@limiter.limit(RATE_LIMIT_AI)
-async def run_session(request: Request, session_id: str, req: SessionRunRequest, auth: AuthContext = Depends(require_auth_context)):
+@limiter.limit(PIPELINE_RUN_LIMIT)
+async def run_session(request: Request, session_id: str, req: SessionRunRequest, auth: SupabaseUser = Depends(require_auth)):
     """
     Run the pipeline (or a single step) for an existing session.
 
@@ -570,14 +722,13 @@ async def run_session(request: Request, session_id: str, req: SessionRunRequest,
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
-        traceback.print_exc()
+        logger.exception("run_session failed for session_id=%s", session_id)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post("/session/{session_id}/run/async", status_code=202)
-@limiter.limit(RATE_LIMIT_AI)
-async def run_session_async(request: Request, session_id: str, req: SessionRunRequest, auth: AuthContext = Depends(require_auth_context)):
+@limiter.limit(PIPELINE_RUN_LIMIT)
+async def run_session_async(request: Request, session_id: str, req: SessionRunRequest, auth: SupabaseUser = Depends(require_auth)):
     """
     Non-blocking pipeline start. Immediately returns {job_id} with 202 Accepted
     and runs the pipeline as a background asyncio.Task.
@@ -670,8 +821,10 @@ async def run_session_async(request: Request, session_id: str, req: SessionRunRe
                 job.status = "failed"
                 await repo.update_status(job.job_id, "failed", error=msg)
             except Exception as e:
-                import traceback
-                traceback.print_exc()
+                logger.exception(
+                    "run_session_async background failure for session_id=%s",
+                    session_id,
+                )
                 await job.queue.put({"type": "error", "message": "Internal server error"})
                 job.status = "failed"
                 await repo.update_status(job.job_id, "failed", error="Internal server error")
@@ -689,14 +842,12 @@ async def run_session_async(request: Request, session_id: str, req: SessionRunRe
             raise
         raise HTTPException(status_code=404, detail=msg)
     except Exception:
-        import traceback
-        traceback.print_exc()
+        logger.exception("run_session_async failed for session_id=%s", session_id)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/session/{session_id}/run/stream/{job_id}")
-@limiter.limit(RATE_LIMIT_DEFAULT)
-async def stream_run(request: Request, session_id: str, job_id: str, auth: AuthContext = Depends(require_auth_context)):
+async def stream_run(request: Request, session_id: str, job_id: str, auth: SupabaseUser = Depends(require_auth)):
     """
     SSE stream for a background pipeline job started via POST /session/{id}/run/async.
 
@@ -736,12 +887,11 @@ async def stream_run(request: Request, session_id: str, job_id: str, auth: AuthC
 
 
 @app.get("/session/{session_id}/job/{job_id}/status")
-@limiter.limit(RATE_LIMIT_DEFAULT)
 async def get_job_status(
     request: Request,
     session_id: str,
     job_id: str,
-    auth: AuthContext = Depends(require_auth_context),
+    auth: SupabaseUser = Depends(require_auth),
 ):
     """
     Poll durable job state after SSE disconnect or on reconnect.
@@ -767,8 +917,8 @@ async def get_job_status(
 
 
 @app.post("/session/{session_id}/prd")
-@limiter.limit(RATE_LIMIT_AI)
-async def generate_prd(request: Request, session_id: str, auth: AuthContext = Depends(require_auth_context)):
+@limiter.limit(GENERAL_API_LIMIT)
+async def generate_prd(request: Request, session_id: str, auth: SupabaseUser = Depends(require_auth)):
     """
     Generate a PRD for an existing session using the accumulated pipeline outputs.
     Reads problems, features, decompositions, tasks from session state and runs PRDAgent.
@@ -842,8 +992,7 @@ async def generate_prd(request: Request, session_id: str, auth: AuthContext = De
         logger.error("generate_prd failed: %s", e, exc_info=True)
         raise HTTPException(status_code=404, detail="Internal server error")
     except Exception:
-        import traceback
-        traceback.print_exc()
+        logger.exception("generate_prd failed for session_id=%s", session_id)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -927,18 +1076,17 @@ async def _run_prd_background(
         await finish_prd_job(job.job_id, payload=complete_payload)
 
     except Exception:
-        import traceback
-        traceback.print_exc()
+        logger.exception("_run_prd_background failed for session_id=%s", session_id)
         await finish_prd_job(job.job_id, error="Internal server error")
 
 
 @app.post("/session/{session_id}/prd/stream")
-@limiter.limit(RATE_LIMIT_AI)
+@limiter.limit(GENERAL_API_LIMIT)
 async def generate_prd_stream(
     request: Request,
     session_id: str,
     job_id: Optional[str] = Query(None),
-    auth: AuthContext = Depends(require_auth_context),
+    auth: SupabaseUser = Depends(require_auth),
 ):
     """
     SSE streaming PRD generation. Sends phase updates then final result.
@@ -1065,16 +1213,14 @@ async def generate_prd_stream(
                 yield f"data: {json.dumps({'type': 'error', 'message': msg})}\n\n"
 
         except Exception:
-            import traceback
-            traceback.print_exc()
+            logger.exception("generate_prd_stream event_stream failed for session_id=%s", session_id)
             yield f"data: {json.dumps({'type': 'error', 'message': 'Internal server error'})}\n\n"
 
     return StreamingResponse(event_stream(), media_type="text/event-stream", headers=_SSE_HEADERS)
 
 
 @app.get("/session/{session_id}/prd")
-@limiter.limit(RATE_LIMIT_DEFAULT)
-async def get_prd(request: Request, session_id: str, auth: AuthContext = Depends(require_auth_context)):
+async def get_prd(request: Request, session_id: str, auth: SupabaseUser = Depends(require_auth)):
     """Load stored PRD from memory_entries for a session."""
     try:
         memory_repo = MemoryRepository(client=auth.client)
@@ -1099,8 +1245,7 @@ EXPORT_SECTIONS = {
 
 
 @app.get("/session/{session_id}/prd/export")
-@limiter.limit(RATE_LIMIT_DEFAULT)
-async def export_prd_markdown(request: Request, session_id: str, view: str = "full", auth: AuthContext = Depends(require_auth_context)):
+async def export_prd_markdown(request: Request, session_id: str, view: str = "full", auth: SupabaseUser = Depends(require_auth)):
     """
     Export the session's PRD as a downloadable markdown file.
     """
@@ -1223,18 +1368,17 @@ async def export_prd_markdown(request: Request, session_id: str, view: str = "fu
     except HTTPException:
         raise
     except Exception:
-        import traceback
-        traceback.print_exc()
+        logger.exception("export_prd_markdown failed for session_id=%s", session_id)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post("/session/{session_id}/prd/edit")
-@limiter.limit(RATE_LIMIT_AI)
+@limiter.limit(GENERAL_API_LIMIT)
 async def edit_prd_section(
     request: Request,
     session_id: str,
     body: EditPRDSectionRequest,
-    auth: AuthContext = Depends(require_auth_context),
+    auth: SupabaseUser = Depends(require_auth),
 ):
     """
     Rewrite a single PRD section based on a user instruction.
@@ -1291,69 +1435,46 @@ async def edit_prd_section(
 
 
 @app.post("/session/{session_id}/agent_handoff")
-@limiter.limit(RATE_LIMIT_AI)
-async def generate_agent_handoff(request: Request, session_id: str, auth: AuthContext = Depends(require_auth_context)):
-    """
-    Generate an agent-ready handoff payload for a session.
-    Requires problems, features, decompositions, and tasks. PRD is optional (empty dict if missing).
-    Returns a structured prompt package for Claude Code or Cursor.
-    Capped at 3 regenerations per session.
-    """
+@limiter.limit(AGENT_HANDOFF_LIMIT)
+async def generate_agent_handoff(request: Request, session_id: str, auth: SupabaseUser = Depends(require_auth)):
+    """Generate and persist an on-demand agent handoff for a completed session."""
     try:
-        sm = SessionManager(client=auth.client)
-        await sm.load_session(session_id)
-
-        current_state = await sm.get_current_state(session_id)
-
-        regen_counts = (current_state or {}).get("regeneration_counts", {})
-        if regen_counts.get("agent_handoff", 0) >= 3:
-            raise HTTPException(
-                status_code=403,
-                detail="Regeneration limit reached. Please use the exported handoff.",
-            )
-
-        outputs = (current_state or {}).get("outputs") or {}
-        # Keys may be present with JSON null — .get(k, default) would still return None.
-        _output_defaults = {
+        memory_repo = MemoryRepository(client=auth.client)
+        required_keys = {
             "product_context": {},
             "problems": [],
             "features": [],
             "decompositions": [],
             "tasks": [],
-            "prd": [],
+            "prd": {},
         }
 
-        def _raw_session_output(key: str):
-            if key not in outputs:
-                return _output_defaults[key]
-            val = outputs[key]
-            return _output_defaults[key] if val is None else val
+        context: dict[str, Any] = {}
+        missing: list[str] = []
+        for key, default_value in required_keys.items():
+            memory_entry = await memory_repo.get_by_session_and_key(session_id, key)
+            if memory_entry is None:
+                missing.append(key)
+                context[key] = default_value
+                continue
 
-        context = {
-            key: Pipeline._unwrap_persisted_content(_raw_session_output(key))
-            for key in _output_defaults
-        }
+            value = Pipeline._unwrap_persisted_content(memory_entry.content)
+            context[key] = default_value if value is None else value
 
-        # PRD improves handoff quality but is not required (tasks page may generate handoff before PRD).
-        if not context.get("prd"):
-            context["prd"] = {}
-
-        missing = [k for k in ("problems", "features", "decompositions", "tasks")
-                   if not context.get(k)]
         if missing:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Run {', '.join(missing)} first",
-            )
+            raise HTTPException(status_code=422, detail=f"Run {', '.join(missing)} first")
 
         agent = AgentFactory.create("agent_handoff")
-        result = await agent.execute_async(
-            "Generate a complete agent-ready handoff payload for the implementation tasks in this product session.",
-            context=context,
-        )
+        if hasattr(agent, "run"):
+            result = await agent.run(context)
+        else:
+            result = await agent.execute_async(
+                "Generate a complete agent-ready handoff payload for the implementation tasks in this product session.",
+                context=context,
+            )
         result = Pipeline._strip_reasoning_field(result)
 
-        entry = MemoryEntry(
+        output_entry = MemoryEntry(
             session_id=session_id,
             user_id=auth.user_id,
             agent_name="agent_handoff",
@@ -1361,32 +1482,18 @@ async def generate_agent_handoff(request: Request, session_id: str, auth: AuthCo
             content=result if isinstance(result, dict) else {"data": result},
             metadata={},
         )
-        memory_repo = MemoryRepository(client=auth.client)
-        await memory_repo.save_for_session(entry)
+        await memory_repo.save_for_session(output_entry)
 
-        regen_counts["agent_handoff"] = regen_counts.get("agent_handoff", 0) + 1
-        current_state["regeneration_counts"] = regen_counts
-        await sm.update_state(
-            session_id,
-            current_state,
-            step=current_state.get("last_completed_step", "agent_handoff"),
-        )
-
-        return {"success": True, "handoff": result}
+        return {"agent_handoff": result}
     except HTTPException:
         raise
-    except ValueError as e:
-        logger.error("generate_agent_handoff failed: %s", e, exc_info=True)
-        raise HTTPException(status_code=404, detail="Internal server error")
     except Exception:
-        import traceback
-        traceback.print_exc()
+        logger.error("generate_agent_handoff failed", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/session/{session_id}/agent_handoff")
-@limiter.limit(RATE_LIMIT_DEFAULT)
-async def get_agent_handoff(request: Request, session_id: str, auth: AuthContext = Depends(require_auth_context)):
+async def get_agent_handoff(request: Request, session_id: str, auth: SupabaseUser = Depends(require_auth)):
     """Load a stored agent handoff payload from memory_entries for a session."""
     try:
         memory_repo = MemoryRepository(client=auth.client)
@@ -1402,8 +1509,7 @@ async def get_agent_handoff(request: Request, session_id: str, auth: AuthContext
 
 
 @app.get("/session/{session_id}/agent_handoff/export")
-@limiter.limit(RATE_LIMIT_DEFAULT)
-async def export_agent_handoff_markdown(request: Request, session_id: str, auth: AuthContext = Depends(require_auth_context)):
+async def export_agent_handoff_markdown(request: Request, session_id: str, auth: SupabaseUser = Depends(require_auth)):
     """
     Export the session's agent handoff as a downloadable CLAUDE.md-style markdown file.
     """
@@ -1494,14 +1600,12 @@ async def export_agent_handoff_markdown(request: Request, session_id: str, auth:
     except HTTPException:
         raise
     except Exception:
-        import traceback
-        traceback.print_exc()
+        logger.exception("export_handoff_markdown failed for session_id=%s", session_id)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.get("/session/{session_id}/handoff")
-@limiter.limit(RATE_LIMIT_DEFAULT)
-async def get_handoff(request: Request, session_id: str, auth: AuthContext = Depends(require_auth_context)):
+async def get_handoff(request: Request, session_id: str, auth: SupabaseUser = Depends(require_auth)):
     """
     Load stored agent handoff from memory_entries.
     Strips reasoning field and surfaces needs_clarification_count and estimated_sessions
@@ -1526,12 +1630,11 @@ async def get_handoff(request: Request, session_id: str, auth: AuthContext = Dep
 
 
 @app.get("/session/{session_id}/handoff/export")
-@limiter.limit(RATE_LIMIT_DEFAULT)
 async def export_handoff(
     request: Request,
     session_id: str,
     format: str = "claude_md",
-    auth: AuthContext = Depends(require_auth_context),
+    auth: SupabaseUser = Depends(require_auth),
 ):
     """
     Export the agent handoff in one of three formats:
@@ -1664,18 +1767,17 @@ async def export_handoff(
     except HTTPException:
         raise
     except Exception:
-        import traceback
-        traceback.print_exc()
+        logger.exception("export_handoff failed for session_id=%s", session_id)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @app.post("/session/{session_id}/feedback")
-@limiter.limit(RATE_LIMIT_AI)
+@limiter.limit(GENERAL_API_LIMIT)
 async def create_feedback_entry(
     request: Request,
     session_id: str,
     req: FeedbackEntry,
-    auth: AuthContext = Depends(require_auth_context),
+    auth: SupabaseUser = Depends(require_auth),
 ):
     try:
         result = auth.client.table("feedback_entries").insert({
@@ -1698,11 +1800,10 @@ async def create_feedback_entry(
 
 
 @app.get("/session/{session_id}/feedback")
-@limiter.limit(RATE_LIMIT_DEFAULT)
 async def list_feedback_entries(
     request: Request,
     session_id: str,
-    auth: AuthContext = Depends(require_auth_context),
+    auth: SupabaseUser = Depends(require_auth),
 ):
     try:
         result = (
@@ -1721,12 +1822,12 @@ async def list_feedback_entries(
 
 
 @app.delete("/session/{session_id}/feedback/{entry_id}")
-@limiter.limit(RATE_LIMIT_DEFAULT)
+@limiter.limit(GENERAL_API_LIMIT)
 async def delete_feedback_entry(
     request: Request,
     session_id: str,
     entry_id: str,
-    auth: AuthContext = Depends(require_auth_context),
+    auth: SupabaseUser = Depends(require_auth),
 ):
     try:
         result = (
@@ -1786,12 +1887,12 @@ def build_conversation_system_prompt(session_outputs: dict, requested_keys: list
 
 
 @app.post("/session/{session_id}/conversation")
-@limiter.limit(RATE_LIMIT_AI)
+@limiter.limit(GENERAL_API_LIMIT)
 async def stream_conversation(
     request: Request,
     session_id: str,
     body: ConversationRequest,
-    auth: AuthContext = Depends(require_auth_context),
+    auth: SupabaseUser = Depends(require_auth),
 ):
     """Token-by-token SSE conversation endpoint. History is stateless — client manages it."""
     from services.ai.client import get_async_client
@@ -1839,12 +1940,12 @@ async def stream_conversation(
 
 
 @app.post("/session/{session_id}/query")
-@limiter.limit(RATE_LIMIT_AI)
+@limiter.limit(GENERAL_API_LIMIT)
 async def query_session(
     request: Request,
     session_id: str,
     body: QueryRequest,
-    auth: AuthContext = Depends(require_auth_context),
+    auth: SupabaseUser = Depends(require_auth),
 ):
     """Answer a question grounded in the session's research entries, problems, and PRD."""
     from services.rag.retrieval_service import RetrievalService
@@ -1895,8 +1996,7 @@ async def query_session(
 
 
 @app.get("/session/{session_id}")
-@limiter.limit(RATE_LIMIT_DEFAULT)
-async def get_session(request: Request, session_id: str, auth: AuthContext = Depends(require_auth_context)):
+async def get_session(request: Request, session_id: str, auth: SupabaseUser = Depends(require_auth)):
     """Get a session with its current state and full event log."""
     try:
         sm = SessionManager(client=auth.client)
@@ -1914,8 +2014,7 @@ async def get_session(request: Request, session_id: str, auth: AuthContext = Dep
 # ---------------------------------------------------------------------------
 
 @app.get("/pipelines/orphaned")
-@limiter.limit(RATE_LIMIT_DEFAULT)
-async def list_orphaned_pipelines(request: Request, auth: AuthContext = Depends(require_auth_context)):
+async def list_orphaned_pipelines(request: Request, auth: SupabaseUser = Depends(require_auth)):
     """List pipeline runs not attached to any session."""
     try:
         repo = PipelineRepository(client=auth.client)
@@ -1926,11 +2025,11 @@ async def list_orphaned_pipelines(request: Request, auth: AuthContext = Depends(
 
 
 @app.post("/pipelines/attach")
-@limiter.limit(RATE_LIMIT_DEFAULT)
+@limiter.limit(GENERAL_API_LIMIT)
 async def attach_pipeline_to_session(
     request: Request,
     req: AttachPipelineRequest,
-    auth: AuthContext = Depends(require_auth_context),
+    auth: SupabaseUser = Depends(require_auth),
 ):
     """Attach an orphaned pipeline run to a session."""
     try:
@@ -1947,8 +2046,7 @@ async def attach_pipeline_to_session(
 
 
 @app.get("/pipelines/{session_id}")
-@limiter.limit(RATE_LIMIT_DEFAULT)
-async def list_session_pipelines(request: Request, session_id: str, auth: AuthContext = Depends(require_auth_context)):
+async def list_session_pipelines(request: Request, session_id: str, auth: SupabaseUser = Depends(require_auth)):
     """List all pipeline runs for a session."""
     try:
         repo = PipelineRepository(client=auth.client)
@@ -1965,8 +2063,8 @@ class EmbedRequest(BaseModel):
 
 
 @app.post("/research/embed")
-@limiter.limit(RATE_LIMIT_AI)
-async def embed_research_entry(request: Request, req: EmbedRequest, auth: AuthContext = Depends(require_auth_context)):
+@limiter.limit(GENERAL_API_LIMIT)
+async def embed_research_entry(request: Request, req: EmbedRequest, auth: SupabaseUser = Depends(require_auth)):
     """Generate and store a vector embedding for a research entry."""
     try:
         from services.rag.embedding_service import get_embedding_service

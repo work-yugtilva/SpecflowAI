@@ -150,7 +150,7 @@ export default function ProblemsPage() {
     setProblems([]);
     const isAutorun = isAutorunPending(activeSessionId ?? undefined);
     try {
-      const inputData: PipelineInput = buildPipelineInputFromStorage(
+      const inputData: PipelineInput = await buildPipelineInputFromStorage(
         activeSessionId ?? undefined
       );
       const result = await runPipelineStepOrFull(

@@ -10,14 +10,14 @@ from services.agents.decompose_agent import DecomposeAgent
 from services.agents.tasks_agent import TasksAgent
 from services.agents.prd_agent import PRDAgent
 from services.agents.linear_sync_agent import LinearSyncAgent
-from services.agents.agent_handoff_agent import AgentHandoffAgent
+from .agents.agent_handoff_agent import AgentHandoffAgent
 from services.agents.query_agent import QueryAgent
 import logging
 
 logger = logging.getLogger("specflow.agent_factory")
 
 # Map agent names to their typed classes. Only this file may hardcode these names.
-_AGENT_CLASS_MAP: dict[str, type[BaseAgent]] = {
+AGENT_MAP: dict[str, type[BaseAgent]] = {
     "product_context": ProductContextAgent,
     "quality_gate": QualityGateAgent,
     "problems": ProblemsAgent,
@@ -35,6 +35,6 @@ class AgentFactory:
     @classmethod
     def create(cls, agent_name: str) -> BaseAgent:
         config = ConfigManager.load_agent(agent_name)
-        agent_class = _AGENT_CLASS_MAP.get(agent_name, BaseAgent)
+        agent_class = AGENT_MAP.get(agent_name, BaseAgent)
         logger.info("[agent_factory] name=%s dispatched_to=%s", agent_name, agent_class.__name__)
         return agent_class(agent_name, config.model_dump())

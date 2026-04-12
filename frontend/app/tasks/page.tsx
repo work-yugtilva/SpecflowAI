@@ -688,7 +688,7 @@ export default function TasksPage() {
     setLinearPayloadMeta(null);
     setShowLinearConfirm(false);
     try {
-      const inputData: PipelineInput = buildPipelineInputFromStorage(
+      const inputData: PipelineInput = await buildPipelineInputFromStorage(
         activeSessionId ?? undefined
       );
       const result = await runPipelineStepOrFull(

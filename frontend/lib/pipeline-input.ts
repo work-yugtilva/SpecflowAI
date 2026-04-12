@@ -1,6 +1,7 @@
-// Building PipelineInput from localStorage (context, research, optional pending ingest)
+// Building PipelineInput from local context storage + server-backed research + optional pending ingest
 
 import type { PipelineInput } from "@/lib/pipeline-types";
+import { fetchResearchEntries } from "@/lib/api/research";
 import {
   migrateGlobalToScopedOnce,
   readScopedRaw,
@@ -12,7 +13,6 @@ import {
 
 export const LS_ACTIVE_SESSION = "specflow_active_session_id";
 export const LS_CONTEXT = "specflow_context";
-export const LS_RESEARCH = "specflow_research_entries";
 export const LS_PENDING = "specflow_pending_input";
 export const LS_AUTORUN_GLOBAL = "specflow_autorun";
 
@@ -58,23 +58,19 @@ export function getContextObject(
   return globalContext;
 }
 
-/** Research entries saved from the Research page — passed through to the API as `research`. */
-export function getResearchPayload(sessionId?: string | null): unknown[] {
+/** Server-backed research payload for pipeline execution. */
+export async function getResearchPayload(
+  sessionId?: string | null
+): Promise<unknown[]> {
   if (typeof window === "undefined") return [];
-  const parseArr = (raw: string | null) => {
-    if (!raw) return [];
-    try {
-      const arr = JSON.parse(raw) as unknown;
-      return Array.isArray(arr) ? arr : [];
-    } catch {
-      return [];
-    }
-  };
-  if (sessionId) {
-    migrateGlobalToScopedOnce(sessionId, "research", LS_RESEARCH);
-    return parseArr(readScopedRaw(sessionId, "research"));
+  try {
+    return await fetchResearchEntries(
+      sessionId ? "session" : "global",
+      sessionId ?? undefined
+    );
+  } catch {
+    return [];
   }
-  return parseArr(localStorage.getItem(LS_RESEARCH));
 }
 
 /**
@@ -83,36 +79,37 @@ export function getResearchPayload(sessionId?: string | null): unknown[] {
  */
 export function buildPipelineInputFromStorage(
   sessionId?: string | null
-): PipelineInput {
-  const pendingRaw =
-    typeof window !== "undefined"
-      ? sessionId
-        ? (migratePending(sessionId),
-          readScopedRaw(sessionId, pendingSuffix()))
-        : localStorage.getItem(LS_PENDING)
-      : null;
-  if (pendingRaw) {
-    try {
-      const p = JSON.parse(pendingRaw) as Partial<PipelineInput>;
-      return {
-        context:
-          (p.context as Record<string, unknown>) ??
-          getContextObject(sessionId),
-        research:
-          Array.isArray(p.research) && p.research.length > 0
-            ? p.research
-            : getResearchPayload(sessionId),
-        ingest: Array.isArray(p.ingest) ? p.ingest : [],
-      };
-    } catch {
-      /* fall through */
+): Promise<PipelineInput> {
+  const build = async (): Promise<PipelineInput> => {
+    const research = await getResearchPayload(sessionId);
+    const pendingRaw =
+      typeof window !== "undefined"
+        ? sessionId
+          ? (migratePending(sessionId),
+            readScopedRaw(sessionId, pendingSuffix()))
+          : localStorage.getItem(LS_PENDING)
+        : null;
+    if (pendingRaw) {
+      try {
+        const p = JSON.parse(pendingRaw) as Partial<PipelineInput>;
+        return {
+          context:
+            (p.context as Record<string, unknown>) ??
+            getContextObject(sessionId),
+          research,
+          ingest: Array.isArray(p.ingest) ? p.ingest : [],
+        };
+      } catch {
+        /* fall through */
+      }
     }
-  }
-  return {
-    context: getContextObject(sessionId),
-    research: getResearchPayload(sessionId),
-    ingest: [],
+    return {
+      context: getContextObject(sessionId),
+      research,
+      ingest: [],
+    };
   };
+  return build();
 }
 
 export function setActiveSessionId(sessionId: string | null): void {

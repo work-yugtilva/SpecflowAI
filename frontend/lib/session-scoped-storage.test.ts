@@ -17,13 +17,13 @@ describe("scopedStorageKey", () => {
   });
 
   it("URL-encodes special characters in session ID", () => {
-    const key = scopedStorageKey("sess/123 x", "research");
+    const key = scopedStorageKey("sess/123 x", "pending_input");
     expect(key).toContain("sess%2F123%20x");
   });
 
   it("produces distinct keys for different suffixes", () => {
     const k1 = scopedStorageKey("s", "context");
-    const k2 = scopedStorageKey("s", "research");
+    const k2 = scopedStorageKey("s", "pending_input");
     expect(k1).not.toBe(k2);
   });
 
@@ -49,7 +49,7 @@ describe("readScopedRaw / writeScopedRaw / removeScopedRaw", () => {
   });
 
   it("readScopedRaw returns null when key is absent", () => {
-    expect(readScopedRaw("sess-1", "research")).toBeNull();
+    expect(readScopedRaw("sess-1", "pending_input")).toBeNull();
   });
 
   it("removeScopedRaw deletes the stored value", () => {
@@ -67,8 +67,8 @@ describe("readScopedRaw / writeScopedRaw / removeScopedRaw", () => {
 
   it("values are isolated per suffix", () => {
     writeScopedRaw("sess-1", "context", "ctx");
-    writeScopedRaw("sess-1", "research", "res");
+    writeScopedRaw("sess-1", "pending_input", "res");
     expect(readScopedRaw("sess-1", "context")).toBe("ctx");
-    expect(readScopedRaw("sess-1", "research")).toBe("res");
+    expect(readScopedRaw("sess-1", "pending_input")).toBe("res");
   });
 });

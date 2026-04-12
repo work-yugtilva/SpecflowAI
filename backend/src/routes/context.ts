@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { verifyAuth, AuthRequest } from '@/middleware/auth.js';
+import type { AuthRequest } from '@/middleware/verify_supabase_token.js';
 import { contextService } from '@/services/contextService.js';
 import { AppError } from '@/middleware/errorHandler.js';
 import { ContextScope } from '@/types/index.js';
@@ -23,7 +23,7 @@ function resolveScope(req: AuthRequest): { scope: ContextScope; sessionId?: stri
 }
 
 // GET /api/context - Get scoped context (default: global)
-router.get('/', verifyAuth, async (req: AuthRequest, res) => {
+router.get('/', async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       throw new AppError(401, 'User not authenticated', 'UNAUTHORIZED');
@@ -45,7 +45,7 @@ router.get('/', verifyAuth, async (req: AuthRequest, res) => {
 });
 
 // GET /api/context/merged?sessionId=... - Get global + session + merged
-router.get('/merged', verifyAuth, async (req: AuthRequest, res) => {
+router.get('/merged', async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       throw new AppError(401, 'User not authenticated', 'UNAUTHORIZED');
@@ -70,7 +70,7 @@ router.get('/merged', verifyAuth, async (req: AuthRequest, res) => {
 });
 
 // POST /api/context - Save scoped context (default: global)
-router.post('/', verifyAuth, async (req: AuthRequest, res) => {
+router.post('/', async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       throw new AppError(401, 'User not authenticated', 'UNAUTHORIZED');
@@ -109,7 +109,7 @@ router.post('/', verifyAuth, async (req: AuthRequest, res) => {
 });
 
 // POST /api/context/import-global - Copy global context to a session
-router.post('/import-global', verifyAuth, async (req: AuthRequest, res) => {
+router.post('/import-global', async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       throw new AppError(401, 'User not authenticated', 'UNAUTHORIZED');
@@ -135,7 +135,7 @@ router.post('/import-global', verifyAuth, async (req: AuthRequest, res) => {
 });
 
 // DELETE /api/context - Delete scoped context (default: global)
-router.delete('/', verifyAuth, async (req: AuthRequest, res) => {
+router.delete('/', async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       throw new AppError(401, 'User not authenticated', 'UNAUTHORIZED');

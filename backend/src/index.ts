@@ -5,6 +5,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { errorHandler, notFoundHandler } from '@/middleware/errorHandler.js';
+import { requireAuth } from './middleware/verify_supabase_token.js';
+import {
+  generalLimiter,
+  researchLimiter,
+  contextLimiter,
+} from './middleware/rate_limiter.js';
 import contextRoutes from '@/routes/context.js';
 import researchRoutes from '@/routes/research.js';
 
@@ -85,8 +91,9 @@ app.get('/health', (req: Request, res: Response) => {
 });
 
 // API Routes
-app.use('/api/context', contextRoutes);
-app.use('/api/research', researchRoutes);
+app.use('/api/research', requireAuth, researchLimiter, researchRoutes);
+app.use('/api/context', requireAuth, contextLimiter, contextRoutes);
+app.use('/api', requireAuth, generalLimiter);
 
 // Root endpoint
 app.get('/', (req: Request, res: Response) => {

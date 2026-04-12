@@ -2,12 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { LS_RESEARCH } from "@/lib/pipeline-input";
 import { useActiveSession } from "@/lib/active-session-context";
-import {
-  migrateGlobalToScopedOnce,
-  scopedStorageKey,
-} from "@/lib/session-scoped-storage";
 import { Sidebar } from "@/components/ui/sidebar";
 import {
   createResearchEntry,
@@ -184,43 +179,12 @@ function FieldLabel({
 export default function ResearchPage() {
   const { activeSessionId } = useActiveSession();
   const researchScope = activeSessionId ? "session" : "global";
-  const researchStorageKey = activeSessionId
-    ? scopedStorageKey(activeSessionId, "research")
-    : LS_RESEARCH;
 
   const [entries, setEntries] = useState<ResearchEntry[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [researchHydrated, setResearchHydrated] = useState(false);
 
   useEffect(() => {
-    setResearchHydrated(false);
     setSyncError(null);
-    try {
-      if (activeSessionId) {
-        migrateGlobalToScopedOnce(
-          activeSessionId,
-          "research",
-          LS_RESEARCH
-        );
-      }
-      const raw = localStorage.getItem(researchStorageKey);
-      if (raw) {
-        const parsed = JSON.parse(raw) as ResearchEntry[];
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setEntries(parsed);
-          setSelectedId(parsed[0].id);
-        } else {
-          setEntries([]);
-          setSelectedId(null);
-        }
-      } else {
-        setEntries([]);
-        setSelectedId(null);
-      }
-    } catch {
-      setEntries([]);
-      setSelectedId(null);
-    }
     let cancelled = false;
     fetchResearchEntries(researchScope, activeSessionId ?? undefined)
       .then((remoteEntries) => {
@@ -230,26 +194,16 @@ export default function ResearchPage() {
       })
       .catch((err) => {
         if (!cancelled) {
+          setEntries([]);
+          setSelectedId(null);
           setSyncError(err instanceof Error ? err.message : "Failed to sync research");
         }
-      })
-      .finally(() => {
-        if (!cancelled) setResearchHydrated(true);
       });
 
     return () => {
       cancelled = true;
     };
-  }, [activeSessionId, researchScope, researchStorageKey]);
-
-  useEffect(() => {
-    if (!researchHydrated) return;
-    try {
-      localStorage.setItem(researchStorageKey, JSON.stringify(entries));
-    } catch {
-      /* ignore */
-    }
-  }, [entries, researchHydrated, researchStorageKey]);
+  }, [activeSessionId, researchScope]);
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);

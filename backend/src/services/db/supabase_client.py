@@ -7,8 +7,6 @@ from cachetools import TTLCache
 from supabase import create_client, Client
 
 from services.config.load_env import load_root_env
-from services.db.supabase_async import first_row_from_result
-
 load_root_env()
 
 _client: Client | None = None
@@ -97,17 +95,3 @@ def get_user_supabase_client(jwt: str) -> Client:
     client = create_client(url, key)
     client.postgrest.auth(jwt)
     return client
-
-
-def get_user_integration(user_id: str, provider: str) -> dict | None:
-    """Return a user_integrations row for (user_id, provider), or None if not found."""
-    client = get_supabase_client()
-    result = (
-        client.table("user_integrations")
-        .select("*")
-        .eq("user_id", user_id)
-        .eq("provider", provider)
-        .limit(1)
-        .execute()
-    )
-    return first_row_from_result(result)

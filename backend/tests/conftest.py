@@ -10,6 +10,7 @@ os.environ.setdefault("NEXT_PUBLIC_SUPABASE_URL", "https://test.supabase.co")
 os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "test-service-key")
 os.environ.setdefault("SUPABASE_ANON_KEY", "test-anon-key")
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-test-key")
+os.environ.setdefault("TOKEN_ENCRYPTION_KEY", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src"))
 

@@ -158,42 +158,31 @@ test.describe("SpecFlow full smoke", () => {
         .getByPlaceholder(/summarize the research findings/i)
         .fill(transcript);
       await page.getByRole("button", { name: /^add entry$/i }).click();
-      // Soft: the entry list may not refresh immediately if the remote fetch races with local state.
-      // The localStorage write below is what actually feeds the pipeline — list visibility is cosmetic.
+      // Soft: keep this visible assertion tolerant of async fetch/render timing.
       await expect
         .soft(page.getByText(researchTitle, { exact: false }).first())
         .toBeVisible({ timeout: 20_000 });
-      // Belt-and-suspenders: ensure research reaches the pipeline agents.
+      // Belt-and-suspenders: ensure ingest reaches pipeline agents.
       // Individual pipeline step pages call buildPipelineInputFromStorage() which reads
-      // from pending_input (if present) or falls back to research key.
+      // pending_input for ingest and fetches research from the server.
       // Agents read ctx.get("ingest") — NOT ctx.get("research") — so we must populate
-      // the pending_input with ingest: [{...}] so buildPipelineInputFromStorage returns it.
+      // pending_input with ingest: [{...}] so buildPipelineInputFromStorage returns it.
       await page.evaluate(([title, content, sid]) => {
         const sessionId = sid || localStorage.getItem("specflow_active_session_id");
         if (sessionId) {
-          const researchEntry = {
-            id: `e2e-${Date.now()}`,
-            title,
-            content,
-            type: "Interview",
-            createdAt: new Date().toISOString(),
-          };
+          const ingestId = `e2e-${Date.now()}`;
           const ingestEntry = {
-            id: researchEntry.id,
+            id: ingestId,
             type: "interview",
             content,
             metadata: { source: title },
-            createdAt: researchEntry.createdAt,
+            createdAt: new Date().toISOString(),
           };
-          // Write to research scoped key (for Research page display)
-          const researchKey = `specflow_s_${sessionId}__research`;
-          localStorage.setItem(researchKey, JSON.stringify([researchEntry]));
-          // Write to pending_input with ingest field (for pipeline agents)
+          // Write pending_input with ingest field (for pipeline agents)
           const pendingKey = `specflow_s_${sessionId}__pending_input`;
           const ctx = JSON.parse(localStorage.getItem("specflow_context") || "{}");
           const pendingPayload = {
             context: ctx,
-            research: [researchEntry],
             ingest: [ingestEntry],
           };
           localStorage.setItem(pendingKey, JSON.stringify(pendingPayload));

@@ -25,7 +25,6 @@ import {
 } from "@/lib/pipeline-session";
 import {
   getContextObject,
-  getResearchPayload,
   LS_CONTEXT,
   setAutorunFlag,
 } from "@/lib/pipeline-input";
@@ -38,6 +37,7 @@ import {
 } from "@/lib/session-scoped-storage";
 import { importGlobalContextToSession } from "@/lib/api/context";
 import type { MergedContextPayload } from "@/lib/api/context";
+import { fetchResearchEntries } from "@/lib/api/research";
 import { createClient } from "@/lib/supabase/client";
 import { StepInspector } from "@/components/StepInspector";
 
@@ -353,12 +353,23 @@ export default function SessionsPage() {
 
   const merged = contextPreview?.context?.merged;
 
-  const refreshLocalSessionData = useCallback((sessionId: string | null) => {
-    const nextContext = getContextObject(sessionId);
-    setLocalSessionContext(nextContext);
-    setLocalResearchCount(getResearchPayload(sessionId).length);
-    setLocalContextSaved(Object.keys(nextContext).length > 0);
-  }, [setLocalSessionContext, setLocalResearchCount, setLocalContextSaved]);
+  const refreshLocalSessionData = useCallback(
+    async (sessionId: string | null) => {
+      const nextContext = getContextObject(sessionId);
+      setLocalSessionContext(nextContext);
+      setLocalContextSaved(Object.keys(nextContext).length > 0);
+      try {
+        const entries = await fetchResearchEntries(
+          sessionId ? "session" : "global",
+          sessionId ?? undefined
+        );
+        setLocalResearchCount(entries.length);
+      } catch {
+        setLocalResearchCount(0);
+      }
+    },
+    [setLocalSessionContext, setLocalResearchCount, setLocalContextSaved]
+  );
 
   const mergedForContextPanel = useMemo(
     () => mergedContextForSession(merged, localSessionContext),
@@ -480,7 +491,7 @@ export default function SessionsPage() {
 
   // Fetch context preview when a session is selected (Bearer required — Express /api/context/merged uses verifyAuth)
   useEffect(() => {
-    refreshLocalSessionData(selectedId);
+    void refreshLocalSessionData(selectedId);
   }, [selectedId, refreshLocalSessionData]);
 
   useEffect(() => {
@@ -555,7 +566,7 @@ export default function SessionsPage() {
         } catch {
           /* keep prior preview */
         } finally {
-          refreshLocalSessionData(selectedId);
+          void refreshLocalSessionData(selectedId);
         }
       })();
     };
@@ -633,7 +644,7 @@ export default function SessionsPage() {
         } else {
           removeScopedRaw(bootstrapSessionId, "context");
         }
-        refreshLocalSessionData(bootstrapSessionId);
+        void refreshLocalSessionData(bootstrapSessionId);
         setShowContextBootstrap(false);
         setBootstrapSessionId(null);
         // Context editing is handled inline on the Sessions page
@@ -655,7 +666,7 @@ export default function SessionsPage() {
 
   // Build inputData from the ingest form (scoped to sessionId)
   const buildInputData = useCallback(
-    (sessionId: string): Record<string, unknown> => {
+    async (sessionId: string): Promise<Record<string, unknown>> => {
       const entry =
         activeTab === "interview"
           ? {
@@ -700,9 +711,16 @@ export default function SessionsPage() {
         /* ignore */
       }
 
+      let research: unknown[] = [];
+      try {
+        research = await fetchResearchEntries("session", sessionId);
+      } catch {
+        research = [];
+      }
+
       return {
         context: getContextObject(sessionId),
-        research: getResearchPayload(sessionId),
+        research,
         ingest: [entry],
       };
     },
@@ -715,7 +733,7 @@ export default function SessionsPage() {
       if (!selectedId) return;
       setRunError(null);
 
-      const inputData = buildInputData(selectedId);
+      const inputData = await buildInputData(selectedId);
 
       // Full run: save input for pipeline pages and navigate immediately
       if (!step) {
@@ -724,7 +742,10 @@ export default function SessionsPage() {
           writeScopedRaw(
             selectedId,
             "pending_input",
-            JSON.stringify(inputData)
+            JSON.stringify({
+              context: inputData.context,
+              ingest: inputData.ingest,
+            })
           );
           setAutorunFlag(selectedId);
         } catch {

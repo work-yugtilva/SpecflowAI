@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { verifyAuth, AuthRequest } from '@/middleware/auth.js';
+import type { AuthRequest } from '@/middleware/verify_supabase_token.js';
 import { researchService } from '@/services/researchService.js';
 import { AppError } from '@/middleware/errorHandler.js';
 import { ContextScope, ResearchEntry } from '@/types/index.js';
@@ -34,7 +34,7 @@ function resolveScope(req: AuthRequest): { scope: ContextScope; sessionId?: stri
 }
 
 // GET /api/research - Get all research entries for user
-router.get('/', verifyAuth, async (req: AuthRequest, res) => {
+router.get('/', async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       throw new AppError(401, 'User not authenticated', 'UNAUTHORIZED');
@@ -59,7 +59,7 @@ router.get('/', verifyAuth, async (req: AuthRequest, res) => {
 });
 
 // POST /api/research - Create new research entry
-router.post('/', verifyAuth, async (req: AuthRequest, res) => {
+router.post('/', async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       throw new AppError(401, 'User not authenticated', 'UNAUTHORIZED');
@@ -100,7 +100,7 @@ router.post('/', verifyAuth, async (req: AuthRequest, res) => {
 });
 
 // GET /api/research/search - Search research entries
-router.get('/search', verifyAuth, async (req: AuthRequest, res) => {
+router.get('/search', async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       throw new AppError(401, 'User not authenticated', 'UNAUTHORIZED');
@@ -129,7 +129,7 @@ router.get('/search', verifyAuth, async (req: AuthRequest, res) => {
 });
 
 // GET /api/research/:id - Get specific research entry
-router.get('/:id', verifyAuth, async (req: AuthRequest, res) => {
+router.get('/:id', async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       throw new AppError(401, 'User not authenticated', 'UNAUTHORIZED');
@@ -152,7 +152,7 @@ router.get('/:id', verifyAuth, async (req: AuthRequest, res) => {
 });
 
 // PUT /api/research/:id - Update research entry
-router.put('/:id', verifyAuth, async (req: AuthRequest, res) => {
+router.put('/:id', async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       throw new AppError(401, 'User not authenticated', 'UNAUTHORIZED');
@@ -192,7 +192,7 @@ router.put('/:id', verifyAuth, async (req: AuthRequest, res) => {
 });
 
 // DELETE /api/research/:id - Delete research entry
-router.delete('/:id', verifyAuth, async (req: AuthRequest, res) => {
+router.delete('/:id', async (req: AuthRequest, res) => {
   try {
     if (!req.user) {
       throw new AppError(401, 'User not authenticated', 'UNAUTHORIZED');
