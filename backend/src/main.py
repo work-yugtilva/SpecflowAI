@@ -183,15 +183,9 @@ def _is_production() -> bool:
 
 
 def _build_allowed_hosts() -> list[str]:
-    hosts = {
-        "localhost",
-        "127.0.0.1",
-        "test",
-        "*.vercel.app",
-        "*.loca.lt",
-        "*.ngrok-free.app",
-        "*.trycloudflare.com",
-    }
+    hosts = {"localhost", "127.0.0.1", "test", "*.vercel.app"}
+    if not _is_production():
+        hosts.update({"*.loca.lt", "*.ngrok-free.app", "*.trycloudflare.com"})
     raw_hosts = os.environ.get("ALLOWED_HOSTS", "")
     for host in raw_hosts.split(","):
         cleaned = host.strip()
@@ -306,6 +300,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Content-Security-Policy"] = "default-src 'none'"
         return response
 
 
@@ -412,8 +407,7 @@ async def value_error_handler(request: Request, exc: ValueError):
             content={"error": "INCOMPLETE_CONTEXT", "missing": fields}
         )
     # All other ValueErrors: log internally, return generic error to client
-    import logging
-    logging.getLogger(__name__).error("Unhandled ValueError: %s", msg)
+    logger.error("Unhandled ValueError: %s", msg)
     return JSONResponse(status_code=500, content={"error": "Internal server error"})
 
 
@@ -484,16 +478,20 @@ class IntegrationUpsertRequest(BaseModel):
 
 PIPELINE_PORT = int(os.environ.get("PIPELINE_PORT", "8001"))
 
+IntegrationProvider = Literal["github", "jira", "linear", "notion", "confluence"]
+
 
 @app.get("/health")
+@limiter.limit(GENERAL_API_LIMIT)
 async def health(request: Request):
     return {"status": "ok", "service": "specflow-pipeline"}
 
 
 @app.get("/integrations/{provider}")
+@limiter.limit(GENERAL_API_LIMIT)
 async def get_user_integration(
     request: Request,
-    provider: str,
+    provider: IntegrationProvider,
     auth: SupabaseUser = Depends(require_auth),
 ):
     try:
@@ -518,7 +516,7 @@ async def get_user_integration(
 @limiter.limit(GENERAL_API_LIMIT)
 async def upsert_user_integration(
     request: Request,
-    provider: str,
+    provider: IntegrationProvider,
     req: IntegrationUpsertRequest,
     auth: SupabaseUser = Depends(require_auth),
 ):
@@ -548,7 +546,7 @@ async def upsert_user_integration(
 @limiter.limit(GENERAL_API_LIMIT)
 async def remove_user_integration(
     request: Request,
-    provider: str,
+    provider: IntegrationProvider,
     auth: SupabaseUser = Depends(require_auth),
 ):
     try:
@@ -568,10 +566,10 @@ async def remove_user_integration(
 @limiter.limit(GENERAL_API_LIMIT)
 async def run_pipeline(request: Request, req: RunRequest, auth: SupabaseUser = Depends(require_auth)):
     try:
-        print(f"[pipeline] Starting run | project_id={req.project_id}")
+        logger.info("[pipeline] Starting run | project_id=%s", req.project_id)
         pipeline = Pipeline()
         result = await pipeline.run(req.input_data, req.project_id)
-        print(f"[pipeline] Run complete | keys={list(result.keys())}")
+        logger.info("[pipeline] Run complete | keys=%s", list(result.keys()))
         return {"success": True, "data": result}
     except ValueError:
         raise
@@ -607,11 +605,11 @@ async def get_user_plan(request: Request, auth: SupabaseUser = Depends(require_a
 async def list_sessions(request: Request, auth: SupabaseUser = Depends(require_auth)):
     """Return all sessions ordered by created_at DESC."""
     try:
-        print(f"[session] Listing sessions")
+        logger.info("[session] Listing sessions")
         sm = SessionManager(client=auth.client)
-        print(f"[session] SessionManager instantiated")
+        logger.info("[session] SessionManager instantiated")
         sessions = await sm.list_sessions()
-        print(f"[session] Found {len(sessions)} sessions")
+        logger.info("[session] Found %s sessions", len(sessions))
         return {"sessions": [s.model_dump() for s in sessions]}
     except Exception as e:
         logger.exception("[session] Error listing sessions")
@@ -623,16 +621,16 @@ async def list_sessions(request: Request, auth: SupabaseUser = Depends(require_a
 async def create_session(request: Request, req: CreateSessionRequest, auth: SupabaseUser = Depends(require_auth)):
     """Create a new session. Returns session_id to use in subsequent /session/{id}/run calls."""
     try:
-        print(f"[session] Creating session: {req.session_name}")
+        logger.info("[session] Creating session: %s", req.session_name)
         sm = SessionManager(client=auth.client)
-        print(f"[session] SessionManager instantiated")
+        logger.info("[session] SessionManager instantiated")
         session = await sm.create_session(
             session_name=req.session_name,
             project_id=req.project_id,
             metadata=req.metadata,
             user_id=auth.user_id,
         )
-        print(f"[session] Session created: {session.id}")
+        logger.info("[session] Session created: %s", session.id)
         return {
             "session_id": session.id,
             "session_name": session.session_name,
@@ -1000,7 +998,6 @@ async def _run_prd_background(
     job: PrdJob,
     context: dict,
     session_id: str,
-    auth_client: Any,
     auth_user_id: str,
     sm: SessionManager,
     current_state: dict,
@@ -1053,7 +1050,7 @@ async def _run_prd_background(
             content=result if isinstance(result, dict) else {"data": result},
             metadata={"quality_score": quality, "citations": citation_metadata},
         )
-        memory_repo = MemoryRepository(client=auth_client)
+        memory_repo = MemoryRepository(client=get_supabase_client())
         await memory_repo.save_for_session(entry)
 
         # Increment PRD regeneration counter.
@@ -1191,7 +1188,6 @@ async def generate_prd_stream(
                     job=prd_job,
                     context=context,
                     session_id=session_id,
-                    auth_client=auth.client,
                     auth_user_id=auth.user_id,
                     sm=sm,
                     current_state=current_state,

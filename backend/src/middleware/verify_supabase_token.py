@@ -68,7 +68,7 @@ async def verify_supabase_token(authorization: str | None) -> SupabaseUser:
     try:
         response = await client.auth.get_user(token)
     except Exception as exc:
-        raise HTTPException(status_code=401, detail=str(exc)) from exc
+        raise HTTPException(status_code=401, detail="Invalid or expired token") from exc
 
     user = response.user if response else None
     if user is None:
