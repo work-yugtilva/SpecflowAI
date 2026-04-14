@@ -93,6 +93,20 @@ cd frontend && npm run e2e
 cd frontend && npm run type-check
 ```
 
+## Deploying on Vercel (frontend)
+
+This repo’s Next.js app lives in **`frontend/`**. The root [`package.json`](package.json) does **not** include `next` (only orchestration scripts).
+
+When you connect the GitHub repo to Vercel:
+
+1. Open the project on Vercel → **Settings** → **General** → **Root Directory**.
+2. Set **Root Directory** to **`frontend`** (not the repository root).
+3. Save, then trigger a new deployment (**Deployments** → … → **Redeploy**).
+
+If Root Directory is wrong, the build log may show only ~25 packages installed and **“No Next.js version detected”** — that means Vercel ran `npm install` against the root `package.json` instead of [`frontend/package.json`](frontend/package.json).
+
+See also: [Vercel — Root Directory](https://vercel.com/docs/deployments/configure-a-build#root-directory) and [Monorepos on Vercel](https://vercel.com/docs/monorepos).
+
 ## Troubleshooting
 
 **Port already in use:**
