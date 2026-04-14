@@ -43,6 +43,16 @@
 @keyframes stepPulse { 0%,100%{box-shadow:0 0 0 0 rgba(232,86,27,0.3)} 50%{box-shadow:0 0 0 6px rgba(232,86,27,0)} }
 @keyframes fadeUp { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
 @keyframes slideInRight { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+@keyframes floatY { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-12px); } }
+@keyframes glowPulse { 0%, 100% { opacity: 0.6; transform: scale(1); } 50% { opacity: 1; transform: scale(1.05); } }
+@keyframes shimmer { 0% { background-position: -400px 0 } 100% { background-position: 400px 0 } }
+
+/* ─── Skeleton loader ────────────────────────────────── */
+.skeleton {
+  background: linear-gradient(90deg, #F0EAE1 25%, #F8F4EF 50%, #F0EAE1 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.4s infinite linear;
+}
 
 /* ─── Scrollbar ──────────────────────────────────── */
 ::-webkit-scrollbar { width: 4px; height: 4px; }

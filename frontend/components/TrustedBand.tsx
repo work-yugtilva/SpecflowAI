@@ -143,7 +143,7 @@ export default function TrustedBand() {
             whiteSpace: "nowrap",
           }}
         >
-          Trusted by Product Teams
+          Built for teams that ship on
         </p>
         <span
           style={{

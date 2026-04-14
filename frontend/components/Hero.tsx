@@ -8,12 +8,12 @@ import { Button } from "@/components/ui/button";
 
 const HERO_COPY = {
   badge: "Introducing SpecFlow AI — Now in Beta",
-  headline1: "Ship your first PRD in",
-  headline2: "20 minutes.",
-  headline3: "No interviews required.",
+  headline1: "Cursor for Product Management.",
+  headline2: "",
+  headline3: "",
   subtitle:
-    "SpecFlow turns raw user research into problems, features, and tasks — automatically.",
-  ctaPrimary: "Start Free",
+    "Upload customer interviews and feedback. SpecFlow instantly generates backed-by-data PRDs, UI changes, and dev-ready tickets. You just review and ship.",
+  ctaPrimary: "Generate your first spec for free",
   ctaSecondary: "Book a demo",
   pipeline: ["Research", "Problems", "Features", "Tasks", "PRD"],
 };
@@ -60,17 +60,17 @@ function ChipSVG() {
         </filter>
         <linearGradient id="chipGrad" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor="#2a2520" />
-          <stop offset="100%" stopColor="#1a1510" />
+          <stop offset="100%" stopColor="#0D0D0D" />
         </linearGradient>
         <linearGradient id="traceGrad" x1="0%" y1="0%" x2="100%" y2="0%">
           <stop offset="0%" stopColor="#E8561B" stopOpacity="0" />
           <stop offset="50%" stopColor="#E8561B" stopOpacity="1" />
-          <stop offset="100%" stopColor="#FF7B3B" stopOpacity="0.6" />
+          <stop offset="100%" stopColor="#E8561B" stopOpacity="0.6" />
         </linearGradient>
         <linearGradient id="traceGrad2" x1="0%" y1="0%" x2="0%" y2="100%">
           <stop offset="0%" stopColor="#E8561B" stopOpacity="0" />
           <stop offset="50%" stopColor="#E8561B" stopOpacity="0.8" />
-          <stop offset="100%" stopColor="#FF7B3B" stopOpacity="0" />
+          <stop offset="100%" stopColor="#E8561B" stopOpacity="0" />
         </linearGradient>
       </defs>
 
@@ -142,7 +142,7 @@ function ChipSVG() {
       <circle cx="136" cy="264" r="4" fill="#E8561B" fillOpacity="0.5" filter="url(#glow)" />
       <circle cx="264" cy="264" r="4" fill="#E8561B" fillOpacity="0.5" filter="url(#glow)" />
 
-      <circle cx="200" cy="200" r="6" fill="#FF7B3B" filter="url(#softGlow)" fillOpacity="0.9">
+      <circle cx="200" cy="200" r="6" fill="#E8561B" filter="url(#softGlow)" fillOpacity="0.9">
         <animate attributeName="fillOpacity" values="0.4;1;0.4" dur="2s" repeatCount="indefinite" />
         <animate attributeName="r" values="5;8;5" dur="2s" repeatCount="indefinite" />
       </circle>
@@ -172,6 +172,24 @@ export default function Hero() {
       />
 
       <div className="relative max-w-6xl mx-auto px-6 pt-16 pb-12 flex flex-col items-center text-center">
+        {/* Positioning chip */}
+        <div
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            border: "1px solid #E4DDD4",
+            background: "#FFFFFF",
+            color: "#0D0D0D",
+            fontSize: 13,
+            fontWeight: 500,
+            borderRadius: 99,
+            padding: "4px 14px",
+            marginBottom: 12,
+          }}
+        >
+          The Cursor experience, built for Product Managers
+        </div>
+
         {/* Intro badge + launch link */}
         <div className="fade-up mb-6 flex flex-col items-center gap-5">
           <div
@@ -194,7 +212,7 @@ export default function Hero() {
 
         {/* Headline */}
         <h1
-          className="fade-up-1 font-display mb-6 max-w-[780px] text-center"
+          className="fade-up-1 font-display mb-6 max-w-[780px] text-center font-semibold"
           style={{
             fontSize: "clamp(2.4rem, 6vw, 4.5rem)",
             lineHeight: 1.12,
@@ -202,15 +220,7 @@ export default function Hero() {
             color: "#0D0D0D",
           }}
         >
-          <div className="flex flex-col items-center gap-1">
-            <span className="font-semibold">
-              {HERO_COPY.headline1}{" "}
-              <span style={{ color: "#E8561B" }}>{HERO_COPY.headline2}</span>
-            </span>
-            <span className="block font-normal" style={{ color: "#6B6B6B" }}>
-              {HERO_COPY.headline3}
-            </span>
-          </div>
+          {HERO_COPY.headline1}
         </h1>
 
         {/* Subtitle */}
@@ -223,6 +233,11 @@ export default function Hero() {
 
         {/* CTAs */}
         <div className="fade-up-3 flex flex-row flex-wrap items-center justify-center gap-5">
+          <Button size="lg" className="shrink-0 gap-2 rounded-full" asChild>
+            <Link href="/login" className="no-underline">
+              {HERO_COPY.ctaPrimary} <MoveRight className="h-4 w-4 shrink-0" aria-hidden />
+            </Link>
+          </Button>
           <Button
             size="lg"
             variant="outline"
@@ -233,89 +248,127 @@ export default function Hero() {
               {HERO_COPY.ctaSecondary} <PhoneCall className="h-4 w-4 shrink-0" aria-hidden />
             </a>
           </Button>
-          <Button size="lg" className="shrink-0 gap-2 rounded-full" asChild>
-            <Link href="/login" className="no-underline">
-              {HERO_COPY.ctaPrimary} <MoveRight className="h-4 w-4 shrink-0" aria-hidden />
-            </Link>
-          </Button>
         </div>
 
-        {/* Hero visual area */}
-        <div
-          className="relative w-full mt-12 flex flex-col items-center justify-center"
-          style={{ minHeight: 480 }}
-        >
-          {/* Outer ambient glow */}
-          <div
-            className="absolute"
-            style={{
-              width: 520,
-              height: 520,
-              background: "radial-gradient(circle, rgba(232,86,27,0.18) 0%, transparent 65%)",
-              borderRadius: "50%",
-              top: "50%",
-              left: "50%",
-              transform: "translate(-50%, -50%)",
-              animation: "glowPulse 4s ease-in-out infinite",
-            }}
-          />
-          {/* Inner glow behind chip */}
-          <div
-            className="absolute"
-            style={{
-              width: 380,
-              height: 380,
-              background: "radial-gradient(circle, rgba(232,86,27,0.32) 0%, transparent 70%)",
-              borderRadius: "50%",
-              top: "50%",
-              left: "50%",
-              transform: "translate(-50%, -50%)",
-              animation: "glowPulse 3s ease-in-out infinite 0.5s",
-            }}
-          />
+        {/* Hero visual area — side-by-side: messy inputs → structured PRD */}
+        {/* TODO: replace with side-by-side visual */}
+        <div className="relative w-full mt-12">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
+            {/* Left: messy customer feedback / Slack messages */}
+            <div
+              style={{
+                background: "#1a1510",
+                borderRadius: 16,
+                border: "1px solid rgba(232,86,27,0.2)",
+                padding: "24px",
+                minHeight: 280,
+              }}
+            >
+              <div
+                className="font-sans"
+                style={{
+                  color: "#9a9085",
+                  fontSize: 10,
+                  fontWeight: 600,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  marginBottom: 16,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                }}
+              >
+                <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#4ade80", display: "inline-block", flexShrink: 0 }} />
+                #product-feedback · 47 messages
+              </div>
+              {[
+                { name: "Sarah K.", time: "9:14 AM", msg: "The onboarding is really confusing — I had to email support twice just to get past step 3." },
+                { name: "James T.", time: "9:31 AM", msg: "Bulk export is a blocker for us. Finance needs it for quarterly reports and we're doing it manually." },
+                { name: "Priya M.", time: "10:02 AM", msg: "Love the core product but the settings page is a nightmare. I can never find what I'm looking for." },
+              ].map((m, i) => (
+                <div key={i} style={{ marginBottom: 14 }}>
+                  <div className="font-sans" style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 3 }}>
+                    <span style={{ color: "#E8561B", fontSize: 12, fontWeight: 600 }}>{m.name}</span>
+                    <span style={{ color: "#5a5047", fontSize: 10 }}>{m.time}</span>
+                  </div>
+                  <p className="font-sans" style={{ color: "#c9bfb4", fontSize: 12.5, lineHeight: 1.6, margin: 0 }}>
+                    &ldquo;{m.msg}&rdquo;
+                  </p>
+                </div>
+              ))}
+              <div className="font-sans" style={{ marginTop: 16, color: "#5a5047", fontSize: 11 }}>
+                + 44 more messages · 3 user interviews attached
+              </div>
+            </div>
 
-          {/* Chip SVG */}
-          <div className="relative chip-container" style={{ width: 380, height: 380, zIndex: 2 }}>
-            <ChipSVG />
+            {/* Right: structured PRD output */}
+            <div
+              style={{
+                background: "#FFFFFF",
+                borderRadius: 16,
+                border: "1px solid #E4DDD4",
+                padding: "24px",
+                minHeight: 280,
+              }}
+            >
+              <div style={{ marginBottom: 18 }}>
+                <div
+                  className="font-sans"
+                  style={{ color: "#9a9085", fontSize: 10, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}
+                >
+                  Generated PRD · 12s ago
+                </div>
+                <div
+                  className="font-display"
+                  style={{ color: "#0D0D0D", fontSize: 18, fontWeight: 600, letterSpacing: "-0.02em" }}
+                >
+                  Onboarding Redesign
+                </div>
+              </div>
+              {[
+                {
+                  label: "Problem",
+                  color: "#E8561B",
+                  items: [
+                    "Users drop off at step 3 (47% abandonment) due to unclear next actions",
+                    "Support tickets cite onboarding as top pain point — 38 this month",
+                  ],
+                },
+                {
+                  label: "Features",
+                  color: "#3D6B5E",
+                  items: [
+                    "Step-by-step progress wizard with contextual help",
+                    "Inline tooltips triggered on first interaction",
+                  ],
+                },
+                {
+                  label: "Tasks",
+                  color: "#6B6B6B",
+                  items: ["Redesign step 3 flow · 3 pts", "Add progress bar component · 2 pts"],
+                },
+              ].map((section) => (
+                <div key={section.label} style={{ marginBottom: 14 }}>
+                  <div
+                    className="font-sans"
+                    style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: section.color, marginBottom: 5 }}
+                  >
+                    {section.label}
+                  </div>
+                  {section.items.map((item, j) => (
+                    <div key={j} className="font-sans" style={{ display: "flex", alignItems: "flex-start", gap: 6, marginBottom: 4 }}>
+                      <span style={{ color: section.color, fontSize: 10, marginTop: 3, flexShrink: 0 }}>▸</span>
+                      <span style={{ color: "#0D0D0D", fontSize: 12.5, lineHeight: 1.55 }}>{item}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
           </div>
 
-          {/* Left floating labels */}
-          {floatingLabelsLeft.map((item, i) => (
-            <div
-              key={item.label}
-              className="float-label absolute hidden sm:block"
-              style={{
-                top: item.top,
-                left: item.left,
-                animation: `floatY ${3 + i * 0.4}s ease-in-out ${i * 0.3}s infinite`,
-              }}
-            >
-              <span className="w-1.5 h-1.5 rounded-full inline-block mr-1.5" style={{ background: "#E8561B", verticalAlign: "middle" }} />
-              {item.label}
-            </div>
-          ))}
-
-          {/* Right floating labels */}
-          {floatingLabelsRight.map((item, i) => (
-            <div
-              key={item.label}
-              className="float-label absolute hidden sm:block"
-              style={{
-                top: item.top,
-                right: item.right,
-                animation: `floatY ${3.2 + i * 0.35}s ease-in-out ${0.5 + i * 0.3}s infinite`,
-              }}
-            >
-              {item.label}
-              <span className="w-1.5 h-1.5 rounded-full inline-block ml-1.5" style={{ background: "#E8561B", verticalAlign: "middle" }} />
-            </div>
-          ))}
-
-          {/* Pipeline flow animation */}
+          {/* Pipeline flow strip */}
           <div
             style={{
-              position: "relative",
-              zIndex: 3,
               marginTop: 28,
               display: "flex",
               alignItems: "center",

@@ -4,7 +4,7 @@ const CTA_COPY = {
   headline1: "The PM tool",
   headline2: "that does the work.",
   subhead: "Start free. Get your first PRD in 20 minutes. No credit card required.",
-  ctaPrimary: "Get started free",
+  ctaPrimary: "Generate your first spec for free",
   ctaSecondary: "See a demo",
   badges: ["· Solo PMs", "· Series A–B teams", "· No credit card"],
 };

@@ -133,10 +133,7 @@ export default function Platform() {
               color: "#0D0D0D",
             }}
           >
-            Gather Your Tools And Crew{" "}
-            <span style={{ color: "#E8561B", fontStyle: "italic" }}>
-              For The Journey.
-            </span>
+            Your ultimate product discovery pipeline.
           </h2>
           <p
             className="font-sans mx-auto max-w-md"
@@ -146,8 +143,7 @@ export default function Platform() {
               lineHeight: 1.65,
             }}
           >
-            SpecFlow connects with the tools your team already loves — no
-            migration, no friction.
+            A seamless pipeline from messy discovery to precise execution.
           </p>
         </div>
 

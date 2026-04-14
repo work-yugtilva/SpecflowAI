@@ -80,7 +80,7 @@ export default function Navbar() {
         {/* Right — Desktop */}
         <div className="hidden md:flex items-center gap-3">
           <a href="/login" className="nav-link px-3 py-1.5">Log in</a>
-          <a href="#" className="btn-dark text-sm">
+          <a href="#" className="btn-dark text-sm" style={{ border: "1px solid #0D0D0D" }}>
             Book a demo
           </a>
         </div>
@@ -119,7 +119,7 @@ export default function Navbar() {
             </a>
           ))}
           <a href="/login" className="nav-link py-2 text-[15px]" onClick={() => setMobileOpen(false)}>Log in</a>
-          <a href="#" className="btn-dark mt-2 w-full justify-center">
+          <a href="#" className="btn-dark mt-2 w-full justify-center" style={{ border: "1px solid #0D0D0D" }}>
             Book a demo
           </a>
         </div>

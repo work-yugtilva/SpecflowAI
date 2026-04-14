@@ -3,7 +3,7 @@
 const OUTCOME_COPY = {
   stats: [
     { value: "20 min", label: "avg time to first PRD" },
-    { value: "7 agents", label: "running per session" },
+    { value: "3 hrs", label: "saved per PRD on average" },
     { value: "Series A–B", label: "PMs who use SpecFlow" },
   ],
 };

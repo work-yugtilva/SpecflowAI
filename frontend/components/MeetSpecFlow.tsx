@@ -18,7 +18,7 @@ const productIcons = [
     ),
   },
   {
-    bg: "#4ECDC4",
+    bg: "#3D6B5E",
     label: "Coverage",
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -27,7 +27,7 @@ const productIcons = [
     ),
   },
   {
-    bg: "#1a1510",
+    bg: "#0D0D0D",
     label: "Integrations",
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -179,7 +179,7 @@ export default function MeetSpecFlow() {
                 <circle cx="171" cy="171" r="3" fill="#E8561B" fillOpacity="0.6" />
 
                 {/* Center pulse */}
-                <circle cx="120" cy="120" r="5" fill="#FF7B3B" fillOpacity="0.9">
+                <circle cx="120" cy="120" r="5" fill="#E8561B" fillOpacity="0.9">
                   <animate attributeName="fillOpacity" values="0.3;1;0.3" dur="2s" repeatCount="indefinite" />
                   <animate attributeName="r" values="4;7;4" dur="2s" repeatCount="indefinite" />
                 </circle>
@@ -249,7 +249,7 @@ export default function MeetSpecFlow() {
                 </div>
                 <div className="flex items-start gap-2 pl-3">
                   <span style={{ color: "#9a9085" }}>•</span>
-                  <span style={{ color: "#6B6B6B" }}>No anti-coagulation noted in chart</span>
+                  <span style={{ color: "#6B6B6B" }}>Acceptance criteria: user can log in with Google OAuth</span>
                 </div>
                 <div className="flex items-start gap-2 pl-3">
                   <span style={{ color: "#9a9085" }}>•</span>

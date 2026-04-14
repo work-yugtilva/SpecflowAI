@@ -1,8 +1,7 @@
 import Navbar from "@/components/Navbar";
 import Hero from "@/components/Hero";
 import TrustedBand from "@/components/TrustedBand";
-import PainStrip from "@/components/PainStrip";
-
+import ProductDiscoveryStrip from "@/components/ProductDiscoveryStrip";
 import MeetSpecFlow from "@/components/MeetSpecFlow";
 import Features from "@/components/Features";
 import OutcomeStrip from "@/components/OutcomeStrip";
@@ -17,8 +16,7 @@ export default function Home() {
       <Navbar />
       <Hero />
       <TrustedBand />
-      <PainStrip />
-
+      <ProductDiscoveryStrip />
       <MeetSpecFlow />
       <Features />
       <OutcomeStrip />
