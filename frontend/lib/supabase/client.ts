@@ -11,7 +11,7 @@ function removeLegacyLocalStorageAuthTokens(): void {
       const key = localStorage.key(i);
       const hasLegacyPrefix = key?.startsWith("sb-") ?? false;
       const hasLegacySuffix = key?.endsWith("-auth-token") ?? false;
-      if (hasLegacyPrefix && hasLegacySuffix) {
+      if (key && hasLegacyPrefix && hasLegacySuffix) {
         keys.push(key);
       }
     }

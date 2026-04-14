@@ -1604,7 +1604,7 @@ function PrdPage() {
             )}
             {!prd && (
               <button
-                onClick={handleGenerate}
+                onClick={() => void handleGenerate()}
                 disabled={generating || !activeSessionId || regenLimitReached}
                 title={regenLimitReached ? "Limit reached. Use the editor." : undefined}
                 className="btn-dark"
