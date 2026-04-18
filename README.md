@@ -125,7 +125,15 @@ For **FastAPI**, use a host meant for long‑running Python/ASGI (for example **
 cd backend && python -m pip install -r requirements.txt && cd src && uvicorn main:app --host 0.0.0.0 --port "${PORT:-8001}"
 ```
 
-Set **`NEXT_PUBLIC_PIPELINE_URL`** on your **frontend** (e.g. Vercel env vars) to that service’s **HTTPS** origin.
+#### Railway (FastAPI): “Error creating build plan with Railpack”
+
+`backend/` contains **both** `package.json` (Express) and `requirements.txt` (FastAPI). Railpack can fail while trying to infer a single stack. This repo ships a **Dockerfile** so the pipeline builds as **Python-only**:
+
+1. Create a Railway service from this repo.
+2. **Settings → Root Directory** → **`backend`**.
+3. **Settings → Build → Builder** → **Dockerfile** (or **Config as code** → set file path to **`/backend/railway.toml`**, which pins `builder = "DOCKERFILE"`).
+4. Set the same env vars as local FastAPI (see [`.env.example`](.env.example): `ANTHROPIC_API_KEY`, `SUPABASE_*`, `TOKEN_ENCRYPTION_KEY`, `ALLOWED_ORIGINS`, etc.).
+5. Put the Railway **HTTPS** origin in **`NEXT_PUBLIC_PIPELINE_URL`** on your frontend (e.g. Vercel env vars).
 
 ### Deploying Express (**optional** on Vercel)
 

@@ -1,0 +1,13 @@
+# Pipeline (FastAPI) — use Docker so Railpack does not try to plan Node+Python together.
+# In Railway: set this file explicitly if your service Root Directory is not `backend`:
+#   Settings → Config as code → `/backend/railway.toml`
+# Or set the service Root Directory to `backend` and Railway will still need the absolute
+# path for config-as-code per https://docs.railway.com/guides/monorepo
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 300
