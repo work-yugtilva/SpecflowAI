@@ -20,7 +20,7 @@ Primary user journey:
 Core runtime code:
 - `frontend/` — Next.js 14 App Router app, React 18, TypeScript, Tailwind, Zustand, Supabase auth
 - `backend/src/main.py` — FastAPI pipeline service for sessions, pipeline execution, PRD generation, and pipeline persistence
-- `backend/src/index.ts` — Express TypeScript API for authenticated context and research endpoints
+- `backend/src/expressEntry.ts` — Express TypeScript API for authenticated context and research endpoints (`backend/index.ts` re-exports `dist/` for Vercel)
 - `backend/config/agents/*.yaml` — YAML source of truth for agent instructions, schemas, memory config, and pipeline order
 - `backend/src/services/db/migrations/*.sql` — Supabase schema/migration files
 
@@ -44,7 +44,7 @@ Generated or low-signal directories:
 - Supabase auth is enforced in `frontend/middleware.ts`
 
 ### Backend Service Split
-- Express (`backend/src/index.ts`, default `:3001`)
+- Express (`backend/src/expressEntry.ts`, default `:3001`)
   - owns `/api/context` and `/api/research`
   - validates Supabase bearer tokens
   - context is backed by Supabase `context_entries`

@@ -2,13 +2,13 @@
   "name": "specflow-backend",
   "version": "1.0.0",
   "description": "SpecFlow backend API server",
-  "main": "dist/index.js",
+  "main": "dist/expressEntry.js",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx watch src/expressEntry.ts",
     "dev:pipeline": "node scripts/run-pipeline.mjs",
-    "build": "tsc",
-    "start": "node dist/index.js",
+    "build": "tsc && tsc-alias",
+    "start": "node dist/expressEntry.js",
     "lint": "eslint src",
     "type-check": "tsc --noEmit"
   },
@@ -23,6 +23,7 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^4.17.17",
     "@types/node": "^20.3.1",
+    "tsc-alias": "^1.8.16",
     "tsx": "^3.12.7",
     "typescript": "^5.1.3"
   }

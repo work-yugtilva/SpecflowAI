@@ -3,8 +3,10 @@ import {
   getRequiredAuthHeader,
   isMissingAuthSessionError,
 } from "@/lib/supabase/get-auth-header";
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_PIPELINE_URL ?? "http://localhost:8001";
+import {
+  getPipelineServerBaseUrl,
+  pipelineServerMisconfiguredResponse,
+} from "@/lib/server/pipeline-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,10 +15,13 @@ export async function GET(
   _req: NextRequest,
   { params }: { params: { session_id: string; job_id: string } }
 ) {
+  const mis = pipelineServerMisconfiguredResponse();
+  if (mis) return mis;
   try {
     const authHeaders = await getRequiredAuthHeader();
+    const base = getPipelineServerBaseUrl();
     const res = await fetch(
-      `${BACKEND_URL}/session/${params.session_id}/job/${params.job_id}/status`,
+      `${base}/session/${params.session_id}/job/${params.job_id}/status`,
       { headers: authHeaders }
     );
     const data = await res.json();

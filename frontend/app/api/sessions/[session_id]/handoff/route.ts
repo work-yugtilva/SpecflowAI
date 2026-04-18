@@ -3,16 +3,21 @@ import {
   getRequiredAuthHeader,
   isMissingAuthSessionError,
 } from "@/lib/supabase/get-auth-header";
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_PIPELINE_URL ?? "http://localhost:8001";
+import {
+  getPipelineServerBaseUrl,
+  pipelineServerMisconfiguredResponse,
+} from "@/lib/server/pipeline-server";
 
 export async function GET(
   _req: NextRequest,
   { params }: { params: { session_id: string } }
 ) {
+  const mis = pipelineServerMisconfiguredResponse();
+  if (mis) return mis;
   try {
     const authHeaders = await getRequiredAuthHeader();
-    const res = await fetch(`${BACKEND_URL}/session/${params.session_id}/handoff`, {
+    const base = getPipelineServerBaseUrl();
+    const res = await fetch(`${base}/session/${params.session_id}/handoff`, {
       headers: authHeaders,
     });
     const data = await res.json();
@@ -32,10 +37,13 @@ export async function POST(
   _req: NextRequest,
   { params }: { params: { session_id: string } }
 ) {
+  const mis = pipelineServerMisconfiguredResponse();
+  if (mis) return mis;
   try {
     const authHeaders = await getRequiredAuthHeader();
+    const base = getPipelineServerBaseUrl();
     const res = await fetch(
-      `${BACKEND_URL}/session/${params.session_id}/agent_handoff`,
+      `${base}/session/${params.session_id}/agent_handoff`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders },

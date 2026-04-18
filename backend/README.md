@@ -55,13 +55,14 @@ Tokens are obtained from Supabase authentication.
 ## Project Structure
 
 ```
+index.ts          - Vercel entry: re-exports ./dist/expressEntry.js after build
 /src
+  expressEntry.ts - Main Express app (built to dist/expressEntry.js)
   /middleware     - Express middleware (auth, error handling)
   /routes         - API route handlers
   /services       - Business logic layer
   /types          - TypeScript type definitions
   /utils          - Utility functions
-  index.ts        - Main Express app
 ```
 
 ## Database Integration

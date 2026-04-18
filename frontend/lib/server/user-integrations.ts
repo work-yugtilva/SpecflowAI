@@ -1,6 +1,7 @@
 import "server-only";
 
 import { getRequiredAuthHeader } from "@/lib/supabase/get-auth-header";
+import { getPipelineServerBaseUrl } from "@/lib/server/pipeline-server";
 
 export type IntegrationProvider = "linear" | "slack";
 
@@ -19,11 +20,9 @@ interface IntegrationApiResponse<T> {
   error?: string;
 }
 
-const PIPELINE_BASE =
-  process.env.NEXT_PUBLIC_PIPELINE_URL?.trim() || "http://localhost:8001";
-
 function integrationUrl(provider: IntegrationProvider): string {
-  return `${PIPELINE_BASE.replace(/\/$/, "")}/integrations/${encodeURIComponent(provider)}`;
+  const base = getPipelineServerBaseUrl();
+  return `${base}/integrations/${encodeURIComponent(provider)}`;
 }
 
 async function requestIntegration<T>(

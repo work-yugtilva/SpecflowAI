@@ -100,6 +100,8 @@ When you connect the GitHub repo to Vercel:
 2. Alternatively, you can still set **Root Directory** to **`frontend`** if you prefer a per-app project layout; either layout should work.
 3. Configure production env vars in Vercel (**Settings** → **Environment Variables**) to match [`frontend/.env.example`](frontend/.env.example) / your local `frontend/.env.local` (e.g. `NEXT_PUBLIC_*` and API URLs).
 
+**Required for sessions and pipeline:** set **`NEXT_PUBLIC_PIPELINE_URL`** (or server-only **`PIPELINE_SERVER_URL`**) to your public FastAPI origin with **no trailing slash**, e.g. `https://api.specflowai.com`. Next.js API routes proxy to this URL from Vercel’s servers; if it is missing, they default to `http://localhost:8001` and the UI shows “Backend service is offline.” Redeploy after changing the variable.
+
 If an older deployment showed **404 NOT_FOUND** or **“No Next.js version detected”**, it was usually building from the wrong directory or skipping frontend dependencies—redeploy after the workspace + `vercel.json` setup above.
 
 See also: [Vercel — Root Directory](https://vercel.com/docs/deployments/configure-a-build#root-directory) and [Monorepos on Vercel](https://vercel.com/docs/monorepos).
@@ -111,7 +113,7 @@ The **`backend/`** folder contains **two separate HTTP services**:
 | Service | Stack | Entry | Default local port | Role |
 |--------|--------|--------|--------------------|------|
 | **Pipeline API** | **Python FastAPI** | [`backend/src/main.py`](backend/src/main.py) | `8001` (`PIPELINE_PORT`) | Sessions, pipeline runs, PRD, jobs |
-| **Context / research API** | **Node + Express** | [`backend/src/index.ts`](backend/src/index.ts) | `3001` (`PORT`) | JWT auth, `/api/context`, `/api/research` |
+| **Context / research API** | **Node + Express** | [`backend/src/expressEntry.ts`](backend/src/expressEntry.ts) | `3001` (`PORT`) | JWT auth, `/api/context`, `/api/research` |
 
 Your frontend talks to them via **`NEXT_PUBLIC_PIPELINE_URL`** (FastAPI) and **`NEXT_PUBLIC_EXPRESS_API_URL`** / **`NEXT_PUBLIC_BACKEND_URL`** (Express) — see [`.env.example`](.env.example).
 
@@ -134,6 +136,8 @@ cd backend && python -m pip install -r requirements.txt && cd src && uvicorn mai
 1. **Repo root (simplest)** — Do **not** set a Root Directory. Railway should read root [`railway.json`](railway.json) (Dockerfile build of [`Dockerfile.pipeline`](Dockerfile.pipeline)). In the service **Settings → Build**, ensure the dashboard is **not** forcing **Railpack** over config-as-code. If Railpack still runs, this repo also adds [`requirements.txt`](requirements.txt) (includes `backend/requirements.txt`), a [`Procfile`](Procfile), and [`railpack.json`](railpack.json) with **`provider: "python"`** so the plan gets a **start command** and **pip**. Set FastAPI env vars from [`.env.example`](.env.example) and put the public URL in **`NEXT_PUBLIC_PIPELINE_URL`** on the frontend. The API **starts without `TOKEN_ENCRYPTION_KEY`** (lazy crypto); add it in Railway before using **OAuth integration** routes that encrypt tokens (see [`.env.example`](.env.example) generator).
 2. **`backend/` only** — **Settings → Root Directory** → **`backend`**. Then use [`backend/railway.toml`](backend/railway.toml) + [`backend/Dockerfile`](backend/Dockerfile) (see [monorepo config path](https://docs.railway.com/guides/monorepo): you may need **Config as code** → **`/backend/railway.toml`**).
 
+**Custom domain (`Invalid host header`):** FastAPI uses `TrustedHostMiddleware`. Pointing **DNS** at Railway is not enough unless the **Host** is allowed. Set any of: **`PIPELINE_PUBLIC_URL`** or **`PUBLIC_URL`** to `https://api.yourdomain.com` on the **Python** service, **`ALLOWED_HOSTS=api.yourdomain.com`**, **`TRUSTED_HOST_SUFFIX=yourdomain.com`** (allows apex and `*.yourdomain.com`), or include `https://api.yourdomain.com` in **`ALLOWED_ORIGINS`**. Railway’s **`RAILWAY_PUBLIC_DOMAIN`** is also parsed when present.
+
 `backend/` mixes **Node** (`package.json`) and **Python** (`requirements.txt`); Railpack can also fail with **“Error creating build plan”** unless you use **Dockerfile** as above.
 
 ### Deploying Express (**optional** on Vercel)
@@ -142,9 +146,11 @@ If you **do** want the small Node API on Vercel, use a **separate** Vercel proje
 
 1. **Root Directory** → **`backend`** (where [`backend/package.json`](backend/package.json) lives).
 2. **Framework preset** → **Express**; this repo includes [`backend/vercel.json`](backend/vercel.json) with `"framework": "express"` so it is not treated as Next.js.
-3. Env vars: **`SUPABASE_*`**, **`ALLOWED_ORIGINS`**, **`FRONTEND_URL`** / **`NEXT_PUBLIC_APP_URL`**, etc. — see [`.env.example`](.env.example).
+3. Env vars: **`SUPABASE_*`**, **`FRONTEND_URL`** / **`NEXT_PUBLIC_APP_URL`**, optional comma-separated **`ALLOWED_ORIGINS`** (merged into CORS with the same names as FastAPI), etc. — see [`.env.example`](.env.example).
 
-The Express app **`export default app`** from [`backend/src/index.ts`](backend/src/index.ts), which matches [Express on Vercel](https://vercel.com/docs/frameworks/backend/express).
+Step-by-step checklist (domains, frontend `NEXT_PUBLIC_EXPRESS_API_URL`): [`docs/deploy/vercel-express.md`](docs/deploy/vercel-express.md).
+
+The Express app **`export default app`** from [`backend/src/expressEntry.ts`](backend/src/expressEntry.ts); [`backend/index.ts`](backend/index.ts) re-exports `dist/` for Vercel so `@/` path aliases are not loaded from `src/` at runtime. See [Express on Vercel](https://vercel.com/docs/frameworks/backend/express).
 
 ## Troubleshooting
 

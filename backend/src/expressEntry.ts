@@ -15,6 +15,8 @@ import contextRoutes from '@/routes/context.js';
 import researchRoutes from '@/routes/research.js';
 
 const app = express();
+// Vercel terminates TLS at the edge; trust proxy for correct client IP / rate-limit headers.
+app.set('trust proxy', 1);
 const PORT = process.env.PORT || 3001;
 const LOCAL_ORIGINS = [
   'http://localhost',
@@ -41,7 +43,12 @@ function buildAllowedOrigins(): string[] {
     .map((value) => value?.trim())
     .filter((value): value is string => Boolean(value));
 
-  return Array.from(new Set([...configured, ...LOCAL_ORIGINS]));
+  const fromAllowedOrigins = (process.env.ALLOWED_ORIGINS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  return Array.from(new Set([...configured, ...fromAllowedOrigins, ...LOCAL_ORIGINS]));
 }
 
 function isAllowedOrigin(origin: string | undefined, allowedOrigins: Set<string>) {

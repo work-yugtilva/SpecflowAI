@@ -4,8 +4,10 @@ import {
   isMissingAuthSessionError,
 } from "@/lib/supabase/get-auth-header";
 import { proxySse } from "@/lib/server/proxy-sse";
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_PIPELINE_URL ?? "http://localhost:8001";
+import {
+  getPipelineServerBaseUrl,
+  pipelineServerMisconfiguredResponse,
+} from "@/lib/server/pipeline-server";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,11 +16,14 @@ export async function POST(
   req: NextRequest,
   { params }: { params: { session_id: string } }
 ) {
+  const mis = pipelineServerMisconfiguredResponse();
+  if (mis) return mis;
   try {
     const authHeaders = await getRequiredAuthHeader();
     const body = await req.text();
+    const base = getPipelineServerBaseUrl();
     return await proxySse(
-      `${BACKEND_URL}/session/${params.session_id}/conversation`,
+      `${base}/session/${params.session_id}/conversation`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeaders },

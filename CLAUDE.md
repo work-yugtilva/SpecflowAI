@@ -54,7 +54,7 @@ Two HTTP services share the repo-root `.env` and Supabase:
 | Service | Entry | Default port | Responsibility |
 |--------|--------|----------------|-----------------|
 | **FastAPI** | `backend/src/main.py` | `PIPELINE_PORT` / **8001** | Pipeline runs, sessions, PRD, agent handoff, jobs, plan limits |
-| **Express (TypeScript)** | `backend/src/index.ts` | **3001** (`PORT`) | `/api/context`, `/api/research` — JWT validation, proxies to Supabase |
+| **Express (TypeScript)** | `backend/src/expressEntry.ts` (`backend/index.ts` on Vercel) | **3001** (`PORT`) | `/api/context`, `/api/research` — JWT validation, proxies to Supabase |
 
 **Local dev (three processes):** `npm run dev --prefix frontend` · `npm run dev --prefix backend` (Express) · `cd backend/src && uvicorn main:app --reload --port 8001` (FastAPI). Root `npm run dev` does **not** start FastAPI.
 

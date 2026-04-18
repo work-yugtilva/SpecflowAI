@@ -183,6 +183,19 @@ def _is_production() -> bool:
     return os.environ.get("NODE_ENV", "").lower() == "production"
 
 
+def _hostname_from_url_or_host(raw: str) -> str | None:
+    s = raw.strip()
+    if not s:
+        return None
+    if "://" not in s:
+        s = f"https://{s}"
+    try:
+        host = urlparse(s).hostname
+    except ValueError:
+        return None
+    return host.lower() if host else None
+
+
 def _build_allowed_hosts() -> list[str]:
     hosts = {"localhost", "127.0.0.1", "test"}
     # Railway deployment healthchecks use this Host header (see Railway healthcheck docs).
@@ -195,13 +208,37 @@ def _build_allowed_hosts() -> list[str]:
         if cleaned:
             hosts.add(cleaned)
 
-    for env_name in ("FRONTEND_URL", "NEXT_PUBLIC_PIPELINE_URL", "NEXT_PUBLIC_EXPRESS_API_URL"):
+    # Railway public hostname (default *.up.railway.app or custom domain when configured).
+    rail_pub = _hostname_from_url_or_host(os.environ.get("RAILWAY_PUBLIC_DOMAIN", ""))
+    if rail_pub:
+        hosts.add(rail_pub)
+
+    # Browser Origin hosts (e.g. https://specflowai.com) — add api.* via TRUSTED_HOST_SUFFIX below.
+    raw_origins = os.environ.get("ALLOWED_ORIGINS", "")
+    for part in raw_origins.split(","):
+        h = _hostname_from_url_or_host(part)
+        if h:
+            hosts.add(h)
+
+    for env_name in (
+        "FRONTEND_URL",
+        "NEXT_PUBLIC_PIPELINE_URL",
+        "NEXT_PUBLIC_EXPRESS_API_URL",
+        "PIPELINE_PUBLIC_URL",
+        "PUBLIC_URL",
+    ):
         value = os.environ.get(env_name)
         if not value:
             continue
         parsed = urlparse(value)
         if parsed.hostname:
-            hosts.add(parsed.hostname)
+            hosts.add(parsed.hostname.lower())
+
+    # e.g. TRUSTED_HOST_SUFFIX=specflowai.com → allows api.specflowai.com when CORS only lists https://specflowai.com
+    suffix = (os.environ.get("TRUSTED_HOST_SUFFIX") or "").strip().lstrip("*.")
+    if suffix:
+        hosts.add(suffix)
+        hosts.add(f"*.{suffix}")
 
     return sorted(hosts)
 

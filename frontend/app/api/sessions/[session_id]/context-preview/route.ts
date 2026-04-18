@@ -4,14 +4,17 @@ import {
   getRequiredAuthHeader,
   isMissingAuthSessionError,
 } from "@/lib/supabase/get-auth-header";
-
-const PIPELINE_URL =
-  process.env.NEXT_PUBLIC_PIPELINE_URL ?? "http://localhost:8001";
+import {
+  getPipelineServerBaseUrl,
+  pipelineServerMisconfiguredResponse,
+} from "@/lib/server/pipeline-server";
 
 export async function GET(
   req: NextRequest,
   { params }: { params: { session_id: string } }
 ) {
+  const mis = pipelineServerMisconfiguredResponse();
+  if (mis) return mis;
   try {
     const sessionId = params.session_id;
     const fwdHeaders = await getRequiredAuthHeader();
@@ -37,7 +40,7 @@ export async function GET(
     let memory_keys: string[] = [];
     try {
       const res = await fetch(
-        `${PIPELINE_URL}/session/${encodeURIComponent(sessionId)}`,
+        `${getPipelineServerBaseUrl()}/session/${encodeURIComponent(sessionId)}`,
         { headers: fwdHeaders }
       );
       if (res.ok) {
