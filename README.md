@@ -125,15 +125,16 @@ For **FastAPI**, use a host meant for long‑running Python/ASGI (for example **
 cd backend && python -m pip install -r requirements.txt && cd src && uvicorn main:app --host 0.0.0.0 --port "${PORT:-8001}"
 ```
 
-#### Railway (FastAPI): “Error creating build plan with Railpack”
+#### Railway (FastAPI): Railpack / “No start command detected”
 
-`backend/` contains **both** `package.json` (Express) and `requirements.txt` (FastAPI). Railpack can fail while trying to infer a single stack. This repo ships a **Dockerfile** so the pipeline builds as **Python-only**:
+**What goes wrong:** If the Railway service uses the **repository root** (default when you import the whole repo), Railpack sees the root **`package.json`** (npm workspace for Next.js). That file has a **`build`** script but **no `start` script**, so Railpack errors with **“No start command detected”** even though you intended to run **Python**.
 
-1. Create a Railway service from this repo.
-2. **Settings → Root Directory** → **`backend`**.
-3. **Settings → Build → Builder** → **Dockerfile** (or **Config as code** → set file path to **`/backend/railway.toml`**, which pins `builder = "DOCKERFILE"`).
-4. Set the same env vars as local FastAPI (see [`.env.example`](.env.example): `ANTHROPIC_API_KEY`, `SUPABASE_*`, `TOKEN_ENCRYPTION_KEY`, `ALLOWED_ORIGINS`, etc.).
-5. Put the Railway **HTTPS** origin in **`NEXT_PUBLIC_PIPELINE_URL`** on your frontend (e.g. Vercel env vars).
+**Fix (pick one):**
+
+1. **Repo root (simplest)** — Do **not** set a Root Directory. Railway will read root [`railway.toml`](railway.toml), which builds [`Dockerfile.pipeline`](Dockerfile.pipeline) (FastAPI only). Set FastAPI env vars from [`.env.example`](.env.example) and put the public URL in **`NEXT_PUBLIC_PIPELINE_URL`** on the frontend.
+2. **`backend/` only** — **Settings → Root Directory** → **`backend`**. Then use [`backend/railway.toml`](backend/railway.toml) + [`backend/Dockerfile`](backend/Dockerfile) (see [monorepo config path](https://docs.railway.com/guides/monorepo): you may need **Config as code** → **`/backend/railway.toml`**).
+
+`backend/` mixes **Node** (`package.json`) and **Python** (`requirements.txt`); Railpack can also fail with **“Error creating build plan”** unless you use **Dockerfile** as above.
 
 ### Deploying Express (**optional** on Vercel)
 

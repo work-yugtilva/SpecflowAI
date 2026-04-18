@@ -1,0 +1,17 @@
+# Speed / size for Dockerfile.pipeline (context = repo root)
+.git
+**/node_modules
+**/.next
+**/__pycache__
+*.pyc
+.pytest_cache
+.env
+.env.*
+frontend
+backend/node_modules
+backend/dist
+brand-assets
+docs
+e2e
+autoresearch
+everything-claude-code
