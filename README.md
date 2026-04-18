@@ -29,13 +29,10 @@ Edit `.env` with your credentials:
 ### 2. Install Dependencies
 
 ```bash
-# Root-level installs
+# From the repo root: installs the root orchestration deps + the frontend workspace (Next.js)
 npm install
 
-# Frontend (Next.js)
-npm install --prefix frontend
-
-# Backend
+# Backend (Express + pipeline scripts)
 npm install --prefix backend
 python3 -m pip install -r backend/requirements.txt
 ```
@@ -95,15 +92,15 @@ cd frontend && npm run type-check
 
 ## Deploying on Vercel (frontend)
 
-This repo’s Next.js app lives in **`frontend/`**. The root [`package.json`](package.json) does **not** include `next` (only orchestration scripts).
+The Next.js app lives in **`frontend/`**, and the repo root is configured as an **npm workspace** so `npm install` / `npm run build` at the repository root install and build that app (see root [`package.json`](package.json) and [`vercel.json`](vercel.json)).
 
 When you connect the GitHub repo to Vercel:
 
-1. Open the project on Vercel → **Settings** → **General** → **Root Directory**.
-2. Set **Root Directory** to **`frontend`** (not the repository root).
-3. Save, then trigger a new deployment (**Deployments** → … → **Redeploy**).
+1. **Root Directory** can stay the **repository root** (default). Vercel will run `npm install` and `npm run build` from the root; the build script delegates to the `specflow-frontend` workspace.
+2. Alternatively, you can still set **Root Directory** to **`frontend`** if you prefer a per-app project layout; either layout should work.
+3. Configure production env vars in Vercel (**Settings** → **Environment Variables**) to match [`frontend/.env.example`](frontend/.env.example) / your local `frontend/.env.local` (e.g. `NEXT_PUBLIC_*` and API URLs).
 
-If Root Directory is wrong, the build log may show only ~25 packages installed and **“No Next.js version detected”** — that means Vercel ran `npm install` against the root `package.json` instead of [`frontend/package.json`](frontend/package.json).
+If an older deployment showed **404 NOT_FOUND** or **“No Next.js version detected”**, it was usually building from the wrong directory or skipping frontend dependencies—redeploy after the workspace + `vercel.json` setup above.
 
 See also: [Vercel — Root Directory](https://vercel.com/docs/deployments/configure-a-build#root-directory) and [Monorepos on Vercel](https://vercel.com/docs/monorepos).
 

@@ -1,11 +1,17 @@
 {
   "name": "specflowai",
   "private": true,
+  "workspaces": ["frontend"],
+  "engines": {
+    "node": ">=18.18.0"
+  },
   "scripts": {
-    "dev": "concurrently -k -n frontend,backend,pipeline -c blue,green,magenta \"npm run dev --prefix frontend\" \"npm run dev --prefix backend\" \"npm run dev:pipeline --prefix backend\"",
-    "dev:frontend": "npm run dev --prefix frontend",
+    "dev": "concurrently -k -n frontend,backend,pipeline -c blue,green,magenta \"npm run dev -w specflow-frontend\" \"npm run dev --prefix backend\" \"npm run dev:pipeline --prefix backend\"",
+    "dev:frontend": "npm run dev -w specflow-frontend",
     "dev:backend": "npm run dev --prefix backend",
-    "dev:pipeline": "npm run dev:pipeline --prefix backend"
+    "dev:pipeline": "npm run dev:pipeline --prefix backend",
+    "build": "npm run build -w specflow-frontend",
+    "vercel-build": "npm run build -w specflow-frontend"
   },
   "devDependencies": {
     "concurrently": "^9.2.1"
