@@ -246,7 +246,7 @@ def _build_allowed_hosts() -> list[str]:
 def _get_allowed_origins() -> list[str]:
     raw = os.getenv("ALLOWED_ORIGINS", "")
     if not raw:
-        if os.getenv("ENVIRONMENT", "").lower() == "production":
+        if _is_production():
             raise RuntimeError(
                 "[SECURITY] ALLOWED_ORIGINS must be set in production. "
                 "Example: https://app.specflow.ai,https://specflow.ai"
