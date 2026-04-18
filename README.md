@@ -104,6 +104,16 @@ If an older deployment showed **404 NOT_FOUND** or **“No Next.js version detec
 
 See also: [Vercel — Root Directory](https://vercel.com/docs/deployments/configure-a-build#root-directory) and [Monorepos on Vercel](https://vercel.com/docs/monorepos).
 
+## Deploying on Vercel (Express API in `backend/`)
+
+Use a **separate Vercel project** from the Next.js frontend. In that project:
+
+1. **Root Directory** → **`backend`** (the folder with [`backend/package.json`](backend/package.json)).
+2. **Framework preset** should be **Express** (or “Other”); do **not** inherit **Next.js** from another project. Repo root [`vercel.json`](vercel.json) intentionally does **not** set `framework`, so the Node API is not mistaken for Next.js. This repo also ships [`backend/vercel.json`](backend/vercel.json) with `"framework": "express"` for an explicit Express build.
+3. Set the same **Supabase** and **CORS** variables you use locally (see [`.env.example`](.env.example): `SUPABASE_*`, `ALLOWED_ORIGINS`, `FRONTEND_URL` / `NEXT_PUBLIC_APP_URL`, `TOKEN_ENCRYPTION_KEY` if those routes need it, etc.).
+
+The Express app already **`export default app`** from [`backend/src/index.ts`](backend/src/index.ts), which matches [Express on Vercel](https://vercel.com/docs/frameworks/backend/express).
+
 ## Troubleshooting
 
 **Port already in use:**
