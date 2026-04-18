@@ -184,6 +184,8 @@ def _is_production() -> bool:
 
 def _build_allowed_hosts() -> list[str]:
     hosts = {"localhost", "127.0.0.1", "test"}
+    # Railway deployment healthchecks use this Host header (see Railway healthcheck docs).
+    hosts.update({"healthcheck.railway.app", "*.railway.app"})
     if not _is_production():
         hosts.update({"*.loca.lt", "*.ngrok-free.app", "*.trycloudflare.com"})
     raw_hosts = os.environ.get("ALLOWED_HOSTS", "")
@@ -307,7 +309,12 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 
 app.add_middleware(SecurityHeadersMiddleware)
-if os.getenv("ENVIRONMENT", "").lower() == "production":
+# Railway (and similar) terminate TLS at the edge; internal HTTP healthchecks must not get
+# 307 loops. Only enforce app-level HTTPS redirect in production when not on Railway.
+if (
+    os.getenv("ENVIRONMENT", "").lower() == "production"
+    and not os.getenv("RAILWAY_PROJECT_ID")
+):
     app.add_middleware(HTTPSRedirectMiddleware)
 app.add_middleware(
     CORSMiddleware,
@@ -509,8 +516,8 @@ IntegrationProvider = Literal["github", "jira", "linear", "notion", "confluence"
 
 
 @app.get("/health")
-@limiter.limit(GENERAL_API_LIMIT)
 async def health(request: Request):
+    """Liveness probe — no auth, no rate limit (Railway/K8s healthchecks)."""
     return {"status": "ok", "service": "specflow-pipeline"}
 
 
