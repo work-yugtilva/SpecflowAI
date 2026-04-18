@@ -131,7 +131,7 @@ cd backend && python -m pip install -r requirements.txt && cd src && uvicorn mai
 
 **Fix (pick one):**
 
-1. **Repo root (simplest)** — Do **not** set a Root Directory. Railway will read root [`railway.toml`](railway.toml), which builds [`Dockerfile.pipeline`](Dockerfile.pipeline) (FastAPI only). Set FastAPI env vars from [`.env.example`](.env.example) and put the public URL in **`NEXT_PUBLIC_PIPELINE_URL`** on the frontend.
+1. **Repo root (simplest)** — Do **not** set a Root Directory. Railway should read root [`railway.json`](railway.json) (Dockerfile build of [`Dockerfile.pipeline`](Dockerfile.pipeline)). In the service **Settings → Build**, ensure the dashboard is **not** forcing **Railpack** over config-as-code. If Railpack still runs, this repo also adds [`requirements.txt`](requirements.txt) (includes `backend/requirements.txt`), a [`Procfile`](Procfile), and [`railpack.json`](railpack.json) with **`provider: "python"`** so the plan gets a **start command** and **pip**. Set FastAPI env vars from [`.env.example`](.env.example) and put the public URL in **`NEXT_PUBLIC_PIPELINE_URL`** on the frontend.
 2. **`backend/` only** — **Settings → Root Directory** → **`backend`**. Then use [`backend/railway.toml`](backend/railway.toml) + [`backend/Dockerfile`](backend/Dockerfile) (see [monorepo config path](https://docs.railway.com/guides/monorepo): you may need **Config as code** → **`/backend/railway.toml`**).
 
 `backend/` mixes **Node** (`package.json`) and **Python** (`requirements.txt`); Railpack can also fail with **“Error creating build plan”** unless you use **Dockerfile** as above.

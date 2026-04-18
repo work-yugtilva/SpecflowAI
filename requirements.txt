@@ -1,0 +1,2 @@
+# Railpack / pip detect Python at repo root; delegate to the pipeline lockfile.
+-r backend/requirements.txt
