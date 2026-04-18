@@ -104,15 +104,38 @@ If an older deployment showed **404 NOT_FOUND** or **“No Next.js version detec
 
 See also: [Vercel — Root Directory](https://vercel.com/docs/deployments/configure-a-build#root-directory) and [Monorepos on Vercel](https://vercel.com/docs/monorepos).
 
-## Deploying on Vercel (Express API in `backend/`)
+## Backend: Express vs FastAPI (do not confuse them)
 
-Use a **separate Vercel project** from the Next.js frontend. In that project:
+The **`backend/`** folder contains **two separate HTTP services**:
 
-1. **Root Directory** → **`backend`** (the folder with [`backend/package.json`](backend/package.json)).
-2. **Framework preset** should be **Express** (or “Other”); do **not** inherit **Next.js** from another project. Repo root [`vercel.json`](vercel.json) intentionally does **not** set `framework`, so the Node API is not mistaken for Next.js. This repo also ships [`backend/vercel.json`](backend/vercel.json) with `"framework": "express"` for an explicit Express build.
-3. Set the same **Supabase** and **CORS** variables you use locally (see [`.env.example`](.env.example): `SUPABASE_*`, `ALLOWED_ORIGINS`, `FRONTEND_URL` / `NEXT_PUBLIC_APP_URL`, `TOKEN_ENCRYPTION_KEY` if those routes need it, etc.).
+| Service | Stack | Entry | Default local port | Role |
+|--------|--------|--------|--------------------|------|
+| **Pipeline API** | **Python FastAPI** | [`backend/src/main.py`](backend/src/main.py) | `8001` (`PIPELINE_PORT`) | Sessions, pipeline runs, PRD, jobs |
+| **Context / research API** | **Node + Express** | [`backend/src/index.ts`](backend/src/index.ts) | `3001` (`PORT`) | JWT auth, `/api/context`, `/api/research` |
 
-The Express app already **`export default app`** from [`backend/src/index.ts`](backend/src/index.ts), which matches [Express on Vercel](https://vercel.com/docs/frameworks/backend/express).
+Your frontend talks to them via **`NEXT_PUBLIC_PIPELINE_URL`** (FastAPI) and **`NEXT_PUBLIC_EXPRESS_API_URL`** / **`NEXT_PUBLIC_BACKEND_URL`** (Express) — see [`.env.example`](.env.example).
+
+### Deploying the pipeline (**FastAPI**) — not Vercel-first
+
+FastAPI is **not** the same app as the Express server under [`backend/package.json`](backend/package.json). A Vercel project whose root is **`backend/`** will build **Node/Express**, not `uvicorn` + `main.py`.
+
+For **FastAPI**, use a host meant for long‑running Python/ASGI (for example **Render**, **Fly.io**, **Railway**, or **Google Cloud Run**). Typical run:
+
+```bash
+cd backend && python -m pip install -r requirements.txt && cd src && uvicorn main:app --host 0.0.0.0 --port "${PORT:-8001}"
+```
+
+Set **`NEXT_PUBLIC_PIPELINE_URL`** on your **frontend** (e.g. Vercel env vars) to that service’s **HTTPS** origin.
+
+### Deploying Express (**optional** on Vercel)
+
+If you **do** want the small Node API on Vercel, use a **separate** Vercel project (not the same as the Next.js app):
+
+1. **Root Directory** → **`backend`** (where [`backend/package.json`](backend/package.json) lives).
+2. **Framework preset** → **Express**; this repo includes [`backend/vercel.json`](backend/vercel.json) with `"framework": "express"` so it is not treated as Next.js.
+3. Env vars: **`SUPABASE_*`**, **`ALLOWED_ORIGINS`**, **`FRONTEND_URL`** / **`NEXT_PUBLIC_APP_URL`**, etc. — see [`.env.example`](.env.example).
+
+The Express app **`export default app`** from [`backend/src/index.ts`](backend/src/index.ts), which matches [Express on Vercel](https://vercel.com/docs/frameworks/backend/express).
 
 ## Troubleshooting
 
