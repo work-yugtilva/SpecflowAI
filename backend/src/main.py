@@ -15,7 +15,8 @@ REQUIRED_ENV_VARS = [
     "SUPABASE_URL",
     "SUPABASE_SERVICE_ROLE_KEY",
     "SUPABASE_ANON_KEY",
-    "TOKEN_ENCRYPTION_KEY",
+    # TOKEN_ENCRYPTION_KEY: required to encrypt OAuth tokens; lazy-loaded so the API can
+    # start (e.g. Railway /health) before the variable is present — set it for integrations.
 ]
 
 
@@ -226,6 +227,11 @@ MAX_REQUEST_BODY_BYTES = 512 * 1024  # 512 KB
 @asynccontextmanager
 async def lifespan(app):
     """Mark any jobs that were still 'running' when the process last died as failed."""
+    if not (os.environ.get("TOKEN_ENCRYPTION_KEY") or "").strip():
+        logger.warning(
+            "TOKEN_ENCRYPTION_KEY is unset — pipeline and /health run, but OAuth integration "
+            "encrypt/decrypt will fail until you set a 32-byte key (base64). See .env.example."
+        )
     try:
         repo = JobRepository()
         await repo.mark_stale_as_failed(older_than_minutes=10)

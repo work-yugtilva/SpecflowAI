@@ -42,7 +42,15 @@ def _load_key() -> bytes:
     return decoded[:32]
 
 
-_AESGCM = AESGCM(_load_key())
+_AESGCM: AESGCM | None = None
+
+
+def _get_aesgcm() -> AESGCM:
+    """Lazy init so FastAPI can boot (e.g. healthchecks) before integrations need crypto."""
+    global _AESGCM
+    if _AESGCM is None:
+        _AESGCM = AESGCM(_load_key())
+    return _AESGCM
 
 
 def encrypt_token(plaintext: str) -> str:
@@ -53,7 +61,7 @@ def encrypt_token(plaintext: str) -> str:
     A fresh random 12-byte nonce is generated for every call.
     """
     nonce = os.urandom(12)
-    encrypted = _AESGCM.encrypt(nonce, plaintext.encode("utf-8"), None)
+    encrypted = _get_aesgcm().encrypt(nonce, plaintext.encode("utf-8"), None)
     payload = nonce + encrypted
     return base64.urlsafe_b64encode(payload).decode("ascii")
 
@@ -75,7 +83,7 @@ def decrypt_token(ciphertext: str) -> str:
     nonce = payload[:12]
     encrypted = payload[12:]
     try:
-        plaintext = _AESGCM.decrypt(nonce, encrypted, None)
+        plaintext = _get_aesgcm().decrypt(nonce, encrypted, None)
     except Exception as exc:  # cryptography raises InvalidTag on auth failure
         raise ValueError("Invalid ciphertext authentication") from exc
 
