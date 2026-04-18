@@ -5,7 +5,7 @@ Use a **separate Vercel project** from the Next.js frontend. Express serves `/ap
 ## 1. Create the Vercel project
 
 1. Vercel Dashboard → **Add New…** → **Project** → import the same GitHub repo as the frontend.
-2. **Root Directory**: `backend` (must be exactly this folder).
+2. **Root Directory**: set to **`backend`** (strongly recommended). If you leave the root at the **monorepo root**, Vercel still resolves `backend/src/index.*` first; this repo includes a small **`src/index.js`** shim that loads `dist/expressEntry.js` so path aliases are never executed from `src/`.
 3. **Framework Preset**: Vercel should detect **Express** from [`backend/vercel.json`](../../backend/vercel.json). If not, choose Express manually.
 4. Deploy. Note the production URL, e.g. `https://specflow-backend-xxxx.vercel.app`.
 
@@ -52,6 +52,6 @@ From the browser on your production site, open DevTools → Network; context/mer
 ## Reference
 
 - App: [`backend/src/expressEntry.ts`](../../backend/src/expressEntry.ts) — `export default app` (compiled to `dist/expressEntry.js` with path aliases resolved via `tsc-alias`).
-- Vercel entry: [`backend/index.ts`](../../backend/index.ts) re-exports the built app so the platform does not load `src/index.ts` with unresolved `@/` imports (see Vercel Express canonical paths).
+- Vercel entries: [`backend/index.ts`](../../backend/index.ts) (root Directory = `backend`) and [`backend/src/index.js`](../../backend/src/index.js) (monorepo root deploys → `/var/task/backend/src/index.js`) both re-export `dist/expressEntry.js` only.
 - Config: [`backend/vercel.json`](../../backend/vercel.json).
 - Build: [`backend/package.json`](../../backend/package.json) runs `tsc && tsc-alias`.
