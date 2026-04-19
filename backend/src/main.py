@@ -1566,13 +1566,13 @@ async def generate_agent_handoff(request: Request, session_id: str, auth: Supaba
     try:
         memory_repo = MemoryRepository(client=auth.client)
         required_keys: dict[str, Any] = {
-            "product_context": {},
             "problems": [],
             "features": [],
             "decompositions": [],
             "tasks": [],
         }
         optional_keys: dict[str, Any] = {
+            "product_context": {},
             "prd": {},
         }
 
