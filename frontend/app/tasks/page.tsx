@@ -294,7 +294,7 @@ function HandoffSummaryPanel({
 
         {/* Task list */}
         <div style={{ flex: 1, overflowY: "auto" }}>
-          {handoff.tasks.map((task) => {
+          {(handoff.tasks ?? []).map((task) => {
             const isExpanded = expandedTask === task.id;
             return (
               <div key={task.id} style={{ borderBottom: "1px solid #F0EDE9" }}>
@@ -441,7 +441,7 @@ function HandoffSummaryPanel({
                         </p>
                       </div>
                     )}
-                    {task.dependencies.length > 0 && (
+                    {(task.dependencies ?? []).length > 0 && (
                       <div>
                         <div
                           style={{
@@ -456,7 +456,7 @@ function HandoffSummaryPanel({
                           Dependencies
                         </div>
                         <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                          {task.dependencies.map((dep, i) => (
+                          {(task.dependencies ?? []).map((dep, i) => (
                             <div key={i} style={{ fontSize: 12, color: "#6B6B6B", lineHeight: 1.5 }}>
                               <span style={{ color: "#E8561B", marginRight: 6 }}>→</span>
                               {dep}

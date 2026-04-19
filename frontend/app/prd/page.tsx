@@ -1405,8 +1405,8 @@ function PrdPage() {
               </span>
             )}
             {activeSessionId && regenCount > 0 && (
-              <span style={{ fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(0,0,0,0.06)", color: regenLimitReached ? "#B91C1C" : "#6B6B6B", letterSpacing: "0.03em" }}>
-                {regenLeft}/3 Regenerations Left
+              <span style={{ fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(0,0,0,0.06)", color: regenLimitReached ? "#B91C1C" : "#6B6B6B", letterSpacing: "0.03em", width: "6.5rem", display: "inline-flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box" }}>
+                {regenLeft}/3 Regen Left
               </span>
             )}
           </div>
@@ -1433,7 +1433,7 @@ function PrdPage() {
             ))}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             {prd && (
               <>
                 <button
@@ -1445,8 +1445,10 @@ function PrdPage() {
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
+                    justifyContent: "center",
                     gap: 5,
-                    padding: "0.4rem 0.875rem",
+                    width: "6.5rem",
+                    padding: "0.4rem 0.5rem",
                     borderRadius: 8,
                     fontSize: "0.8125rem",
                     fontWeight: 500,
@@ -1455,9 +1457,11 @@ function PrdPage() {
                     color: "#6B6B6B",
                     cursor: "pointer",
                     fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                    overflow: "hidden",
+                    whiteSpace: "nowrap",
                   }}
                 >
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ opacity: 0.5 }}>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ opacity: 0.5, flexShrink: 0 }}>
                     <path d="M4.5 7.5a2.5 2.5 0 003.536-3.536L6.5 2.43A2.5 2.5 0 002.964 5.965" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
                     <path d="M7.5 4.5A2.5 2.5 0 003.964 8.036L5.5 9.57A2.5 2.5 0 009.036 6.035" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
                   </svg>
@@ -1465,11 +1469,14 @@ function PrdPage() {
                 </button>
                 <button
                   onClick={handleExportMarkdown}
+                  title="Export as Markdown"
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
+                    justifyContent: "center",
                     gap: 5,
-                    padding: "0.4rem 0.875rem",
+                    width: "6.5rem",
+                    padding: "0.4rem 0.5rem",
                     borderRadius: 8,
                     fontSize: "0.8125rem",
                     fontWeight: 500,
@@ -1478,20 +1485,24 @@ function PrdPage() {
                     color: "#6B6B6B",
                     cursor: "pointer",
                     fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                    overflow: "hidden",
+                    whiteSpace: "nowrap",
                   }}
                 >
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ opacity: 0.5 }}>
+                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ opacity: 0.5, flexShrink: 0 }}>
                     <path d="M2 9h8M6 2v5M3.5 5.5L6 8l2.5-2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
-                  Export as Markdown
+                  Export MD
                 </button>
                 <button
                   onClick={() => setChatOpen(!chatOpen)}
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
-                    gap: 6,
-                    padding: "0.4rem 0.875rem",
+                    justifyContent: "center",
+                    gap: 5,
+                    width: "6.5rem",
+                    padding: "0.4rem 0.5rem",
                     borderRadius: 8,
                     fontSize: "0.8125rem",
                     fontWeight: 500,
@@ -1500,9 +1511,11 @@ function PrdPage() {
                     color: chatOpen ? "#E8561B" : "#0D0D0D",
                     cursor: "pointer",
                     fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                    overflow: "hidden",
+                    whiteSpace: "nowrap",
                   }}
                 >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
                     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                   Ask AI
@@ -1512,8 +1525,10 @@ function PrdPage() {
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
-                    gap: 6,
-                    padding: "0.4rem 0.875rem",
+                    justifyContent: "center",
+                    gap: 5,
+                    width: "6.5rem",
+                    padding: "0.4rem 0.5rem",
                     borderRadius: 8,
                     fontSize: "0.8125rem",
                     fontWeight: 500,
@@ -1522,19 +1537,21 @@ function PrdPage() {
                     color: "#0D0D0D",
                     cursor: "pointer",
                     fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                    overflow: "hidden",
+                    whiteSpace: "nowrap",
                   }}
                 >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
                     <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
                     <path d="M3 3v5h5" />
                     <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
                     <path d="M16 21v-5h5" />
                   </svg>
-                  Discovery Loop
+                  Discovery
                   {feedback.length > 0 && (
                     <span style={{
                       background: "#E8561B", color: "white", fontSize: 10,
-                      padding: "2px 6px", borderRadius: 10, fontWeight: 600
+                      padding: "1px 5px", borderRadius: 10, fontWeight: 600, flexShrink: 0,
                     }}>
                       {feedback.length}
                     </span>
@@ -1546,14 +1563,16 @@ function PrdPage() {
                     onClick={handlePushToLinear}
                     disabled={linearPushing || !linearPayload}
                     style={{
-                      display: "inline-flex", alignItems: "center", gap: 5,
-                      padding: "0.4rem 0.875rem", borderRadius: 8, fontSize: "0.8125rem", fontWeight: 500,
+                      display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5,
+                      width: "6.5rem", padding: "0.4rem 0.5rem", borderRadius: 8, fontSize: "0.8125rem", fontWeight: 500,
                       background: linearPushStatus === "success" ? "rgba(232,86,27,0.08)" : "#0D0D0D",
                       border: linearPushStatus === "success" ? "1.5px solid rgba(232,86,27,0.3)" : "1.5px solid #0D0D0D",
                       color: linearPushStatus === "success" ? "#E8561B" : "#FFFFFF",
                       cursor: (linearPushing || !linearPayload) ? "not-allowed" : "pointer",
                       opacity: (linearPushing || !linearPayload) ? 0.6 : 1,
                       fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                      overflow: "hidden",
+                      whiteSpace: "nowrap",
                     }}
                   >
                     {linearPushing ? (
@@ -1564,7 +1583,7 @@ function PrdPage() {
                         <path d="M3.5 5.5h4M5.5 3.5l2 2-2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
                       </svg>
                     )}
-                    {linearPushStatus === "success" ? "Pushed to Linear ✓" : "Push to Linear"}
+                    {linearPushStatus === "success" ? "Pushed ✓" : "→ Linear"}
                   </button>
                   {linearPushStatus === "error" && linearPushError && (
                     <span style={{ fontSize: 11, color: "#DC2626" }}>{linearPushError}</span>
@@ -1585,8 +1604,10 @@ function PrdPage() {
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
+                    justifyContent: "center",
                     gap: 5,
-                    padding: "0.4rem 0.875rem",
+                    width: "6.5rem",
+                    padding: "0.4rem 0.5rem",
                     borderRadius: 8,
                     fontSize: "0.8125rem",
                     fontWeight: 500,
