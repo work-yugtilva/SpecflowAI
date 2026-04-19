@@ -72,7 +72,9 @@ memory:
   read:
     strategy: top_k
     keys:
+      product_context: 1
       problems: 7
+      ingest: 10
   write:
     key: features
     mode: overwrite
