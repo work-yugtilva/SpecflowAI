@@ -894,11 +894,19 @@ async def run_session_async(request: Request, session_id: str, req: SessionRunRe
                         step=current_state.get("last_completed_step", req.step),
                     )
 
-                await job.queue.put({
-                    "type": "complete",
-                    "data": result,
-                    "session_state": current_state,
-                })
+                try:
+                    completion_event = {
+                        "type": "complete",
+                        "data": result,
+                        "session_state": current_state,
+                    }
+                    # Verify the event is JSON-serializable before putting it in the queue
+                    json.dumps(completion_event)
+                    await job.queue.put(completion_event)
+                except (TypeError, ValueError) as ser_err:
+                    logger.error("[stream] Serialization error for completion event: %s", ser_err, exc_info=True)
+                    await job.queue.put({"type": "error", "message": "Failed to serialize pipeline result"})
+
                 job.status = "completed"
                 await repo.update_status(job.job_id, "completed", result=result)
             except HTTPException as e:
@@ -960,6 +968,7 @@ async def stream_run(request: Request, session_id: str, job_id: str, auth: Supab
     async def _generate():
         deadline = asyncio.get_event_loop().time() + 600
         yield f"data: {json.dumps({'type': 'connected'})}\n\n"
+        received_completion = False
         while True:
             if asyncio.get_event_loop().time() > deadline:
                 yield f"data: {json.dumps({'type': 'error', 'message': 'Stream timeout'})}\n\n"
@@ -970,9 +979,17 @@ async def stream_run(request: Request, session_id: str, job_id: str, auth: Supab
                 yield f"data: {json.dumps({'type': 'heartbeat'})}\n\n"
                 continue
             if event is None:  # sentinel
+                if not received_completion:
+                    logger.warning("[stream] Stream ended without completion event for job_id=%s", job_id)
                 break
-            yield f"data: {json.dumps(event)}\n\n"
+            try:
+                yield f"data: {json.dumps(event)}\n\n"
+            except (TypeError, ValueError) as e:
+                logger.error("[stream] Failed to serialize event: %s event=%s", e, event, exc_info=True)
+                yield f"data: {json.dumps({'type': 'error', 'message': 'Serialization error'})}\n\n"
+                break
             if event.get("type") in ("complete", "error"):
+                received_completion = True
                 break
 
     return StreamingResponse(
