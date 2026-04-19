@@ -1609,7 +1609,7 @@ async def generate_agent_handoff(request: Request, session_id: str, auth: Supaba
         )
         await memory_repo.save_for_session(output_entry)
 
-        return {"agent_handoff": result}
+        return {"handoff": result}
     except HTTPException:
         raise
     except Exception:
