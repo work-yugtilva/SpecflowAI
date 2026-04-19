@@ -145,6 +145,10 @@ class BaseAgent:
                 return {}
             return "..."
 
+        # Handle {"type": "list", "items": {...}} nested schema — produce a proper list example
+        if fields.get("type") == "list" and "items" in fields:
+            return [self._fields_to_example(fields["items"])]
+
         result = {}
         for key, val in fields.items():
             result[key] = self._fields_to_example(val)
