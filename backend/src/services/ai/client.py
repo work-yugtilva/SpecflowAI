@@ -156,7 +156,7 @@ async def run_ai_async(prompt: str, max_tokens: int = None, retries: int = None,
             if temperature is not None:
                 kwargs["temperature"] = temperature
             if max_tokens > 8192:
-                kwargs["betas"] = ["output-128k-2025-02-19"]
+                kwargs["extra_headers"] = {"anthropic-beta": "output-128k-2025-02-19"}
             message = await client.messages.create(**kwargs)
             return message.content[0].text
 
