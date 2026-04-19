@@ -55,9 +55,9 @@ playwright-report/
 test-results/
 .playwright/
 .playwright-mcp/
+.worktrees/
 
 # OS / editor noise
 Thumbs.db
 *.swp
 *~
-
