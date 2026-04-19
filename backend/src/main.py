@@ -1680,7 +1680,10 @@ async def export_agent_handoff_markdown(request: Request, session_id: str, auth:
                 lines.append(f"{i}. {label}")
             lines.append("")
 
-        tasks = handoff.get("tasks", [])
+        raw_tasks = handoff.get("tasks", [])
+        if isinstance(raw_tasks, dict):
+            raw_tasks = raw_tasks.get("items", [])
+        tasks = raw_tasks if isinstance(raw_tasks, list) else []
         if tasks:
             lines.append("## Implementation Tasks\n")
             for task in tasks:
@@ -1793,7 +1796,10 @@ async def export_handoff(
         project_brief = handoff.get("project_brief", "")
         architecture_notes = handoff.get("architecture_notes", "")
         execution_order = handoff.get("execution_order", [])
-        tasks = handoff.get("tasks", [])
+        raw_tasks = handoff.get("tasks", [])
+        if isinstance(raw_tasks, dict):
+            raw_tasks = raw_tasks.get("items", [])
+        tasks = raw_tasks if isinstance(raw_tasks, list) else []
         needs_count = handoff.get("needs_clarification_count", 0)
         estimated = handoff.get("estimated_sessions", "")
 

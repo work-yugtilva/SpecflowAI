@@ -502,7 +502,7 @@ function HandoffSummaryPanel({
           ] as const).map(({ label, format }) => (
             <button
               key={format}
-              onClick={() => exportHandoff(sessionId, format)}
+              onClick={() => exportHandoff(sessionId, format).catch((e) => alert(`Export failed: ${e.message}`))}
               style={{
                 width: "100%",
                 textAlign: "left",
@@ -1106,7 +1106,7 @@ export default function TasksPage() {
                     ] as const).map(({ label, format }) => (
                       <button
                         key={format}
-                        onClick={() => { exportHandoff(activeSessionId!, format); setShowExportDropdown(false); }}
+                        onClick={() => { setShowExportDropdown(false); exportHandoff(activeSessionId!, format).catch((e) => alert(`Export failed: ${e.message}`)); }}
                         style={{ width: "100%", textAlign: "left", padding: "9px 14px", fontSize: 12.5, color: "#0D0D0D", background: "none", border: "none", cursor: "pointer", fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif" }}
                         onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(0,0,0,0.04)"; }}
                         onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
