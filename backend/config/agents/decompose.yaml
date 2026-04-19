@@ -66,6 +66,8 @@ memory:
   read:
     strategy: top_k
     keys:
+      product_context: 1
+      ingest: 10
       problems: 4
       features: 8
   write:
