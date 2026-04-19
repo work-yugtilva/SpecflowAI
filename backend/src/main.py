@@ -1565,12 +1565,14 @@ async def generate_agent_handoff(request: Request, session_id: str, auth: Supaba
     """Generate and persist an on-demand agent handoff for a completed session."""
     try:
         memory_repo = MemoryRepository(client=auth.client)
-        required_keys = {
+        required_keys: dict[str, Any] = {
             "product_context": {},
             "problems": [],
             "features": [],
             "decompositions": [],
             "tasks": [],
+        }
+        optional_keys: dict[str, Any] = {
             "prd": {},
         }
 
@@ -1585,6 +1587,14 @@ async def generate_agent_handoff(request: Request, session_id: str, auth: Supaba
 
             value = Pipeline._unwrap_persisted_content(memory_entry.content)
             context[key] = default_value if value is None else value
+
+        for key, default_value in optional_keys.items():
+            memory_entry = await memory_repo.get_by_session_and_key(session_id, key)
+            if memory_entry is not None:
+                value = Pipeline._unwrap_persisted_content(memory_entry.content)
+                context[key] = value if value is not None else default_value
+            else:
+                context[key] = default_value
 
         if missing:
             raise HTTPException(status_code=422, detail=f"Run {', '.join(missing)} first")
