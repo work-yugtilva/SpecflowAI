@@ -21,6 +21,8 @@ class AgentHandoffAgent(BaseAgent):
         prd = self._unwrap(ctx.get("prd", {}))
 
         blocks = [
+            self._wrap_xml("role", self.role),
+            self._wrap_xml("instructions", self.instructions),
             self._wrap_xml("user_provided_product_context", product_context),
             self._wrap_xml("prior_pipeline_output_problems", problems),
             self._wrap_xml("prior_pipeline_output_features", features),
@@ -49,5 +51,6 @@ class AgentHandoffAgent(BaseAgent):
             max_tokens=token_control.get("max_output_tokens", 2048),
             model=self.config.get("model"),
             temperature=self.config.get("temperature"),
+            system=self.config.get("system_prompt"),
         )
         return self.strip_reasoning_field(self.parse_json(raw))

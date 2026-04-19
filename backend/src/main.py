@@ -1622,9 +1622,9 @@ async def generate_agent_handoff(request: Request, session_id: str, auth: Supaba
         return {"handoff": result}
     except HTTPException:
         raise
-    except Exception:
+    except Exception as exc:
         logger.error("generate_agent_handoff failed", exc_info=True)
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=f"Internal error ({type(exc).__name__})")
 
 
 @app.get("/session/{session_id}/agent_handoff")

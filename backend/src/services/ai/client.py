@@ -56,7 +56,7 @@ def _get_async_instructor_client():
     return _async_instructor_client
 
 
-def run_ai(prompt: str, max_tokens: int = None, retries: int = None, model: str = None, temperature: float = None) -> str:
+def run_ai(prompt: str, max_tokens: int = None, retries: int = None, model: str = None, temperature: float = None, system: str = None) -> str:
     """
     Run AI inference with built-in retry logic for rate limits (429).
     """
@@ -76,6 +76,10 @@ def run_ai(prompt: str, max_tokens: int = None, retries: int = None, model: str 
             }
             if temperature is not None:
                 kwargs["temperature"] = temperature
+            if system:
+                kwargs["system"] = system
+            if max_tokens > 8192:
+                kwargs["extra_headers"] = {"anthropic-beta": "output-128k-2025-02-19"}
             message = client.messages.create(**kwargs)
             return message.content[0].text
             
@@ -136,7 +140,7 @@ def run_ai_structured(
     return client.messages.create(**kwargs)
 
 
-async def run_ai_async(prompt: str, max_tokens: int = None, retries: int = None, model: str = None, temperature: float = None) -> str:
+async def run_ai_async(prompt: str, max_tokens: int = None, retries: int = None, model: str = None, temperature: float = None, system: str = None) -> str:
     """
     Async version of run_ai — uses AsyncAnthropic, no thread blocking.
     """
@@ -155,6 +159,8 @@ async def run_ai_async(prompt: str, max_tokens: int = None, retries: int = None,
             }
             if temperature is not None:
                 kwargs["temperature"] = temperature
+            if system:
+                kwargs["system"] = system
             if max_tokens > 8192:
                 kwargs["extra_headers"] = {"anthropic-beta": "output-128k-2025-02-19"}
             message = await client.messages.create(**kwargs)
