@@ -20,16 +20,32 @@ stripe.api_version = "2026-02-25.clover"
 
 StripePlan = Literal["pro", "team"]
 
-STRIPE_PRICE_IDS = {
-    "pro": os.environ["STRIPE_PRO_PRICE_ID"],
-    "team": os.environ["STRIPE_TEAM_PRICE_ID"],
-}
+STRIPE_PRICE_IDS: dict[str, str] = {}
+
+
+def _load_price_ids() -> dict[str, str]:
+    missing: list[str] = []
+    pro_price_id = os.environ.get("STRIPE_PRO_PRICE_ID")
+    team_price_id = os.environ.get("STRIPE_TEAM_PRICE_ID")
+    if not pro_price_id:
+        missing.append("STRIPE_PRO_PRICE_ID")
+    if not team_price_id:
+        missing.append("STRIPE_TEAM_PRICE_ID")
+    if missing:
+        raise RuntimeError(
+            f"Missing required Stripe environment variables: {', '.join(missing)}"
+        )
+    return {
+        "pro": pro_price_id,
+        "team": team_price_id,
+    }
 
 
 class StripeService:
     def __init__(self) -> None:
         self._client = get_supabase_client()
         self._webhook_secret = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+        self._price_ids = _load_price_ids()
         if not stripe.api_key:
             raise RuntimeError("Missing STRIPE_SECRET_KEY")
         if not self._webhook_secret:
@@ -42,7 +58,7 @@ class StripeService:
         success_url: str,
         cancel_url: str,
     ) -> str:
-        if plan not in STRIPE_PRICE_IDS:
+        if plan not in self._price_ids:
             raise HTTPException(status_code=400, detail="Unsupported billing plan")
 
         customer_id = await self._create_or_get_customer(user_id)
@@ -50,7 +66,7 @@ class StripeService:
             mode="subscription",
             customer=customer_id,
             client_reference_id=user_id,
-            line_items=[{"price": STRIPE_PRICE_IDS[plan], "quantity": 1}],
+            line_items=[{"price": self._price_ids[plan], "quantity": 1}],
             metadata={"user_id": user_id, "plan": plan},
             subscription_data={"metadata": {"user_id": user_id, "plan": plan}},
             success_url=success_url,
@@ -88,7 +104,7 @@ class StripeService:
         if event_type == "checkout.session.completed":
             metadata = event_object.get("metadata") or {}
             raw_plan = metadata.get("plan")
-            plan = cast(StripePlan, raw_plan if raw_plan in STRIPE_PRICE_IDS else "pro")
+            plan = cast(StripePlan, raw_plan if raw_plan in self._price_ids else "pro")
             user_id = metadata.get("user_id") or event_object.get("client_reference_id")
             if user_id:
                 await self._update_plan_row(
@@ -237,7 +253,7 @@ class StripeService:
     def _plan_from_price_id(self, price_id: str | None) -> StripePlan | None:
         if not price_id:
             return None
-        for plan, mapped_price_id in STRIPE_PRICE_IDS.items():
+        for plan, mapped_price_id in self._price_ids.items():
             if mapped_price_id == price_id:
                 return cast(StripePlan, plan)
         return None
