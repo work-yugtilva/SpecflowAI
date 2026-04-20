@@ -1,5 +1,13 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { createSession, runSession, getSession, startSessionRunAsync, getLastSessionMode } from "../api/session";
+import {
+  createSession,
+  runSession,
+  getSession,
+  getHandoff,
+  startSessionRunAsync,
+  getLastSessionMode,
+  normalizeHandoffTasks,
+} from "../api/session";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -157,5 +165,57 @@ describe("runSession", () => {
     vi.stubGlobal("fetch", mockFetchNonOk(500, {}));
 
     await expect(runSession("sess-1", {}, "problems")).rejects.toThrow("Service Unavailable");
+  });
+});
+
+// ─── Agent handoff — task list shape from API/LLM ───────────────────────────
+
+describe("normalizeHandoffTasks", () => {
+  it("returns a plain array as-is", () => {
+    const a = [{ id: "1" }];
+    expect(normalizeHandoffTasks(a)).toBe(a);
+  });
+
+  it("unwraps { data: [...] } and double-wrapped data", () => {
+    const inner = [{ id: "t" }];
+    expect(normalizeHandoffTasks({ data: { data: inner } })).toEqual(inner);
+  });
+
+  it("accepts { items: [...] } (export path parity with FastAPI)", () => {
+    expect(
+      normalizeHandoffTasks({ items: [{ id: "a", layer: "API" }] })
+    ).toEqual([{ id: "a", layer: "API" }]);
+  });
+
+  it("returns [] for non-array object without items", () => {
+    expect(normalizeHandoffTasks({})).toEqual([]);
+  });
+});
+
+// ─── getHandoff (coercion) ──────────────────────────────────────────────────
+
+describe("getHandoff", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.unstubAllGlobals();
+  });
+
+  it("coerces tasks from { items: [...] } so UI always gets an array", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockFetchOk({
+        handoff: {
+          project_brief: "p",
+          execution_order: [],
+          needs_clarification_count: 0,
+          architecture_notes: "",
+          tasks: { items: [{ id: "1", title: "T", layer: "API" }] },
+        },
+      })
+    );
+
+    const r = await getHandoff("sess-1");
+    expect(r.handoff.tasks).toHaveLength(1);
+    expect(r.handoff.tasks[0].id).toBe("1");
   });
 });

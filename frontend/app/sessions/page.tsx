@@ -11,6 +11,7 @@ import {
   getHandoff,
   generateHandoff,
   exportHandoff,
+  normalizeHandoffTasks,
 } from "@/lib/api/session";
 import type { SessionDetail, SessionEvent, AgentHandoff } from "@/lib/api/session";
 import dynamic from "next/dynamic";
@@ -447,12 +448,7 @@ export default function SessionsPage() {
       void getHandoff(id)
         .then((r) => {
           if (selectedIdRef.current !== id) return;
-          const h = (r as { handoff?: unknown }).handoff;
-          if (h && typeof h === "object" && Array.isArray((h as AgentHandoff).tasks)) {
-            setSessionHandoff(h as AgentHandoff);
-          } else {
-            setSessionHandoff(null);
-          }
+          setSessionHandoff(r.handoff);
         })
         .catch(() => {
           if (selectedIdRef.current === id) setSessionHandoff(null);
@@ -1736,8 +1732,15 @@ export default function SessionsPage() {
                               </p>
                             )}
                             <p style={{ margin: 0 }}>
-                              {sessionHandoff.tasks.length} task{sessionHandoff.tasks.length !== 1 ? "s" : ""} across{" "}
-                              {Array.from(new Set(sessionHandoff.tasks.map((t) => t.layer))).join(", ") || "—"}
+                              {(() => {
+                                const tasks = normalizeHandoffTasks(sessionHandoff.tasks);
+                                return (
+                                  <>
+                                    {tasks.length} task{tasks.length !== 1 ? "s" : ""} across{" "}
+                                    {Array.from(new Set(tasks.map((t) => t.layer))).join(", ") || "—"}
+                                  </>
+                                );
+                              })()}
                             </p>
                           </div>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>

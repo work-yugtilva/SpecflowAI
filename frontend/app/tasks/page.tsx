@@ -11,6 +11,7 @@ import {
   generateHandoff,
   getHandoff,
   exportHandoff,
+  normalizeHandoffTasks,
 } from "@/lib/api/session";
 import type { SessionDetail, AgentHandoff } from "@/lib/api/session";
 import {
@@ -294,7 +295,7 @@ function HandoffSummaryPanel({
 
         {/* Task list */}
         <div style={{ flex: 1, overflowY: "auto" }}>
-          {(handoff.tasks ?? []).map((task) => {
+          {normalizeHandoffTasks(handoff.tasks).map((task) => {
             const isExpanded = expandedTask === task.id;
             return (
               <div key={task.id} style={{ borderBottom: "1px solid #F0EDE9" }}>

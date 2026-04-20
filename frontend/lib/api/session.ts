@@ -260,13 +260,88 @@ export interface AgentHandoff {
   execution_order: string[];
   tasks: HandoffTask[];
   needs_clarification_count: number;
-  estimated_sessions: number;
+  /** Present when the model returned a numeric estimate; otherwise null. */
+  estimated_sessions: number | null;
   architecture_notes: string;
 }
 
 export interface HandoffResponse {
   success: boolean;
   handoff: AgentHandoff;
+}
+
+/**
+ * Normalize `tasks` from API / LLM output: plain arrays, `{ data: [...] }`, or `{ items: [...] }`
+ * (matches backend export logic in main.py).
+ */
+export function normalizeHandoffTasks(raw: unknown): HandoffTask[] {
+  let t: unknown = raw;
+  for (let i = 0; i < 3; i++) {
+    if (
+      t &&
+      typeof t === "object" &&
+      !Array.isArray(t) &&
+      Object.keys(t as object).length === 1 &&
+      "data" in (t as object)
+    ) {
+      t = (t as { data: unknown }).data;
+    } else {
+      break;
+    }
+  }
+  if (Array.isArray(t)) return t as HandoffTask[];
+  if (t && typeof t === "object" && !Array.isArray(t)) {
+    const o = t as Record<string, unknown>;
+    const nested = o.items ?? o.tasks;
+    if (Array.isArray(nested)) return nested as HandoffTask[];
+  }
+  return [];
+}
+
+/** Build a consistent AgentHandoff object from arbitrary API / persisted JSON. */
+export function coerceAgentHandoff(raw: unknown): AgentHandoff | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const tasks = normalizeHandoffTasks(o.tasks);
+  const est = o.estimated_sessions;
+  let estimated_sessions: number | null = null;
+  if (typeof est === "number" && !Number.isNaN(est)) {
+    estimated_sessions = est;
+  } else if (est != null && est !== "") {
+    const n = Number(est);
+    if (!Number.isNaN(n)) estimated_sessions = n;
+  }
+  const ncc = o.needs_clarification_count;
+  const needs_clarification_count =
+    typeof ncc === "number" && !Number.isNaN(ncc)
+      ? ncc
+      : ncc != null && ncc !== ""
+        ? Number(ncc) || 0
+        : 0;
+
+  return {
+    project_brief: typeof o.project_brief === "string" ? o.project_brief : "",
+    execution_order: Array.isArray(o.execution_order)
+      ? (o.execution_order as string[])
+      : [],
+    tasks,
+    needs_clarification_count,
+    estimated_sessions,
+    architecture_notes:
+      typeof o.architecture_notes === "string" ? o.architecture_notes : "",
+  };
+}
+
+function parseHandoffApiBody(body: unknown): HandoffResponse {
+  const b = body as Record<string, unknown>;
+  const handoff = coerceAgentHandoff(b.handoff);
+  if (!handoff) {
+    throw new Error("Invalid handoff payload");
+  }
+  return {
+    success: typeof b.success === "boolean" ? b.success : true,
+    handoff,
+  };
 }
 
 // ─── Agent Handoff ────────────────────────────────────────────────────────────
@@ -277,12 +352,14 @@ export async function generateHandoff(sessionId: string): Promise<HandoffRespons
     method: "POST",
     headers: { "Content-Type": "application/json" },
   });
-  return handleResponse<HandoffResponse>(res);
+  const body = await handleResponse<Record<string, unknown>>(res);
+  return parseHandoffApiBody(body);
 }
 
 export async function getHandoff(sessionId: string): Promise<HandoffResponse> {
   const res = await fetch(`${API_BASE}/${sessionId}/handoff`, SESSION_FETCH_DEFAULTS);
-  return handleResponse<HandoffResponse>(res);
+  const body = await handleResponse<Record<string, unknown>>(res);
+  return parseHandoffApiBody(body);
 }
 
 export async function exportHandoff(
