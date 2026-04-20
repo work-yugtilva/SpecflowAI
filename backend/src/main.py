@@ -11,12 +11,13 @@ sys.path.insert(0, os.path.dirname(__file__))
 from services.config.load_env import load_root_env
 
 REQUIRED_ENV_VARS = [
-    "ANTHROPIC_API_KEY",
     "SUPABASE_URL",
     "SUPABASE_SERVICE_ROLE_KEY",
     "SUPABASE_ANON_KEY",
     # TOKEN_ENCRYPTION_KEY: required to encrypt OAuth tokens; lazy-loaded so the API can
     # start (e.g. Railway /health) before the variable is present — set it for integrations.
+    # ANTHROPIC_API_KEY is also lazy-loaded so deployments can pass healthchecks before
+    # AI traffic is configured; requests that need Anthropic will still fail clearly.
 ]
 
 
