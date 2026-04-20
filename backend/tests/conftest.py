@@ -11,6 +11,10 @@ os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "test-service-key")
 os.environ.setdefault("SUPABASE_ANON_KEY", "test-anon-key")
 os.environ.setdefault("ANTHROPIC_API_KEY", "sk-test-key")
 os.environ.setdefault("TOKEN_ENCRYPTION_KEY", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+os.environ.setdefault("STRIPE_SECRET_KEY", "sk_test_123")
+os.environ.setdefault("STRIPE_WEBHOOK_SECRET", "whsec_test_123")
+os.environ.setdefault("STRIPE_PRO_PRICE_ID", "price_pro_123")
+os.environ.setdefault("STRIPE_TEAM_PRICE_ID", "price_team_123")
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../src"))
 

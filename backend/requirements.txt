@@ -18,3 +18,4 @@ google-adk>=1.15.0
 google-genai>=1.36.0
 openai>=1.0.0
 cryptography>=41.0.0
+stripe>=15.0.0

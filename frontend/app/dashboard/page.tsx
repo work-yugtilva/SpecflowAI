@@ -793,7 +793,7 @@ export default function DashboardPage() {
                             ? `${plan.pipeline_runs_used} of ${plan.max_pipeline_runs} runs used`
                             : `$${(plan.api_credit_used_dollars ?? 0).toFixed(2)} of $${plan.max_credit_dollars?.toFixed(0)} used`}
                         </div>
-                        {plan.plan !== "unlimited" && (
+                        {plan.plan !== "team" && (
                           <Link href="/pricing" style={{ fontSize: 12, fontWeight: 600, color: "#E8561B", textDecoration: "none", display: "inline-block", marginTop: 10, fontFamily: "var(--font-dm-sans), sans-serif" }}>
                             Upgrade plan →
                           </Link>

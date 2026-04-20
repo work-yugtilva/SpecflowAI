@@ -5,7 +5,7 @@
 # Plans:
 #   free      — max 2 full pipeline runs (no credit cap)
 #   pro       — max $15.00 estimated API credit (~30 full runs)
-#   unlimited — max $100.00 estimated API credit (~200 full runs)
+#   team      — max $100.00 estimated API credit (~200 full runs)
 #
 # Cost estimation (approximate, based on claude-sonnet-4-5 pricing):
 #   Full pipeline run (5 steps) ≈ $0.50  → 50 cents
@@ -30,13 +30,13 @@ PLAN_LIMITS: dict[str, dict[str, Any]] = {
         "max_runs": None,
         "max_credit_cents": 1500,   # $15.00
         "label": "Pro",
-        "price_dollars": 30,
+        "price_dollars": 49,
     },
-    "unlimited": {
+    "team": {
         "max_runs": None,
         "max_credit_cents": 10000,  # $100.00
-        "label": "Unlimited",
-        "price_dollars": 199,
+        "label": "Team",
+        "price_dollars": 99,
     },
 }
 
@@ -51,6 +51,14 @@ COST_CENTS: dict[str, int] = {
 FREE_PLAN_STEP_LIMIT: int = 1000
 
 _VALID_PLANS = set(PLAN_LIMITS.keys())
+
+
+def _normalize_plan(plan: str | None) -> str:
+    if plan == "unlimited":
+        return "team"
+    if plan in _VALID_PLANS:
+        return str(plan)
+    return "free"
 
 
 class PlanService:
@@ -73,7 +81,7 @@ class PlanService:
         Safe to call without a prior row existing — will insert a free plan row.
         """
         row = await self._fetch_or_create(user_id)
-        plan = row.get("plan", "free")
+        plan = _normalize_plan(row.get("plan"))
         limits = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])
         runs_used = row.get("pipeline_runs_used", 0)
         credit_used_cents = row.get("api_credit_used_cents", 0)
@@ -115,10 +123,10 @@ class PlanService:
         """
         Verify the user has not exceeded their plan limit.
         Raises HTTPException(429) with a human-readable message if the limit
-        is reached. No-ops for unlimited plans that still have credit.
+        is reached. No-ops for paid plans that still have credit.
         """
         row = await self._fetch_or_create(user_id)
-        plan = row.get("plan", "free")
+        plan = _normalize_plan(row.get("plan"))
         limits = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])
 
         if plan == "free":
@@ -131,7 +139,7 @@ class PlanService:
                     status_code=429,
                     detail=(
                         f"Free plan limit reached ({max_runs} full pipeline runs). "
-                        "Upgrade to Pro at $30/month for $15 of AI credit."
+                        "Upgrade to Pro at $49/month for $15 of AI credit."
                     ),
                 )
             if steps_used >= FREE_PLAN_STEP_LIMIT:
@@ -139,11 +147,11 @@ class PlanService:
                     status_code=429,
                     detail=(
                         f"Free plan step limit reached ({FREE_PLAN_STEP_LIMIT} steps). "
-                        "Upgrade to Pro at $30/month for $15 of AI credit."
+                        "Upgrade to Pro at $49/month for $15 of AI credit."
                     ),
                 )
         else:
-            # Pro / Unlimited: check credit
+            # Pro / Team: check credit
             max_cents = limits["max_credit_cents"]
             if max_cents is None:
                 return  # safety: no cap
@@ -167,7 +175,7 @@ class PlanService:
         For paid plans: increments api_credit_used_cents.
         """
         row = await self._fetch_or_create(user_id)
-        plan = row.get("plan", "free")
+        plan = _normalize_plan(row.get("plan"))
 
         if plan == "free":
             if is_full_run:

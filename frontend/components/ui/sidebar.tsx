@@ -123,7 +123,10 @@ const NAV_SECTIONS: NavSection[] = [
     id: "settings",
     title: "Settings",
     icon: <GearIcon />,
-    items: [{ id: "settings/integrations", label: "Integrations" }],
+    items: [
+      { id: "settings/billing", label: "Billing" },
+      { id: "settings/integrations", label: "Integrations" },
+    ],
   },
 ];
 

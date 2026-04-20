@@ -53,7 +53,7 @@ if dsn := os.environ.get("SENTRY_DSN"):
     )
 
 from dataclasses import dataclass
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
@@ -91,6 +91,7 @@ from services.job_repository import JobRepository
 from services.db.supabase_client import get_supabase_client
 from middleware.verify_supabase_token import SupabaseUser, require_auth
 from services.plan.plan_service import PlanService
+from services.stripe.stripe_service import StripeService
 from services.integration_service import (
     save_integration,
     get_integration,
@@ -549,6 +550,16 @@ class IntegrationUpsertRequest(BaseModel):
     metadata: Optional[dict[str, Any]] = None
 
 
+class BillingCheckoutRequest(BaseModel):
+    plan: Literal["pro", "team"]
+    success_url: str = Field(..., min_length=1, max_length=2_048)
+    cancel_url: str = Field(..., min_length=1, max_length=2_048)
+
+
+class BillingPortalRequest(BaseModel):
+    return_url: str = Field(..., min_length=1, max_length=2_048)
+
+
 # ---------------------------------------------------------------------------
 # Routes — health + legacy /run (unchanged)
 # ---------------------------------------------------------------------------
@@ -671,6 +682,63 @@ async def get_user_plan(request: Request, auth: SupabaseUser = Depends(require_a
     except Exception:
         logger.exception("get_user_plan failed")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.post("/billing/checkout")
+@limiter.limit(GENERAL_API_LIMIT)
+async def create_billing_checkout_session(
+    request: Request,
+    req: BillingCheckoutRequest,
+    auth: SupabaseUser = Depends(require_auth),
+):
+    try:
+        stripe_service = StripeService()
+        url = await stripe_service.create_checkout_session(
+            user_id=auth.user_id,
+            plan=req.plan,
+            success_url=req.success_url,
+            cancel_url=req.cancel_url,
+        )
+        return {"url": url}
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("create_billing_checkout_session failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.post("/billing/portal")
+@limiter.limit(GENERAL_API_LIMIT)
+async def create_billing_portal_session(
+    request: Request,
+    req: BillingPortalRequest,
+    auth: SupabaseUser = Depends(require_auth),
+):
+    try:
+        stripe_service = StripeService()
+        url = await stripe_service.create_customer_portal_session(
+            user_id=auth.user_id,
+            return_url=req.return_url,
+        )
+        return {"url": url}
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("create_billing_portal_session failed")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.post("/billing/webhook")
+async def handle_billing_webhook(
+    request: Request,
+    stripe_signature: str | None = Header(default=None, alias="Stripe-Signature"),
+):
+    if not stripe_signature:
+        raise HTTPException(status_code=400, detail="Missing Stripe-Signature header")
+
+    payload = await request.body()
+    stripe_service = StripeService()
+    return await stripe_service.handle_webhook(payload, stripe_signature)
 
 
 # ---------------------------------------------------------------------------

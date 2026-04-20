@@ -1,6 +1,7 @@
+import { createClient } from "@/lib/supabase/server";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import PricingSection from "@/components/PricingSection";
+import { BillingPricingClient } from "./BillingPricingClient";
 
 export const metadata = {
   title: "Pricing — SpecFlow",
@@ -8,7 +9,12 @@ export const metadata = {
     "Simple, transparent pricing for product managers. Start free, upgrade when you're ready.",
 };
 
-export default function PricingPage() {
+export default async function PricingPage() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
   return (
     <main>
       <Navbar />
@@ -47,12 +53,12 @@ export default function PricingPage() {
               className="max-w-xl mx-auto"
               style={{ color: "#6B6B6B", fontSize: "1.0625rem", lineHeight: 1.6 }}
             >
-              Start free with 2 pipeline runs. Upgrade to Pro when you're shipping faster.
-              No hidden fees, no per-seat pricing.
+              Start free with two pipeline runs, then move into hosted Stripe billing
+              when you need Pro or Team capacity.
             </p>
           </div>
 
-          <PricingSection />
+          <BillingPricingClient isAuthenticated={Boolean(user)} />
         </div>
       </section>
       <Footer />
