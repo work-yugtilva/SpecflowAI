@@ -39,6 +39,47 @@ interface QualityScore {
 
 type PrdData = Record<string, unknown>;
 
+interface GoalItem {
+  goal?: string;
+  metric?: string;
+  target?: string;
+  timeline?: string;
+}
+
+type CitationConfidence = "high" | "medium" | "insufficient";
+
+interface FeatureItemData {
+  title: string;
+  source_ids?: string[];
+  citation_confidence?: CitationConfidence;
+  description?: string;
+  linked_problem?: string;
+  acceptance_criteria?: string;
+}
+
+interface RiskItem {
+  likelihood?: string;
+  risk?: string;
+  mitigation?: string;
+}
+
+interface MetricItem {
+  metric?: string;
+  measurement?: string;
+  baseline?: string | number | null;
+  target?: string | number | null;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function getStringArray(value: unknown): string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string")
+    ? value
+    : [];
+}
+
 // ─── Section metadata ─────────────────────────────────────────────────────────
 
 const PRD_SECTIONS: { key: string; title: string }[] = [
@@ -93,16 +134,19 @@ function qualityColor(score: number): { bg: string; color: string } {
 function GoalsRenderer({ items }: { items: unknown[] }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {items.map((item: any, i) => (
-        <div key={i} style={{ background: "#F8F4EF", borderRadius: 8, padding: "12px 14px" }}>
-          <div style={{ fontWeight: 600, color: "#0D0D0D", fontSize: 13, marginBottom: 6 }}>{item.goal}</div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 12px", fontSize: 12, color: "#6B6B6B" }}>
-            {item.metric && <span><strong>Metric:</strong> {item.metric}</span>}
-            {item.target && <span><strong>Target:</strong> {item.target}</span>}
-            {item.timeline && <span><strong>Timeline:</strong> {item.timeline}</span>}
+      {items.map((item, i) => {
+        const goalItem = isRecord(item) ? (item as GoalItem) : {};
+        return (
+          <div key={i} style={{ background: "#F8F4EF", borderRadius: 8, padding: "12px 14px" }}>
+            <div style={{ fontWeight: 600, color: "#0D0D0D", fontSize: 13, marginBottom: 6 }}>{goalItem.goal}</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 12px", fontSize: 12, color: "#6B6B6B" }}>
+              {goalItem.metric && <span><strong>Metric:</strong> {goalItem.metric}</span>}
+              {goalItem.target && <span><strong>Target:</strong> {goalItem.target}</span>}
+              {goalItem.timeline && <span><strong>Timeline:</strong> {goalItem.timeline}</span>}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -194,7 +238,7 @@ function FeatureItem({
   sessionId,
   onAddFeedback,
 }: {
-  item: any;
+  item: FeatureItemData;
   feedback?: FeedbackEntry[];
   sessionId?: string | null;
   onAddFeedback?: (entry: FeedbackEntry) => void;
@@ -382,15 +426,18 @@ function FeaturesRenderer({
 }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {items.map((item: any, i) => (
-        <FeatureItem
-          key={i}
-          item={item}
-          feedback={feedback}
-          sessionId={sessionId}
-          onAddFeedback={onAddFeedback}
-        />
-      ))}
+      {items.map((item, i) => {
+        const featureItem = isRecord(item) ? (item as unknown as FeatureItemData) : { title: "" };
+        return (
+          <FeatureItem
+            key={i}
+            item={featureItem}
+            feedback={feedback}
+            sessionId={sessionId}
+            onAddFeedback={onAddFeedback}
+          />
+        );
+      })}
     </div>
   );
 }
@@ -404,8 +451,10 @@ const LIKELIHOOD_STYLE: Record<string, { bg: string; color: string }> = {
 function RisksRenderer({ items }: { items: unknown[] }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-      {items.map((item: any, i) => {
-        const lk = (item.likelihood ?? "medium").toLowerCase();
+      {items.map((item, i) => {
+        const riskItem = isRecord(item) ? (item as RiskItem) : {};
+        const likelihood = typeof riskItem.likelihood === "string" ? riskItem.likelihood : "medium";
+        const lk = likelihood.toLowerCase();
         const style = LIKELIHOOD_STYLE[lk] ?? LIKELIHOOD_STYLE.medium;
         return (
           <div key={i} style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
@@ -413,11 +462,11 @@ function RisksRenderer({ items }: { items: unknown[] }) {
               fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 20, flexShrink: 0,
               background: style.bg, color: style.color, textTransform: "uppercase", letterSpacing: "0.05em",
             }}>
-              {item.likelihood ?? "medium"}
+              {likelihood}
             </span>
             <div>
-              <div style={{ fontSize: 13, color: "#0D0D0D", fontWeight: 500 }}>{item.risk}</div>
-              {item.mitigation && <div style={{ fontSize: 12, color: "#6B6B6B", marginTop: 3 }}>↳ {item.mitigation}</div>}
+              <div style={{ fontSize: 13, color: "#0D0D0D", fontWeight: 500 }}>{riskItem.risk}</div>
+              {riskItem.mitigation && <div style={{ fontSize: 12, color: "#6B6B6B", marginTop: 3 }}>↳ {riskItem.mitigation}</div>}
             </div>
           </div>
         );
@@ -429,25 +478,28 @@ function RisksRenderer({ items }: { items: unknown[] }) {
 function MetricsRenderer({ items }: { items: unknown[] }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      {items.map((item: any, i) => (
-        <div key={i} style={{
-          display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 8,
-          background: "#F8F4EF", borderRadius: 8, padding: "10px 12px", fontSize: 12,
-        }}>
-          <div>
-            <div style={{ fontWeight: 600, color: "#0D0D0D", fontSize: 13 }}>{item.metric}</div>
-            {item.measurement && <div style={{ color: "#9E9E9E", marginTop: 2 }}>{item.measurement}</div>}
+      {items.map((item, i) => {
+        const metricItem = isRecord(item) ? (item as MetricItem) : {};
+        return (
+          <div key={i} style={{
+            display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 8,
+            background: "#F8F4EF", borderRadius: 8, padding: "10px 12px", fontSize: 12,
+          }}>
+            <div>
+              <div style={{ fontWeight: 600, color: "#0D0D0D", fontSize: 13 }}>{metricItem.metric}</div>
+              {metricItem.measurement && <div style={{ color: "#9E9E9E", marginTop: 2 }}>{metricItem.measurement}</div>}
+            </div>
+            <div style={{ color: "#6B6B6B" }}>
+              <div style={{ fontWeight: 500 }}>Baseline</div>
+              <div>{metricItem.baseline ?? "—"}</div>
+            </div>
+            <div style={{ color: "#E8561B" }}>
+              <div style={{ fontWeight: 500 }}>Target</div>
+              <div>{metricItem.target ?? "—"}</div>
+            </div>
           </div>
-          <div style={{ color: "#6B6B6B" }}>
-            <div style={{ fontWeight: 500 }}>Baseline</div>
-            <div>{item.baseline ?? "—"}</div>
-          </div>
-          <div style={{ color: "#E8561B" }}>
-            <div style={{ fontWeight: 500 }}>Target</div>
-            <div>{item.target ?? "—"}</div>
-          </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -1277,8 +1329,9 @@ function PrdPage() {
     if (sectionKey !== "features") return 0;
     const features = prdData.features;
     if (!Array.isArray(features)) return 0;
-    return features.filter((item: any, idx: number) => {
-      const fromItem = Array.isArray(item?.source_ids) && item.source_ids.length > 0;
+    return features.filter((item, idx) => {
+      const featureItem = isRecord(item) ? (item as { source_ids?: unknown }) : {};
+      const fromItem = getStringArray(featureItem.source_ids).length > 0;
       const fromMap = Array.isArray(cits[String(idx)]) && (cits[String(idx)] as string[]).length > 0;
       return fromItem || fromMap;
     }).length;
