@@ -168,7 +168,7 @@ const AetherFlowHero = () => {
         };
     }, []);
 
-    const fadeUpVariants = {
+    const fadeUpVariants: any = {
         hidden: { opacity: 0, y: 20 },
         visible: (i: number) => ({
             opacity: 1,
