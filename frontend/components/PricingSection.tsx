@@ -9,10 +9,10 @@ const CHECK_ICON = (
     aria-hidden="true"
     style={{ flexShrink: 0 }}
   >
-    <circle cx="8" cy="8" r="8" fill="rgba(232,86,27,0.12)" />
+    <circle cx="8" cy="8" r="8" fill="rgba(228,97,26,0.12)" />
     <path
       d="M5 8l2 2 4-4"
-      stroke="#E8561B"
+      stroke="var(--orange)"
       strokeWidth="1.6"
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -90,28 +90,28 @@ export default function PricingSection() {
         <div
           key={plan.name}
           style={{
-            background: plan.highlight ? "#0D0D0D" : "#FFFFFF",
+            background: plan.highlight ? "var(--charcoal)" : "var(--surface-raised)",
             border: plan.highlight
-              ? "1px solid rgba(232,86,27,0.4)"
-              : "1px solid #E4DDD4",
-            borderRadius: 20,
+              ? "1px solid rgba(228,97,26,0.4)"
+              : "1px solid hsl(var(--border))",
+            borderRadius: "var(--radius)",
             padding: "2rem",
             position: "relative",
             boxShadow: plan.highlight
-              ? "0 8px 40px rgba(232,86,27,0.15), 0 2px 8px rgba(0,0,0,0.12)"
+              ? "0 8px 40px rgba(228,97,26,0.15), 0 2px 8px rgba(0,0,0,0.12)"
               : "0 2px 12px rgba(0,0,0,0.04)",
             transition: "transform 0.22s ease, box-shadow 0.22s ease",
           }}
           onMouseEnter={(e) => {
             (e.currentTarget as HTMLDivElement).style.transform = "translateY(-4px)";
             (e.currentTarget as HTMLDivElement).style.boxShadow = plan.highlight
-              ? "0 16px 56px rgba(232,86,27,0.22), 0 4px 16px rgba(0,0,0,0.16)"
+              ? "0 16px 56px rgba(228,97,26,0.22), 0 4px 16px rgba(0,0,0,0.16)"
               : "0 8px 32px rgba(0,0,0,0.10)";
           }}
           onMouseLeave={(e) => {
             (e.currentTarget as HTMLDivElement).style.transform = "translateY(0)";
             (e.currentTarget as HTMLDivElement).style.boxShadow = plan.highlight
-              ? "0 8px 40px rgba(232,86,27,0.15), 0 2px 8px rgba(0,0,0,0.12)"
+              ? "0 8px 40px rgba(228,97,26,0.15), 0 2px 8px rgba(0,0,0,0.12)"
               : "0 2px 12px rgba(0,0,0,0.04)";
           }}
         >
@@ -123,8 +123,8 @@ export default function PricingSection() {
                 top: -14,
                 left: "50%",
                 transform: "translateX(-50%)",
-                background: plan.highlight ? "#E8561B" : "#0D0D0D",
-                color: "#FFFFFF",
+                background: plan.highlight ? "var(--orange)" : "var(--text)",
+                color: "var(--surface-raised)",
                 fontSize: 11,
                 fontWeight: 600,
                 letterSpacing: "0.08em",
@@ -145,7 +145,7 @@ export default function PricingSection() {
               fontWeight: 500,
               letterSpacing: "0.06em",
               textTransform: "uppercase",
-              color: plan.highlight ? "rgba(255,255,255,0.5)" : "#9E9E9E",
+              color: plan.highlight ? "rgba(249,247,244,0.5)" : "#7a6f64",
               marginBottom: 12,
             }}
           >
@@ -161,7 +161,7 @@ export default function PricingSection() {
                 fontWeight: 400,
                 letterSpacing: "-0.03em",
                 lineHeight: 1,
-                color: plan.highlight ? "#FFFFFF" : "#0D0D0D",
+                color: plan.highlight ? "var(--charcoal-text)" : "var(--text)",
               }}
             >
               {plan.price}
@@ -169,7 +169,7 @@ export default function PricingSection() {
             <span
               style={{
                 fontSize: 14,
-                color: plan.highlight ? "rgba(255,255,255,0.45)" : "#9E9E9E",
+                color: plan.highlight ? "rgba(249,247,244,0.45)" : "#7a6f64",
                 paddingBottom: 6,
               }}
             >
@@ -182,7 +182,7 @@ export default function PricingSection() {
             style={{
               fontSize: 14,
               lineHeight: 1.6,
-              color: plan.highlight ? "rgba(255,255,255,0.6)" : "#6B6B6B",
+              color: plan.highlight ? "rgba(249,247,244,0.64)" : "var(--text-muted)",
               marginBottom: 20,
             }}
           >
@@ -193,11 +193,11 @@ export default function PricingSection() {
           <div
             style={{
               background: plan.highlight
-                ? "rgba(232,86,27,0.18)"
-                : "rgba(232,86,27,0.07)",
+                ? "rgba(228,97,26,0.18)"
+                : "rgba(228,97,26,0.07)",
               border: plan.highlight
-                ? "1px solid rgba(232,86,27,0.35)"
-                : "1px solid rgba(232,86,27,0.18)",
+                ? "1px solid rgba(228,97,26,0.35)"
+                : "1px solid rgba(228,97,26,0.18)",
               borderRadius: 10,
               padding: "10px 14px",
               marginBottom: 24,
@@ -207,7 +207,7 @@ export default function PricingSection() {
               style={{
                 fontSize: 13,
                 fontWeight: 600,
-                color: plan.highlight ? "#FF8A5C" : "#E8561B",
+                color: plan.highlight ? "var(--orange-glow)" : "var(--orange)",
                 marginBottom: 2,
               }}
             >
@@ -216,7 +216,7 @@ export default function PricingSection() {
             <p
               style={{
                 fontSize: 11.5,
-                color: plan.highlight ? "rgba(255,255,255,0.45)" : "#9E9E9E",
+                color: plan.highlight ? "rgba(249,247,244,0.45)" : "#7a6f64",
               }}
             >
               {plan.limitNote}
@@ -238,31 +238,31 @@ export default function PricingSection() {
               letterSpacing: "-0.01em",
               textDecoration: "none",
               transition: "transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease",
-              background: plan.highlight ? "#E8561B" : "transparent",
-              color: plan.highlight ? "#FFFFFF" : "#0D0D0D",
-              border: plan.highlight ? "none" : "1.5px solid #0D0D0D",
+              background: plan.highlight ? "var(--orange)" : "transparent",
+              color: plan.highlight ? "var(--charcoal-text)" : "var(--text)",
+              border: plan.highlight ? "none" : "1.5px solid var(--text)",
               marginBottom: 24,
             }}
             onMouseEnter={(e) => {
               const el = e.currentTarget as HTMLAnchorElement;
               el.style.transform = "translateY(-1px)";
               if (plan.highlight) {
-                el.style.background = "#D44A12";
-                el.style.boxShadow = "0 4px 16px rgba(232,86,27,0.4)";
+                el.style.background = "var(--orange-hover)";
+                el.style.boxShadow = "0 4px 16px rgba(228,97,26,0.4)";
               } else {
-                el.style.background = "#0D0D0D";
-                el.style.color = "#FFFFFF";
+                el.style.background = "var(--text)";
+                el.style.color = "var(--charcoal-text)";
               }
             }}
             onMouseLeave={(e) => {
               const el = e.currentTarget as HTMLAnchorElement;
               el.style.transform = "translateY(0)";
               if (plan.highlight) {
-                el.style.background = "#E8561B";
+                el.style.background = "var(--orange)";
                 el.style.boxShadow = "none";
               } else {
                 el.style.background = "transparent";
-                el.style.color = "#0D0D0D";
+                el.style.color = "var(--text)";
               }
             }}
           >
@@ -277,7 +277,7 @@ export default function PricingSection() {
                 <span
                   style={{
                     fontSize: 13.5,
-                    color: plan.highlight ? "rgba(255,255,255,0.75)" : "#444",
+                    color: plan.highlight ? "rgba(249,247,244,0.78)" : "#3b352f",
                   }}
                 >
                   {f}

@@ -185,20 +185,20 @@ export default function RadialOrbitalTimeline({
           }}
         >
           {/* Center hub — SpecFlow orange */}
-          <div className="absolute z-10 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-[#E8561B] via-[#E8561B] to-[#FF7B3B] shadow-[0_8px_32px_rgba(232,86,27,0.35)]">
-            <div className="absolute h-20 w-20 animate-ping rounded-full border border-[#E8561B]/30 opacity-60" />
+          <div className="absolute z-10 flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-primary via-primary to-[#f16b24] shadow-[0_8px_32px_rgba(228,97,26,0.35)]">
+            <div className="absolute h-20 w-20 animate-ping rounded-full border border-primary/30 opacity-60" />
             <div
-              className="absolute h-24 w-24 animate-ping rounded-full border border-[#E8561B]/20 opacity-40"
+              className="absolute h-24 w-24 animate-ping rounded-full border border-primary/20 opacity-40"
               style={{ animationDelay: "0.5s" }}
             />
             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/95 shadow-inner">
-              <span className="font-mono text-[10px] font-bold leading-tight text-[#E8561B]">
+              <span className="font-mono text-[10px] font-bold leading-tight text-primary">
                 SF
               </span>
             </div>
           </div>
 
-          <div className="absolute h-80 w-80 rounded-full border border-dashed border-[#E4DDD4]/90 md:h-96 md:w-96" />
+          <div className="absolute h-80 w-80 rounded-full border border-dashed border-border/90 md:h-96 md:w-96" />
 
           {timelineData.map((item, index) => {
             const position = calculateNodePosition(index, timelineData.length);
@@ -232,7 +232,7 @@ export default function RadialOrbitalTimeline({
                     isPulsing && "animate-pulse duration-1000"
                   )}
                   style={{
-                    background: `radial-gradient(circle, rgba(232,86,27,0.18) 0%, rgba(232,86,27,0) 70%)`,
+                    background: `radial-gradient(circle, rgba(228,97,26,0.18) 0%, rgba(228,97,26,0) 70%)`,
                     width: `${item.energy * 0.5 + 40}px`,
                     height: `${item.energy * 0.5 + 40}px`,
                     left: `-${(item.energy * 0.5 + 40 - 40) / 2}px`,
@@ -244,9 +244,9 @@ export default function RadialOrbitalTimeline({
                   className={cn(
                     "flex h-10 w-10 items-center justify-center rounded-full border-2 transition-all duration-300",
                     isExpanded
-                      ? "scale-150 border-primary bg-primary text-primary-foreground shadow-lg shadow-[#E8561B]/25"
+                      ? "scale-150 border-primary bg-primary text-primary-foreground shadow-lg shadow-primary/25"
                       : isRelated
-                        ? "animate-pulse border-primary/60 bg-white text-[#E8561B]"
+                        ? "animate-pulse border-primary/60 bg-white text-primary"
                         : "border-border bg-white text-foreground shadow-sm",
                     !isExpanded && !isRelated && "hover:border-primary/40"
                   )}
@@ -296,14 +296,14 @@ export default function RadialOrbitalTimeline({
                       <div className="mt-4 border-t border-border pt-3">
                         <div className="mb-1 flex items-center justify-between text-xs">
                           <span className="flex items-center text-foreground">
-                            <Zap className="mr-1 h-3 w-3 text-[#E8561B]" />
+                            <Zap className="mr-1 h-3 w-3 text-primary" />
                             Energy
                           </span>
                           <span className="font-mono">{item.energy}%</span>
                         </div>
                         <div className="h-1 w-full overflow-hidden rounded-full bg-muted">
                           <div
-                            className="h-full rounded-full bg-gradient-to-r from-[#E8561B] to-[#FF7B3B]"
+                            className="h-full rounded-full bg-gradient-to-r from-primary to-[#f16b24]"
                             style={{ width: `${item.energy}%` }}
                           />
                         </div>

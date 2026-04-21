@@ -12,25 +12,25 @@ export default function Footer() {
     <footer
       className="w-full py-8 px-6"
       style={{
-        background: "#F8F4EF",
-        borderTop: "1px solid #E4DDD4",
+        background: "var(--bg)",
+        borderTop: "1px solid hsl(var(--border))",
       }}
     >
       <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-2 flex-wrap">
           <span
             className="font-sans font-semibold text-sm"
-            style={{ color: "#3a3530", letterSpacing: "-0.02em" }}
+            style={{ color: "#3b352f", letterSpacing: "-0.02em" }}
           >
             {FOOTER_COPY.brand}
           </span>
           <span
             className="font-sans text-xs"
-            style={{ color: "#9a9085", fontStyle: "italic" }}
+            style={{ color: "#7a6f64", fontStyle: "italic" }}
           >
             {FOOTER_COPY.tagline}
           </span>
-          <span className="font-sans text-xs" style={{ color: "#9a9085" }}>
+          <span className="font-sans text-xs" style={{ color: "#7a6f64" }}>
             {FOOTER_COPY.copyright}
           </span>
         </div>
@@ -40,12 +40,12 @@ export default function Footer() {
               key={link}
               href="#"
               className="footer-link font-sans text-xs"
-              style={{ color: "#9a9085", textDecoration: "none" }}
+              style={{ color: "#7a6f64", textDecoration: "none" }}
               onMouseEnter={(e) =>
-                ((e.currentTarget as HTMLAnchorElement).style.color = "#3a3530")
+                ((e.currentTarget as HTMLAnchorElement).style.color = "#3b352f")
               }
               onMouseLeave={(e) =>
-                ((e.currentTarget as HTMLAnchorElement).style.color = "#9a9085")
+                ((e.currentTarget as HTMLAnchorElement).style.color = "#7a6f64")
               }
             >
               {link}

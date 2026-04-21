@@ -12,9 +12,9 @@ const CTA_COPY = {
 export default function CTASection() {
   return (
     <section
-      className="relative w-full overflow-hidden"
+      className="relative w-full overflow-hidden foundry-scanline"
       style={{
-        background: "linear-gradient(135deg, #E8561B 0%, #D44A12 60%, #C23E0A 100%)",
+        background: "linear-gradient(135deg, var(--orange) 0%, var(--orange-hover) 60%, #a83b12 100%)",
         padding: "80px 24px",
       }}
     >
@@ -60,7 +60,7 @@ export default function CTASection() {
             fontWeight: 400,
             letterSpacing: "-0.03em",
             lineHeight: 1.1,
-            color: "white",
+            color: "var(--charcoal-text)",
           }}
         >
           {CTA_COPY.headline1}{" "}
@@ -74,7 +74,7 @@ export default function CTASection() {
           style={{
             fontSize: "1.0625rem",
             lineHeight: 1.65,
-            color: "rgba(255,255,255,0.82)",
+            color: "rgba(249,247,244,0.84)",
             maxWidth: "420px",
           }}
         >
@@ -89,7 +89,7 @@ export default function CTASection() {
             href="#"
             className="font-sans text-sm font-medium"
             style={{
-              color: "rgba(255,255,255,0.85)",
+              color: "rgba(249,247,244,0.86)",
               textDecoration: "none",
               display: "flex",
               alignItems: "center",
@@ -97,10 +97,10 @@ export default function CTASection() {
               transition: "color 0.15s ease",
             }}
             onMouseEnter={(e) =>
-              ((e.currentTarget as HTMLAnchorElement).style.color = "white")
+              ((e.currentTarget as HTMLAnchorElement).style.color = "var(--charcoal-text)")
             }
             onMouseLeave={(e) =>
-              ((e.currentTarget as HTMLAnchorElement).style.color = "rgba(255,255,255,0.85)")
+              ((e.currentTarget as HTMLAnchorElement).style.color = "rgba(249,247,244,0.86)")
             }
           >
             {CTA_COPY.ctaSecondary}
@@ -123,7 +123,7 @@ export default function CTASection() {
             <span
               key={badge}
               className="font-sans text-xs"
-              style={{ color: "rgba(255,255,255,0.75)", fontWeight: 500 }}
+              style={{ color: "rgba(249,247,244,0.76)", fontWeight: 500 }}
             >
               {badge}
             </span>

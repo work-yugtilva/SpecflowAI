@@ -18,10 +18,10 @@ export default function Navbar() {
     <header
       className="sticky top-0 z-50 w-full"
       style={{
-        background: "rgba(248, 244, 239, 0.92)",
+        background: "rgba(247, 244, 240, 0.92)",
         backdropFilter: "blur(16px)",
         WebkitBackdropFilter: "blur(16px)",
-        borderBottom: "1px solid #E4DDD4",
+        borderBottom: "1px solid hsl(var(--border))",
       }}
     >
       <div className="max-w-6xl mx-auto px-6 h-[60px] flex items-center justify-between">
@@ -41,7 +41,7 @@ export default function Navbar() {
           </div>
           <span
             className="font-sans font-semibold text-[15px]"
-            style={{ color: "#0D0D0D", letterSpacing: "-0.02em" }}
+            style={{ color: "var(--text)", letterSpacing: "-0.02em" }}
           >
             SpecFlow
           </span>
@@ -80,7 +80,7 @@ export default function Navbar() {
         {/* Right — Desktop */}
         <div className="hidden md:flex items-center gap-3">
           <a href="/login" className="nav-link px-3 py-1.5">Log in</a>
-          <a href="#" className="btn-dark text-sm" style={{ border: "1px solid #0D0D0D" }}>
+          <a href="#" className="btn-dark text-sm" style={{ border: "1px solid var(--charcoal)" }}>
             Book a demo
           </a>
         </div>
@@ -94,7 +94,7 @@ export default function Navbar() {
           <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
             <path
               d={mobileOpen ? "M4 4L16 16M16 4L4 16" : "M3 6h14M3 10h14M3 14h14"}
-              stroke="#0D0D0D"
+              stroke="var(--text)"
               strokeWidth="1.6"
               strokeLinecap="round"
             />
@@ -106,7 +106,7 @@ export default function Navbar() {
       {mobileOpen && (
         <div
           className="md:hidden px-6 pb-4 flex flex-col gap-2"
-          style={{ borderTop: "1px solid #E4DDD4" }}
+          style={{ borderTop: "1px solid hsl(var(--border))" }}
         >
           {navLinks.map((link) => (
             <a
@@ -119,7 +119,7 @@ export default function Navbar() {
             </a>
           ))}
           <a href="/login" className="nav-link py-2 text-[15px]" onClick={() => setMobileOpen(false)}>Log in</a>
-          <a href="#" className="btn-dark mt-2 w-full justify-center" style={{ border: "1px solid #0D0D0D" }}>
+          <a href="#" className="btn-dark mt-2 w-full justify-center" style={{ border: "1px solid var(--charcoal)" }}>
             Book a demo
           </a>
         </div>

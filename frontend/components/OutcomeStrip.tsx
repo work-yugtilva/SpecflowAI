@@ -12,9 +12,9 @@ export default function OutcomeStrip() {
   return (
     <section
       style={{
-        background: "#F8F4EF",
-        borderTop: "1px solid #E4DDD4",
-        borderBottom: "1px solid #E4DDD4",
+        background: "var(--bg)",
+        borderTop: "1px solid hsl(var(--border))",
+        borderBottom: "1px solid hsl(var(--border))",
       }}
     >
       <div
@@ -23,14 +23,14 @@ export default function OutcomeStrip() {
           display: "grid",
           gridTemplateColumns: "repeat(3, 1fr)",
           gap: "1px",
-          background: "#E4DDD4",
+          background: "hsl(var(--border))",
         }}
       >
         {OUTCOME_COPY.stats.map((stat, i) => (
           <div
             key={i}
             style={{
-              background: "#F8F4EF",
+              background: "var(--bg)",
               padding: "52px 36px",
               textAlign: "center",
             }}
@@ -41,7 +41,7 @@ export default function OutcomeStrip() {
                 fontSize: "clamp(2.2rem, 5vw, 3.5rem)",
                 fontWeight: 400,
                 letterSpacing: "-0.03em",
-                color: "#E8561B",
+                color: "var(--orange)",
                 lineHeight: 1,
                 marginBottom: 10,
               }}
@@ -52,7 +52,7 @@ export default function OutcomeStrip() {
               className="font-sans"
               style={{
                 fontSize: "0.875rem",
-                color: "#9a9085",
+                color: "#7a6f64",
                 letterSpacing: "0.01em",
               }}
             >

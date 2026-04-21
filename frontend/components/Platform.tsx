@@ -130,7 +130,7 @@ export default function Platform() {
               fontWeight: 400,
               letterSpacing: "-0.025em",
               lineHeight: 1.15,
-              color: "#0D0D0D",
+              color: "var(--text)",
             }}
           >
             Your ultimate product discovery pipeline.
@@ -138,7 +138,7 @@ export default function Platform() {
           <p
             className="font-sans mx-auto max-w-md"
             style={{
-              color: "#6B6B6B",
+              color: "var(--text-muted)",
               fontSize: "1rem",
               lineHeight: 1.65,
             }}

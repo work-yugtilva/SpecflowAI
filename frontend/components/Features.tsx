@@ -33,7 +33,7 @@ const features: FeatureItem[] = [
         <line x1="12" y1="3" x2="12" y2="15" />
       </svg>
     ),
-    iconBg: "#E8561B",
+    iconBg: "var(--orange)",
     replaces: "scattered exports and screenshots",
     title: "Upload your inputs",
     desc: "Pull in Slack threads, Gong calls, Zendesk tickets, and docs—everything that already tells the story of what to build next.",
@@ -48,7 +48,7 @@ const features: FeatureItem[] = [
         <polyline points="2 12 12 17 22 12" />
       </svg>
     ),
-    iconBg: "#3D6B5E",
+    iconBg: "#8a5f36",
     replaces: "hours of manual synthesis",
     title: "Generate context and structure",
     desc: "SpecFlow turns messy inputs into product context, problems, and scope you can reason about—so the work is grounded, not guessed.",
@@ -68,7 +68,7 @@ const features: FeatureItem[] = [
         <polyline points="10 9 9 9 8 9" />
       </svg>
     ),
-    iconBg: "#0D0D0D",
+    iconBg: "var(--text)",
     replaces: "the blank Google Doc",
     title: "Generate your PRD and outputs",
     desc: "One pass from structured context to a stakeholder-ready PRD—clear narrative, acceptance-ready detail, and citations back to the signals that matter.",
@@ -82,7 +82,7 @@ const features: FeatureItem[] = [
         <polygon points="22 2 15 22 11 13 2 9 22 2" />
       </svg>
     ),
-    iconBg: "#3D6B5E",
+    iconBg: "#8a5f36",
     replaces: "copy-paste into another tool",
     title: "Push to execution",
     desc: "Send prioritized work to Linear or Jira so engineering sees the same scope you approved—no re-typing, no drift between spec and board.",
@@ -91,7 +91,7 @@ const features: FeatureItem[] = [
 
 export default function Features() {
   return (
-    <section className="w-full py-20" style={{ background: "#F8F4EF" }}>
+    <section className="w-full py-20" style={{ background: "var(--bg)" }}>
       <div className="max-w-6xl mx-auto px-6">
         {/* Section header */}
         <div className="text-center mb-14">
@@ -102,18 +102,18 @@ export default function Features() {
               fontWeight: 400,
               letterSpacing: "-0.025em",
               lineHeight: 1.15,
-              color: "#0D0D0D",
+              color: "var(--text)",
             }}
           >
             {FEATURES_COPY.headline1}{" "}
-            <span style={{ color: "#E8561B", fontStyle: "italic" }}>
+            <span style={{ color: "var(--orange)", fontStyle: "italic" }}>
               {FEATURES_COPY.headline2}
             </span>
           </h2>
           <p
             className="font-sans mx-auto"
             style={{
-              color: "#6B6B6B",
+              color: "var(--text-muted)",
               fontSize: "1rem",
               lineHeight: 1.6,
               maxWidth: "520px",
@@ -128,8 +128,8 @@ export default function Features() {
           {features.map((feature) => (
             <div
               key={feature.id}
-              className={`relative rounded-2xl border p-[2px] ${feature.gridClass}`}
-              style={{ borderColor: "hsl(var(--border))" }}
+              className={`relative border p-[2px] ${feature.gridClass}`}
+              style={{ borderColor: "hsl(var(--border))", borderRadius: "var(--radius)" }}
             >
               <GlowingEffect
                 spread={feature.id === "prd" ? 48 : 40}
@@ -140,14 +140,15 @@ export default function Features() {
                 borderWidth={3}
               />
               <div
-                className={`feature-card relative z-10 h-full !border-0 rounded-[14px] ${feature.cardClass ?? ""}`}
+                className={`feature-card relative z-10 h-full !border-0 ${feature.cardClass ?? ""}`}
               >
                 {/* Icon */}
                 <div
-                  className={`rounded-xl flex items-center justify-center mb-4 ${feature.id === "prd" ? "w-11 h-11" : "w-10 h-10"}`}
+                  className={`flex items-center justify-center mb-4 ${feature.id === "prd" ? "w-11 h-11" : "w-10 h-10"}`}
                   style={{
                     background: feature.iconBg,
-                    boxShadow: `0 4px 16px ${feature.iconBg}35`,
+                    borderRadius: "var(--radius)",
+                    boxShadow: "var(--elevate-1)",
                   }}
                 >
                   {feature.icon}
@@ -161,7 +162,7 @@ export default function Features() {
                       fontWeight: 400,
                       letterSpacing: "0.08em",
                       textTransform: "uppercase",
-                      color: "#9a9085",
+                      color: "#7a6f64",
                       marginBottom: 2,
                       fontFamily: "var(--font-sans, sans-serif)",
                     }}
@@ -172,7 +173,7 @@ export default function Features() {
                     style={{
                       fontSize: 13,
                       fontWeight: 600,
-                      color: "#E8561B",
+                      color: "var(--orange)",
                       fontFamily: "var(--font-sans, sans-serif)",
                     }}
                   >
@@ -185,7 +186,7 @@ export default function Features() {
                   className={`font-sans font-semibold mb-2 ${feature.titleClass ?? ""}`}
                   style={{
                     fontSize: feature.titleClass ? undefined : "1rem",
-                    color: "#0D0D0D",
+                    color: "var(--text)",
                     letterSpacing: "-0.01em",
                   }}
                 >
@@ -198,7 +199,7 @@ export default function Features() {
                   style={{
                     fontSize: feature.descClass ? undefined : "0.875rem",
                     lineHeight: 1.65,
-                    color: "#6B6B6B",
+                    color: "var(--text-muted)",
                   }}
                 >
                   {feature.desc}

@@ -41,8 +41,8 @@ function ChipSVG() {
     >
       <defs>
         <radialGradient id="bgGlow" cx="50%" cy="50%" r="50%">
-          <stop offset="0%" stopColor="#E8561B" stopOpacity="0.3" />
-          <stop offset="100%" stopColor="#E8561B" stopOpacity="0" />
+          <stop offset="0%" stopColor="var(--orange)" stopOpacity="0.3" />
+          <stop offset="100%" stopColor="var(--orange)" stopOpacity="0" />
         </radialGradient>
         <filter id="glow">
           <feGaussianBlur stdDeviation="3" result="coloredBlur" />
@@ -60,56 +60,56 @@ function ChipSVG() {
         </filter>
         <linearGradient id="chipGrad" x1="0%" y1="0%" x2="100%" y2="100%">
           <stop offset="0%" stopColor="#2a2520" />
-          <stop offset="100%" stopColor="#0D0D0D" />
+          <stop offset="100%" stopColor="var(--text)" />
         </linearGradient>
         <linearGradient id="traceGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="#E8561B" stopOpacity="0" />
-          <stop offset="50%" stopColor="#E8561B" stopOpacity="1" />
-          <stop offset="100%" stopColor="#E8561B" stopOpacity="0.6" />
+          <stop offset="0%" stopColor="var(--orange)" stopOpacity="0" />
+          <stop offset="50%" stopColor="var(--orange)" stopOpacity="1" />
+          <stop offset="100%" stopColor="var(--orange)" stopOpacity="0.6" />
         </linearGradient>
         <linearGradient id="traceGrad2" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor="#E8561B" stopOpacity="0" />
-          <stop offset="50%" stopColor="#E8561B" stopOpacity="0.8" />
-          <stop offset="100%" stopColor="#E8561B" stopOpacity="0" />
+          <stop offset="0%" stopColor="var(--orange)" stopOpacity="0" />
+          <stop offset="50%" stopColor="var(--orange)" stopOpacity="0.8" />
+          <stop offset="100%" stopColor="var(--orange)" stopOpacity="0" />
         </linearGradient>
       </defs>
 
       <circle cx="200" cy="200" r="180" fill="url(#bgGlow)" />
 
       <line x1="20" y1="140" x2="120" y2="140" stroke="url(#traceGrad)" strokeWidth="1.5" />
-      <line x1="20" y1="175" x2="120" y2="175" stroke="#E8561B" strokeWidth="1" strokeOpacity="0.4" />
-      <line x1="20" y1="225" x2="120" y2="225" stroke="#E8561B" strokeWidth="1" strokeOpacity="0.3" />
+      <line x1="20" y1="175" x2="120" y2="175" stroke="var(--orange)" strokeWidth="1" strokeOpacity="0.4" />
+      <line x1="20" y1="225" x2="120" y2="225" stroke="var(--orange)" strokeWidth="1" strokeOpacity="0.3" />
       <line x1="20" y1="260" x2="120" y2="260" stroke="url(#traceGrad)" strokeWidth="1.5" />
-      <line x1="280" y1="140" x2="380" y2="140" stroke="#E8561B" strokeWidth="1.5" strokeOpacity="0.7" />
-      <line x1="280" y1="175" x2="380" y2="175" stroke="#E8561B" strokeWidth="1" strokeOpacity="0.3" />
+      <line x1="280" y1="140" x2="380" y2="140" stroke="var(--orange)" strokeWidth="1.5" strokeOpacity="0.7" />
+      <line x1="280" y1="175" x2="380" y2="175" stroke="var(--orange)" strokeWidth="1" strokeOpacity="0.3" />
       <line x1="280" y1="225" x2="380" y2="225" stroke="url(#traceGrad)" strokeWidth="1.5" />
-      <line x1="280" y1="260" x2="380" y2="260" stroke="#E8561B" strokeWidth="1" strokeOpacity="0.4" />
+      <line x1="280" y1="260" x2="380" y2="260" stroke="var(--orange)" strokeWidth="1" strokeOpacity="0.4" />
 
       <line x1="140" y1="20" x2="140" y2="120" stroke="url(#traceGrad2)" strokeWidth="1.5" />
-      <line x1="175" y1="20" x2="175" y2="120" stroke="#E8561B" strokeWidth="1" strokeOpacity="0.35" />
-      <line x1="225" y1="20" x2="225" y2="120" stroke="#E8561B" strokeWidth="1" strokeOpacity="0.5" />
+      <line x1="175" y1="20" x2="175" y2="120" stroke="var(--orange)" strokeWidth="1" strokeOpacity="0.35" />
+      <line x1="225" y1="20" x2="225" y2="120" stroke="var(--orange)" strokeWidth="1" strokeOpacity="0.5" />
       <line x1="260" y1="20" x2="260" y2="120" stroke="url(#traceGrad2)" strokeWidth="1.5" />
-      <line x1="140" y1="280" x2="140" y2="380" stroke="#E8561B" strokeWidth="1.5" strokeOpacity="0.6" />
+      <line x1="140" y1="280" x2="140" y2="380" stroke="var(--orange)" strokeWidth="1.5" strokeOpacity="0.6" />
       <line x1="175" y1="280" x2="175" y2="380" stroke="url(#traceGrad2)" strokeWidth="1.5" />
-      <line x1="225" y1="280" x2="225" y2="380" stroke="#E8561B" strokeWidth="1" strokeOpacity="0.4" />
-      <line x1="260" y1="280" x2="260" y2="380" stroke="#E8561B" strokeWidth="1" strokeOpacity="0.3" />
+      <line x1="225" y1="280" x2="225" y2="380" stroke="var(--orange)" strokeWidth="1" strokeOpacity="0.4" />
+      <line x1="260" y1="280" x2="260" y2="380" stroke="var(--orange)" strokeWidth="1" strokeOpacity="0.3" />
 
       {[140, 175, 225, 260].map((x, i) => (
-        <circle key={`dt${i}`} cx={x} cy="120" r="2.5" fill="#E8561B" fillOpacity="0.8" />
+        <circle key={`dt${i}`} cx={x} cy="120" r="2.5" fill="var(--orange)" fillOpacity="0.8" />
       ))}
       {[140, 175, 225, 260].map((x, i) => (
-        <circle key={`db${i}`} cx={x} cy="280" r="2.5" fill="#E8561B" fillOpacity="0.6" />
+        <circle key={`db${i}`} cx={x} cy="280" r="2.5" fill="var(--orange)" fillOpacity="0.6" />
       ))}
       {[140, 175, 225, 260].map((y, i) => (
-        <circle key={`dl${i}`} cx="120" cy={y} r="2.5" fill="#E8561B" fillOpacity="0.7" />
+        <circle key={`dl${i}`} cx="120" cy={y} r="2.5" fill="var(--orange)" fillOpacity="0.7" />
       ))}
       {[140, 175, 225, 260].map((y, i) => (
-        <circle key={`dr${i}`} cx="280" cy={y} r="2.5" fill="#E8561B" fillOpacity="0.5" />
+        <circle key={`dr${i}`} cx="280" cy={y} r="2.5" fill="var(--orange)" fillOpacity="0.5" />
       ))}
 
       <rect x="120" y="120" width="160" height="160" rx="16" fill="url(#chipGrad)" />
-      <rect x="120" y="120" width="160" height="160" rx="16" fill="none" stroke="#E8561B" strokeWidth="1.5" strokeOpacity="0.6" />
-      <rect x="130" y="130" width="140" height="140" rx="12" fill="none" stroke="#E8561B" strokeWidth="0.5" strokeOpacity="0.3" />
+      <rect x="120" y="120" width="160" height="160" rx="16" fill="none" stroke="var(--orange)" strokeWidth="1.5" strokeOpacity="0.6" />
+      <rect x="130" y="130" width="140" height="140" rx="12" fill="none" stroke="var(--orange)" strokeWidth="0.5" strokeOpacity="0.3" />
 
       {[155, 175, 195, 215, 235].map((x) =>
         [155, 175, 195, 215, 235].map((y) => (
@@ -120,29 +120,29 @@ function ChipSVG() {
             width="12"
             height="12"
             rx="2"
-            fill="#E8561B"
+            fill="var(--orange)"
             fillOpacity="0.08"
-            stroke="#E8561B"
+            stroke="var(--orange)"
             strokeWidth="0.5"
             strokeOpacity="0.2"
           />
         ))
       )}
 
-      <rect x="162" y="175" width="76" height="50" rx="8" fill="#E8561B" fillOpacity="0.15" stroke="#E8561B" strokeWidth="1" strokeOpacity="0.5" />
-      <text x="200" y="197" textAnchor="middle" fill="#E8561B" fontSize="11" fontWeight="700" fontFamily="monospace" filter="url(#glow)">
+      <rect x="162" y="175" width="76" height="50" rx="8" fill="var(--orange)" fillOpacity="0.15" stroke="var(--orange)" strokeWidth="1" strokeOpacity="0.5" />
+      <text x="200" y="197" textAnchor="middle" fill="var(--orange)" fontSize="11" fontWeight="700" fontFamily="monospace" filter="url(#glow)">
         AI
       </text>
-      <text x="200" y="215" textAnchor="middle" fill="#E8561B" fontSize="7" fontFamily="monospace" fillOpacity="0.8">
+      <text x="200" y="215" textAnchor="middle" fill="var(--orange)" fontSize="7" fontFamily="monospace" fillOpacity="0.8">
         SPECFLOW
       </text>
 
-      <circle cx="136" cy="136" r="4" fill="#E8561B" fillOpacity="0.5" filter="url(#glow)" />
-      <circle cx="264" cy="136" r="4" fill="#E8561B" fillOpacity="0.5" filter="url(#glow)" />
-      <circle cx="136" cy="264" r="4" fill="#E8561B" fillOpacity="0.5" filter="url(#glow)" />
-      <circle cx="264" cy="264" r="4" fill="#E8561B" fillOpacity="0.5" filter="url(#glow)" />
+      <circle cx="136" cy="136" r="4" fill="var(--orange)" fillOpacity="0.5" filter="url(#glow)" />
+      <circle cx="264" cy="136" r="4" fill="var(--orange)" fillOpacity="0.5" filter="url(#glow)" />
+      <circle cx="136" cy="264" r="4" fill="var(--orange)" fillOpacity="0.5" filter="url(#glow)" />
+      <circle cx="264" cy="264" r="4" fill="var(--orange)" fillOpacity="0.5" filter="url(#glow)" />
 
-      <circle cx="200" cy="200" r="6" fill="#E8561B" filter="url(#softGlow)" fillOpacity="0.9">
+      <circle cx="200" cy="200" r="6" fill="var(--orange)" filter="url(#softGlow)" fillOpacity="0.9">
         <animate attributeName="fillOpacity" values="0.4;1;0.4" dur="2s" repeatCount="indefinite" />
         <animate attributeName="r" values="5;8;5" dur="2s" repeatCount="indefinite" />
       </circle>
@@ -153,10 +153,10 @@ function ChipSVG() {
 export default function Hero() {
   return (
     <section
-      className="relative overflow-hidden"
+      className="relative overflow-hidden foundry-scanline foundry-telemetry"
       style={{
         background:
-          "radial-gradient(ellipse 90% 70% at 50% 30%, rgba(232,86,27,0.06) 0%, transparent 65%), #F8F4EF",
+          "radial-gradient(ellipse 90% 70% at 50% 30%, rgba(228,97,26,0.06) 0%, transparent 65%), var(--bg)",
         minHeight: "calc(100vh - 60px)",
       }}
     >
@@ -165,7 +165,7 @@ export default function Hero() {
         className="absolute inset-0 pointer-events-none"
         style={{
           backgroundImage:
-            "linear-gradient(#E4DDD4 1px, transparent 1px), linear-gradient(90deg, #E4DDD4 1px, transparent 1px)",
+            "linear-gradient(hsl(var(--border)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--border)) 1px, transparent 1px)",
           backgroundSize: "48px 48px",
           opacity: 0.25,
         }}
@@ -177,9 +177,9 @@ export default function Hero() {
           style={{
             display: "inline-flex",
             alignItems: "center",
-            border: "1px solid #E4DDD4",
-            background: "#FFFFFF",
-            color: "#0D0D0D",
+            border: "1px solid hsl(var(--border))",
+            background: "var(--surface-raised)",
+            color: "var(--text)",
             fontSize: 13,
             fontWeight: 500,
             borderRadius: 99,
@@ -195,12 +195,12 @@ export default function Hero() {
           <div
             className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-medium"
             style={{
-              background: "rgba(232,86,27,0.10)",
-              border: "1px solid rgba(232,86,27,0.25)",
-              color: "#E8561B",
+              background: "rgba(228,97,26,0.10)",
+              border: "1px solid rgba(228,97,26,0.25)",
+              color: "var(--orange)",
             }}
           >
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: "#E8561B" }} />
+            <span className="h-1.5 w-1.5 rounded-full" style={{ background: "var(--orange)" }} />
             {HERO_COPY.badge}
           </div>
           <Button variant="secondary" size="sm" className="gap-2 rounded-full" asChild>
@@ -217,7 +217,7 @@ export default function Hero() {
             fontSize: "clamp(2.4rem, 6vw, 4.5rem)",
             lineHeight: 1.12,
             letterSpacing: "-0.03em",
-            color: "#0D0D0D",
+            color: "var(--text)",
           }}
         >
           {HERO_COPY.headline1}
@@ -257,17 +257,18 @@ export default function Hero() {
             {/* Left: messy customer feedback / Slack messages */}
             <div
               style={{
-                background: "#1a1510",
-                borderRadius: 16,
-                border: "1px solid rgba(232,86,27,0.2)",
+                background: "var(--charcoal)",
+                borderRadius: "var(--radius)",
+                border: "1px solid rgba(228,97,26,0.2)",
                 padding: "24px",
                 minHeight: 280,
+                boxShadow: "var(--elevate-2)",
               }}
             >
               <div
                 className="font-sans"
                 style={{
-                  color: "#9a9085",
+                  color: "rgba(249,247,244,0.5)",
                   fontSize: 10,
                   fontWeight: 600,
                   letterSpacing: "0.1em",
@@ -278,7 +279,7 @@ export default function Hero() {
                   gap: 6,
                 }}
               >
-                <span style={{ width: 7, height: 7, borderRadius: "50%", background: "#4ade80", display: "inline-block", flexShrink: 0 }} />
+                <span style={{ width: 7, height: 7, borderRadius: "50%", background: "var(--orange-glow)", display: "inline-block", flexShrink: 0 }} />
                 #product-feedback · 47 messages
               </div>
               {[
@@ -288,15 +289,15 @@ export default function Hero() {
               ].map((m, i) => (
                 <div key={i} style={{ marginBottom: 14 }}>
                   <div className="font-sans" style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 3 }}>
-                    <span style={{ color: "#E8561B", fontSize: 12, fontWeight: 600 }}>{m.name}</span>
-                    <span style={{ color: "#5a5047", fontSize: 10 }}>{m.time}</span>
+                    <span style={{ color: "var(--orange)", fontSize: 12, fontWeight: 600 }}>{m.name}</span>
+                    <span style={{ color: "rgba(249,247,244,0.38)", fontSize: 10 }}>{m.time}</span>
                   </div>
-                  <p className="font-sans" style={{ color: "#c9bfb4", fontSize: 12.5, lineHeight: 1.6, margin: 0 }}>
+                  <p className="font-sans" style={{ color: "rgba(249,247,244,0.78)", fontSize: 12.5, lineHeight: 1.6, margin: 0 }}>
                     &ldquo;{m.msg}&rdquo;
                   </p>
                 </div>
               ))}
-              <div className="font-sans" style={{ marginTop: 16, color: "#5a5047", fontSize: 11 }}>
+              <div className="font-sans" style={{ marginTop: 16, color: "rgba(249,247,244,0.38)", fontSize: 11 }}>
                 + 44 more messages · 3 user interviews attached
               </div>
             </div>
@@ -304,23 +305,24 @@ export default function Hero() {
             {/* Right: structured PRD output */}
             <div
               style={{
-                background: "#FFFFFF",
-                borderRadius: 16,
-                border: "1px solid #E4DDD4",
+                background: "var(--surface-raised)",
+                borderRadius: "var(--radius)",
+                border: "1px solid hsl(var(--border))",
                 padding: "24px",
                 minHeight: 280,
+                boxShadow: "var(--elevate-1)",
               }}
             >
               <div style={{ marginBottom: 18 }}>
                 <div
                   className="font-sans"
-                  style={{ color: "#9a9085", fontSize: 10, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}
+                  style={{ color: "#7a6f64", fontSize: 10, fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 6 }}
                 >
                   Generated PRD · 12s ago
                 </div>
                 <div
                   className="font-display"
-                  style={{ color: "#0D0D0D", fontSize: 18, fontWeight: 600, letterSpacing: "-0.02em" }}
+                  style={{ color: "var(--text)", fontSize: 18, fontWeight: 600, letterSpacing: "-0.02em" }}
                 >
                   Onboarding Redesign
                 </div>
@@ -328,7 +330,7 @@ export default function Hero() {
               {[
                 {
                   label: "Problem",
-                  color: "#E8561B",
+                  color: "var(--orange)",
                   items: [
                     "Users drop off at step 3 (47% abandonment) due to unclear next actions",
                     "Support tickets cite onboarding as top pain point — 38 this month",
@@ -336,7 +338,7 @@ export default function Hero() {
                 },
                 {
                   label: "Features",
-                  color: "#3D6B5E",
+                  color: "#8a5f36",
                   items: [
                     "Step-by-step progress wizard with contextual help",
                     "Inline tooltips triggered on first interaction",
@@ -344,7 +346,7 @@ export default function Hero() {
                 },
                 {
                   label: "Tasks",
-                  color: "#6B6B6B",
+                  color: "var(--text-muted)",
                   items: ["Redesign step 3 flow · 3 pts", "Add progress bar component · 2 pts"],
                 },
               ].map((section) => (
@@ -358,7 +360,7 @@ export default function Hero() {
                   {section.items.map((item, j) => (
                     <div key={j} className="font-sans" style={{ display: "flex", alignItems: "flex-start", gap: 6, marginBottom: 4 }}>
                       <span style={{ color: section.color, fontSize: 10, marginTop: 3, flexShrink: 0 }}>▸</span>
-                      <span style={{ color: "#0D0D0D", fontSize: 12.5, lineHeight: 1.55 }}>{item}</span>
+                      <span style={{ color: "var(--text)", fontSize: 12.5, lineHeight: 1.55 }}>{item}</span>
                     </div>
                   ))}
                 </div>
@@ -384,9 +386,9 @@ export default function Hero() {
                   style={{
                     padding: "4px 14px",
                     borderRadius: 20,
-                    border: "1px solid rgba(232,86,27,0.35)",
-                    background: "rgba(232,86,27,0.06)",
-                    color: "#E8561B",
+                    border: "1px solid rgba(228,97,26,0.35)",
+                    background: "rgba(228,97,26,0.06)",
+                    color: "var(--orange)",
                     fontSize: 11,
                     fontWeight: 600,
                     letterSpacing: "0.04em",
@@ -409,7 +411,7 @@ export default function Hero() {
                       y1="5"
                       x2="28"
                       y2="5"
-                      stroke="#E8561B"
+                      stroke="var(--orange)"
                       strokeWidth="1.5"
                       strokeDasharray="4 3"
                       strokeOpacity="0.6"
@@ -422,7 +424,7 @@ export default function Hero() {
                         repeatCount="indefinite"
                       />
                     </line>
-                    <polygon points="26,2 32,5 26,8" fill="#E8561B" fillOpacity="0.6" />
+                    <polygon points="26,2 32,5 26,8" fill="var(--orange)" fillOpacity="0.6" />
                   </svg>
                 )}
               </React.Fragment>

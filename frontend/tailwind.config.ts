@@ -9,17 +9,17 @@ const config: Config = {
     extend: {
       colors: {
         brand: {
-          DEFAULT: "#E8561B",
-          hover: "#D44A12",
-          light: "rgba(232,86,27,0.12)",
-          glow: "rgba(232,86,27,0.25)",
+          DEFAULT: "var(--orange)",
+          hover: "var(--orange-hover)",
+          light: "rgba(228,97,26,0.12)",
+          glow: "rgba(241,107,36,0.25)",
         },
-        cream: "#F8F4EF",
-        "cream-dark": "#F0EAE1",
-        surface: "#FFFFFF",
-        ink: "#0D0D0D",
+        cream: "var(--bg)",
+        "cream-dark": "var(--bg-dark)",
+        surface: "var(--surface)",
+        ink: "var(--text)",
         border: "hsl(var(--border))",
-        dark: "#111111",
+        dark: "var(--charcoal)",
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
         primary: {

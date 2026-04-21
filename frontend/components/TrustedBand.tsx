@@ -93,7 +93,7 @@ const Dot = () => (
       width: 3,
       height: 3,
       borderRadius: "50%",
-      background: "rgba(232,86,27,0.4)",
+      background: "rgba(228,97,26,0.4)",
       margin: "0 28px",
       verticalAlign: "middle",
     }}
@@ -103,10 +103,11 @@ const Dot = () => (
 export default function TrustedBand() {
   return (
     <section
+      className="foundry-telemetry"
       style={{
-        background: "#0f0d0b",
-        borderTop: "1px solid rgba(232,86,27,0.08)",
-        borderBottom: "1px solid rgba(232,86,27,0.08)",
+        background: "var(--charcoal)",
+        borderTop: "1px solid rgba(228,97,26,0.08)",
+        borderBottom: "1px solid rgba(228,97,26,0.08)",
         width: "100%",
         overflow: "hidden",
       }}
@@ -128,7 +129,7 @@ export default function TrustedBand() {
             maxWidth: 80,
             height: 1,
             background:
-              "linear-gradient(to right, transparent, rgba(232,86,27,0.3))",
+              "linear-gradient(to right, transparent, rgba(228,97,26,0.3))",
             display: "block",
           }}
         />
@@ -138,7 +139,7 @@ export default function TrustedBand() {
             fontSize: "0.6875rem",
             letterSpacing: "0.14em",
             textTransform: "uppercase",
-            color: "rgba(248,244,239,0.35)",
+            color: "rgba(249,247,244,0.35)",
             margin: 0,
             whiteSpace: "nowrap",
           }}
@@ -151,7 +152,7 @@ export default function TrustedBand() {
             maxWidth: 80,
             height: 1,
             background:
-              "linear-gradient(to left, transparent, rgba(232,86,27,0.3))",
+              "linear-gradient(to left, transparent, rgba(228,97,26,0.3))",
             display: "block",
           }}
         />
@@ -173,7 +174,7 @@ export default function TrustedBand() {
                 display: "inline-flex",
                 alignItems: "center",
                 gap: 7,
-                color: "rgba(248,244,239,0.4)",
+                color: "rgba(249,247,244,0.4)",
                 fontSize: "0.8125rem",
                 fontWeight: 500,
                 letterSpacing: "0.01em",
@@ -183,11 +184,11 @@ export default function TrustedBand() {
               }}
               onMouseEnter={(e) => {
                 (e.currentTarget as HTMLSpanElement).style.color =
-                  "rgba(248,244,239,0.75)";
+                  "rgba(249,247,244,0.75)";
               }}
               onMouseLeave={(e) => {
                 (e.currentTarget as HTMLSpanElement).style.color =
-                  "rgba(248,244,239,0.4)";
+                  "rgba(249,247,244,0.4)";
               }}
             >
               {co.icon}

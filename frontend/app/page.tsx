@@ -1,5 +1,5 @@
 import Navbar from "@/components/Navbar";
-import Hero from "@/components/Hero";
+import AetherFlowHero from "@/components/ui/aether-flow-hero";
 import TrustedBand from "@/components/TrustedBand";
 import ProductDiscoveryStrip from "@/components/ProductDiscoveryStrip";
 import MeetSpecFlow from "@/components/MeetSpecFlow";
@@ -14,7 +14,7 @@ export default function Home() {
   return (
     <main>
       <Navbar />
-      <Hero />
+      <AetherFlowHero />
       <TrustedBand />
       <ProductDiscoveryStrip />
       <MeetSpecFlow />
@@ -25,7 +25,7 @@ export default function Home() {
       {/* Pricing */}
       <section
         id="pricing"
-        style={{ background: "#F8F4EF" }}
+        style={{ background: "var(--bg)" }}
         className="py-28"
       >
         <div className="max-w-6xl mx-auto px-6">
@@ -33,9 +33,9 @@ export default function Home() {
             <div
               className="inline-flex items-center gap-2 mb-5 px-3 py-1.5 rounded-full text-sm font-medium"
               style={{
-                background: "rgba(232,86,27,0.08)",
-                color: "#E8561B",
-                border: "1px solid rgba(232,86,27,0.2)",
+                background: "rgba(228,97,26,0.08)",
+                color: "var(--orange)",
+                border: "1px solid rgba(228,97,26,0.2)",
               }}
             >
               Pricing
@@ -47,14 +47,14 @@ export default function Home() {
                 fontWeight: 400,
                 letterSpacing: "-0.02em",
                 lineHeight: 1.15,
-                color: "#0D0D0D",
+                color: "var(--text)",
                 marginBottom: "1rem",
               }}
             >
               Simple pricing,{" "}
-              <span style={{ color: "#E8561B", fontStyle: "italic" }}>no surprises</span>
+              <span style={{ color: "var(--orange)", fontStyle: "italic" }}>no surprises</span>
             </h2>
-            <p style={{ color: "#6B6B6B", fontSize: "1.0625rem", maxWidth: 480, margin: "0 auto" }}>
+            <p style={{ color: "var(--text-muted)", fontSize: "1.0625rem", maxWidth: 480, margin: "0 auto" }}>
               Start free with 2 pipeline runs. Upgrade when you're ready to ship faster.
             </p>
           </div>

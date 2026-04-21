@@ -7,17 +7,17 @@
 export default function ProductDiscoveryStrip() {
   return (
     <section
-      className="flex w-full justify-center overflow-hidden rounded-b-[1.75rem] sm:rounded-b-[2rem] px-6"
+      className="foundry-telemetry flex w-full justify-center overflow-hidden rounded-b-[1.75rem] sm:rounded-b-[2rem] px-6"
       style={{
-        borderTop: "1px solid rgba(232,86,27,0.25)",
-        background: "#221c15",
+        borderTop: "1px solid rgba(228,97,26,0.25)",
+        background: "var(--charcoal-card)",
         padding: "48px 24px",
       }}
     >
       <p
         className="font-display w-full max-w-[700px] text-center text-balance"
         style={{
-          color: "#F8F4EF",
+          color: "var(--charcoal-text)",
           fontSize: "clamp(1rem, 2vw, 1.35rem)",
           fontStyle: "italic",
           fontWeight: 400,
@@ -28,7 +28,7 @@ export default function ProductDiscoveryStrip() {
         }}
       >
         Cursor and Claude Code can build the software, but you still spend 20 hours a week figuring out the requirements.{" "}
-        <span style={{ color: "#E8561B" }}>
+        <span style={{ color: "var(--orange)" }}>
           Automate the product discovery process so your coding agents actually have something to build.
         </span>
       </p>
