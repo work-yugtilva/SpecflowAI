@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { saveScopedContext } from "@/lib/api/context";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -76,6 +77,7 @@ export default function OnboardingPage() {
   const [form, setForm] = useState<FormData>(INITIAL_FORM);
   const [errors, setErrors] = useState<FormErrors>({});
   const [attempted, setAttempted] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   // Validity check for enabling the CTA
   const isValid = Boolean(
@@ -106,11 +108,30 @@ export default function OnboardingPage() {
     return Object.keys(errs).length === 0;
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     setAttempted(true);
     if (!validate(form)) return;
-    // Mock API — log collected data
-    console.log("Onboarding data:", form);
+
+    const contextData = {
+      companyName: form.companyName,
+      companyType: form.companyType,
+      productName: "",
+      productDescription: "",
+      targetUsers: "",
+      goals: "",
+      constraints: `Job title: ${form.jobTitle}. Experience: ${form.workExperience} years.`,
+    };
+
+    setSaving(true);
+    try {
+      localStorage.setItem("specflow_context", JSON.stringify(contextData));
+      await saveScopedContext("global", contextData);
+    } catch {
+      // Context can still be completed later from the context page.
+    } finally {
+      setSaving(false);
+    }
+
     router.push("/dashboard");
   }
 
@@ -334,17 +355,17 @@ export default function OnboardingPage() {
           {/* CTA */}
           <button
             onClick={handleSubmit}
-            disabled={!isValid}
+            disabled={!isValid || saving}
             className="btn-dark w-full mt-2"
             style={{
-              opacity: isValid ? 1 : 0.38,
-              cursor: isValid ? "pointer" : "not-allowed",
+              opacity: isValid && !saving ? 1 : 0.38,
+              cursor: isValid && !saving ? "pointer" : "not-allowed",
               transition: "opacity 200ms ease",
               fontSize: "0.9375rem",
               padding: "0.75rem 1.5rem",
             }}
           >
-            Continue →
+            {saving ? "Setting up..." : "Continue →"}
           </button>
         </div>
       </div>

@@ -116,34 +116,43 @@ export async function POST(req: NextRequest) {
   }
 
   const expressBase = getExpressApiBase();
+  const BATCH_SIZE = 5;
   let imported = 0;
 
-  for (const message of messages) {
-    const text = message.text!;
-    const researchUrl = new URL(`${expressBase}/api/research`);
-    if (session_id) {
-      researchUrl.searchParams.set("scope", "session");
-      researchUrl.searchParams.set("sessionId", session_id);
-    }
+  // Express does not expose /api/research/bulk yet, so import with bounded parallelism.
+  for (let i = 0; i < messages.length; i += BATCH_SIZE) {
+    const batch = messages.slice(i, i + BATCH_SIZE);
+    const results = await Promise.all(
+      batch.map(async (message) => {
+        const text = message.text!;
+        const researchUrl = new URL(`${expressBase}/api/research`);
+        if (session_id) {
+          researchUrl.searchParams.set("scope", "session");
+          researchUrl.searchParams.set("sessionId", session_id);
+        }
 
-    try {
-      const res = await fetch(researchUrl.toString(), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeaders },
-        body: JSON.stringify({
-          type: "Interview",
-          title: text.slice(0, 80),
-          content: text,
-          user: message.username ?? "Slack",
-          pain: "",
-          context: channel_name,
-          tags: ["slack", channel_name],
-        }),
-      });
-      if (res.ok) imported++;
-    } catch {
-      // Individual message failures are non-fatal — skip and continue
-    }
+        try {
+          const res = await fetch(researchUrl.toString(), {
+            method: "POST",
+            headers: { "Content-Type": "application/json", ...authHeaders },
+            body: JSON.stringify({
+              type: "Interview",
+              title: text.slice(0, 80),
+              content: text,
+              user: message.username ?? "Slack",
+              pain: "",
+              context: channel_name,
+              tags: ["slack", channel_name],
+            }),
+          });
+          return res.ok;
+        } catch {
+          // Individual message failures are non-fatal — skip and continue.
+          return false;
+        }
+      })
+    );
+    imported += results.filter(Boolean).length;
   }
 
   return NextResponse.json({ success: true, imported, channel: channel_name });

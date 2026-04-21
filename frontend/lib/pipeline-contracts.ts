@@ -15,7 +15,6 @@ export interface QualityGateResult {
 
 export interface LinearMutation {
   operation: string;
-  mutation: string;
   variables: Record<string, unknown>;
 }
 

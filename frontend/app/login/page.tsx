@@ -106,6 +106,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [resetSent, setResetSent] = useState(false);
 
   const showDevSupabaseHint =
     process.env.NODE_ENV === "development" && !isSupabaseEnvExplicitlySet();
@@ -114,6 +115,7 @@ export default function LoginPage() {
     setMode(next);
     setError(null);
     setSuccessMsg(null);
+    setResetSent(false);
     setPassword("");
     setConfirmPassword("");
   }
@@ -199,6 +201,32 @@ export default function LoginPage() {
       if (authError) setError(formatAuthErrorMessage(authError));
     } catch (e) {
       setError(formatAuthErrorMessage(e));
+    }
+  }
+
+  async function handleForgotPassword() {
+    if (!email.trim()) {
+      setError("Enter your email address first, then click Forgot Password.");
+      setSuccessMsg(null);
+      setResetSent(false);
+      return;
+    }
+
+    try {
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+      });
+      if (resetError) {
+        setError(formatAuthErrorMessage(resetError));
+        setResetSent(false);
+      } else {
+        setError(null);
+        setResetSent(true);
+        setSuccessMsg("Password reset email sent. Check your inbox.");
+      }
+    } catch (e) {
+      setError(formatAuthErrorMessage(e));
+      setResetSent(false);
     }
   }
 
@@ -310,7 +338,13 @@ export default function LoginPage() {
                 className="form-input"
                 autoComplete="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (resetSent) {
+                    setResetSent(false);
+                    setSuccessMsg(null);
+                  }
+                }}
                 required
               />
             </div>
@@ -379,15 +413,15 @@ export default function LoginPage() {
             {/* Forgot password — login only */}
             {mode === "login" && (
               <div className="flex justify-end -mt-1">
-                <a
-                  href="#"
-                  className="font-sans text-[0.8125rem] font-medium"
-                  style={{ color: "#E8561B", textDecoration: "none" }}
+                <button
+                  type="button"
+                  onClick={handleForgotPassword}
+                  style={{ color: "#E8561B", background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit", fontSize: "0.8125rem", fontWeight: 500 }}
                   onMouseEnter={(e) => (e.currentTarget.style.textDecoration = "underline")}
                   onMouseLeave={(e) => (e.currentTarget.style.textDecoration = "none")}
                 >
                   Forgot Password?
-                </a>
+                </button>
               </div>
             )}
 
@@ -435,6 +469,17 @@ export default function LoginPage() {
               {/* GitHub */}
               <button
                 type="button"
+                onClick={async () => {
+                  try {
+                    const { error: authError } = await supabase.auth.signInWithOAuth({
+                      provider: "github",
+                      options: { redirectTo: `${window.location.origin}/auth/callback` },
+                    });
+                    if (authError) setError(formatAuthErrorMessage(authError));
+                  } catch (e) {
+                    setError(formatAuthErrorMessage(e));
+                  }
+                }}
                 className="w-12 h-12 rounded-full flex items-center justify-center transition-colors"
                 style={{ border: "1.5px solid #E4DDD4", background: "#fff", cursor: "pointer" }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(0,0,0,0.04)")}

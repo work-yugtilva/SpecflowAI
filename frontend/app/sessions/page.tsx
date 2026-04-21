@@ -5,10 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
 import {
-  createSession,
   runSession,
   getSession,
-  getLastSessionMode,
   getHandoff,
   generateHandoff,
   exportHandoff,
@@ -40,8 +38,7 @@ import type { MergedContextPayload } from "@/lib/api/context";
 import { fetchResearchEntries } from "@/lib/api/research";
 import { createClient } from "@/lib/supabase/client";
 import { StepInspector } from "@/components/StepInspector";
-
-const LS_KEY = "specflow_sessions";
+import { useSessionStore } from "@/lib/store/session-store";
 
 const CONTEXT_PREVIEW_CONFIG = {
   sectionTitle: "Context Preview",
@@ -60,15 +57,6 @@ const CONTEXT_PREVIEW_CONFIG = {
   editLabel:       "Edit Context",
   memoryLabel:     "Already generated",
 } as const;
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface StoredSession {
-  session_id: string;
-  session_name?: string;
-  status: string;
-  created_at: string | null;
-}
 
 function shortId(id: string): string {
   return id.slice(0, 8).toUpperCase();
@@ -333,7 +321,10 @@ function EventLogRow({ event }: { event: SessionEvent }) {
 export default function SessionsPage() {
   const router = useRouter();
   const { selectSession } = useActiveSession();
-  const [sessions, setSessions] = useState<StoredSession[]>([]);
+  const sessions = useSessionStore((s) => s.sessions);
+  const fetchSessions = useSessionStore((s) => s.fetchSessions);
+  const createSessionStore = useSessionStore((s) => s.createSession);
+  const updateSessionLocal = useSessionStore((s) => s.updateLocal);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -388,7 +379,6 @@ export default function SessionsPage() {
   const [bootstrapSessionId, setBootstrapSessionId] = useState<string | null>(null);
   const [isApplyingBootstrap, setIsApplyingBootstrap] = useState(false);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
-  const [sessionMode, setSessionMode] = useState<"remote" | "local" | null>(null);
   const [backendOffline, setBackendOffline] = useState(false);
   const [sessionHandoff, setSessionHandoff] = useState<AgentHandoff | null>(null);
   const [handoffGenerating, setHandoffGenerating] = useState(false);
@@ -402,21 +392,9 @@ export default function SessionsPage() {
     setCreateError(null);
   }, [setIsCreating, setCreateError]);
 
-  // Load sessions from localStorage
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem(LS_KEY);
-      if (raw) setSessions(JSON.parse(raw));
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  // Persist sessions to localStorage
-  const persistSessions = useCallback((updated: StoredSession[]) => {
-    localStorage.setItem(LS_KEY, JSON.stringify(updated));
-    setSessions(updated);
-  }, [setSessions]);
+    void fetchSessions();
+  }, [fetchSessions]);
 
   // Load detail when session selected
   const loadDetail = useCallback(async (id: string) => {
@@ -425,13 +403,11 @@ export default function SessionsPage() {
     try {
       const d = await getSession(id);
       setDetail(d);
-      // Update stored status
-      setSessions((prev) => {
-        const updated = prev.map((s) =>
-          s.session_id === id ? { ...s, status: d.session.status } : s
-        );
-        localStorage.setItem(LS_KEY, JSON.stringify(updated));
-        return updated;
+      updateSessionLocal(id, {
+        status: d.session.status,
+        updated_at: d.session.updated_at,
+        session_name: d.session.session_name,
+        metadata: d.session.metadata,
       });
       void getHandoff(id)
         .then((r) => {
@@ -455,7 +431,7 @@ export default function SessionsPage() {
     setIsLoadingDetail,
     setRunError,
     setDetail,
-    setSessions,
+    updateSessionLocal,
     setSessionHandoff,
     setBackendOffline,
   ]);
@@ -567,22 +543,13 @@ export default function SessionsPage() {
     setCreateError(null);
     setIsCreatingSession(true);
     try {
-      const result = await createSession(newSessionName.trim());
-      setSessionMode(getLastSessionMode());
-      const stored: StoredSession = {
-        session_id: result.session_id,
-        session_name: result.session_name,
-        status: result.status,
-        created_at: result.created_at,
-      };
-      const updated = [stored, ...sessions];
-      persistSessions(updated);
+      const result = await createSessionStore(newSessionName.trim());
       setNewSessionName("");
       setIsCreating(false);
-      setSelectedId(result.session_id);
-      selectSession(result.session_id);
-      loadDetail(result.session_id);
-      setBootstrapSessionId(result.session_id);
+      setSelectedId(result.id);
+      selectSession(result.id);
+      loadDetail(result.id);
+      setBootstrapSessionId(result.id);
       setBootstrapError(null);
       setShowContextBootstrap(true);
     } catch (e) {
@@ -595,13 +562,11 @@ export default function SessionsPage() {
     }
   }, [
     newSessionName,
-    sessions,
-    persistSessions,
+    createSessionStore,
     loadDetail,
     selectSession,
     setCreateError,
     setIsCreatingSession,
-    setSessionMode,
     setNewSessionName,
     setIsCreating,
     setSelectedId,
@@ -852,21 +817,6 @@ export default function SessionsPage() {
             </div>
           )}
 
-          {/* Local Mode banner */}
-          {sessionMode === "local" && (
-            <div style={{
-              background: "#FFF7ED",
-              borderBottom: "1px solid #FED7AA",
-              padding: "6px 20px",
-              fontSize: 12,
-              color: "#C2410C",
-              fontWeight: 500,
-              flexShrink: 0,
-            }}>
-              Local Mode — backend unreachable. Outputs are generated locally, not from the pipeline.
-            </div>
-          )}
-
           {/* Body: two-panel layout */}
           <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
 
@@ -914,11 +864,11 @@ export default function SessionsPage() {
                   </div>
                 ) : (
                   sessions.map((s) => {
-                    const isSelected = s.session_id === selectedId;
+                    const isSelected = s.id === selectedId;
                     return (
                       <button
-                        key={s.session_id}
-                        onClick={() => handleSelectSession(s.session_id)}
+                        key={s.id}
+                        onClick={() => handleSelectSession(s.id)}
                         style={{
                           width: "100%",
                           textAlign: "left",
@@ -935,12 +885,12 @@ export default function SessionsPage() {
                       >
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
                           <span style={{ fontSize: 12, fontWeight: 600, color: "#0D0D0D", fontFamily: "monospace" }}>
-                            {shortId(s.session_id)}
+                            {shortId(s.id)}
                           </span>
                           <StatusBadge status={s.status} />
                         </div>
                         <div style={{ fontSize: 11.5, color: "#6B6B6B", marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                          {s.session_name || `Session ${shortId(s.session_id)}`}
+                          {s.session_name || `Session ${shortId(s.id)}`}
                         </div>
                         <div style={{ fontSize: 11, color: "#9B9189" }}>
                           {relativeTime(s.created_at)}

@@ -9,9 +9,20 @@ const ALLOWED_OPERATIONS = new Set([
   "ProjectCreate",
 ]);
 
+const MUTATION_TEMPLATES: Record<string, string> = {
+  IssueCreate: `mutation IssueCreate($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier title } } }`,
+  IssueLabelCreate: `mutation IssueLabelCreate($input: IssueLabelCreateInput!) { issueLabelCreate(input: $input) { success issueLabel { id name color } } }`,
+  ProjectCreate: `mutation ProjectCreate($input: ProjectCreateInput!) { projectCreate(input: $input) { success project { id name } } }`,
+};
+
+const EXPECTED_VARIABLE_KEYS: Record<string, Set<string>> = {
+  IssueCreate: new Set(["input"]),
+  IssueLabelCreate: new Set(["input"]),
+  ProjectCreate: new Set(["input"]),
+};
+
 interface MutationObject {
   operation: string;
-  mutation: string;
   variables: Record<string, unknown>;
 }
 
@@ -19,6 +30,33 @@ interface LinearPayload {
   project: MutationObject;
   labels: MutationObject[];
   issues: MutationObject[];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function validateVariables(
+  operation: string,
+  variables: unknown
+): string[] | null {
+  if (!isRecord(variables)) {
+    return ["Invalid variables"];
+  }
+
+  const expectedKeys = EXPECTED_VARIABLE_KEYS[operation];
+  if (!expectedKeys) {
+    return ["Operation template not found"];
+  }
+
+  const unexpectedKeys = Object.keys(variables).filter(
+    (key) => !expectedKeys.has(key)
+  );
+  if (unexpectedKeys.length > 0) {
+    return [`Unexpected variables: ${unexpectedKeys.join(", ")}`];
+  }
+
+  return null;
 }
 
 export async function POST(req: NextRequest) {
@@ -98,6 +136,29 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
+    const mutationTemplate = MUTATION_TEMPLATES[mutation_obj.operation];
+    if (!mutationTemplate) {
+      results.push({
+        operation: mutation_obj.operation,
+        success: false,
+        errors: ["Operation template not found"],
+      });
+      continue;
+    }
+
+    const variableErrors = validateVariables(
+      mutation_obj.operation,
+      mutation_obj.variables
+    );
+    if (variableErrors) {
+      results.push({
+        operation: mutation_obj.operation,
+        success: false,
+        errors: variableErrors,
+      });
+      continue;
+    }
+
     try {
       const res = await fetch(LINEAR_API, {
         method: "POST",
@@ -106,7 +167,7 @@ export async function POST(req: NextRequest) {
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify({
-          query: mutation_obj.mutation,
+          query: mutationTemplate,
           variables: mutation_obj.variables,
         }),
       });

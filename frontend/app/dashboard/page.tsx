@@ -372,6 +372,7 @@ export default function DashboardPage() {
   const total = sessions.length;
   const completed = sessions.filter((s) => s.status === "completed").length;
   const active = sessions.filter((s) => s.status === "active").length;
+  const prdsGenerated = sessions.filter((s) => s.metadata?.has_prd === true).length;
   const thisWeek = sessions.filter(
     (s) => s.created_at && Date.now() - new Date(s.created_at).getTime() < 7 * 86400 * 1000
   ).length;
@@ -399,9 +400,10 @@ export default function DashboardPage() {
       (s) => s.created_at && new Date(s.created_at).toDateString() === ds
     ).length;
   });
-  const chartData = rawCounts.every((c) => c === 0) ? [2, 5, 3, 8, 4, 6, 1] : rawCounts;
+  const chartData = rawCounts;
   const maxCount = Math.max(...chartData, 1);
   const maxIdx = chartData.indexOf(Math.max(...chartData));
+  const hasChartData = chartData.some((c) => c > 0);
 
   // Plan usage %
   const usedPercent = plan
@@ -633,10 +635,10 @@ export default function DashboardPage() {
           {/* ── Row 1: Stat cards ─────────────────────────────────────────── */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, padding: "0 40px 20px" }}>
             {[
-              { label: "Total Sessions", value: total, bg: "#E8561B", textColor: "#FFFFFF", hero: true },
-              { label: "Completed", value: completed, bg: "#FFFFFF", textColor: "#0D0D0D", hero: false },
-              { label: "Active", value: active, bg: "#FFFFFF", textColor: "#0D0D0D", hero: false },
-              { label: "PRDs Generated", value: completed, bg: "#FFFFFF", textColor: "#0D0D0D", hero: false },
+              { label: "Total Sessions", value: total, bg: "#E8561B", textColor: "#FFFFFF", hero: true, thisWeek },
+              { label: "Completed", value: completed, bg: "#FFFFFF", textColor: "#0D0D0D", hero: false, thisWeek: 0 },
+              { label: "Active", value: active, bg: "#FFFFFF", textColor: "#0D0D0D", hero: false, thisWeek: 0 },
+              { label: "Completed Sessions", value: completed, bg: "#FFFFFF", textColor: "#0D0D0D", hero: false, thisWeek: 0 },
             ].map((card, i) => (
               <StatCard
                 key={card.label}
@@ -646,7 +648,7 @@ export default function DashboardPage() {
                 textColor={card.textColor}
                 hero={card.hero}
                 loading={loading}
-                thisWeek={thisWeek}
+                thisWeek={card.thisWeek}
                 delay={`${0.05 + i * 0.05}s`}
               />
             ))}
@@ -698,39 +700,58 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <div style={{ display: "flex", alignItems: "flex-end", gap: 8, height: 200 }}>
-                    {chartData.map((count, i) => {
-                      const pct = (count / maxCount) * 100;
-                      const barH = Math.max((pct / 100) * 160, 4);
-                      const isMax = i === maxIdx;
-                      const isSolid = i % 2 === 0;
-                      const barBg = isMax
-                        ? "#E8561B"
-                        : isSolid
-                        ? "#0D0D0D"
-                        : "repeating-linear-gradient(45deg, #E4DDD4 0px, #E4DDD4 2px, transparent 2px, transparent 8px)";
-                      return (
-                        <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1, height: "100%", justifyContent: "flex-end" }}>
-                          {isMax ? (
-                            <div style={{ fontSize: 11, fontWeight: 700, color: "#E8561B", marginBottom: 4, fontFamily: "var(--font-dm-sans), sans-serif" }}>
-                              {Math.round(pct)}%
+                    {hasChartData ? (
+                      chartData.map((count, i) => {
+                        const pct = (count / maxCount) * 100;
+                        const barH = Math.max((pct / 100) * 160, 4);
+                        const isMax = i === maxIdx;
+                        const isSolid = i % 2 === 0;
+                        const barBg = isMax
+                          ? "#E8561B"
+                          : isSolid
+                          ? "#0D0D0D"
+                          : "repeating-linear-gradient(45deg, #E4DDD4 0px, #E4DDD4 2px, transparent 2px, transparent 8px)";
+                        return (
+                          <div key={i} style={{ display: "flex", flexDirection: "column", alignItems: "center", flex: 1, height: "100%", justifyContent: "flex-end" }}>
+                            {isMax ? (
+                              <div style={{ fontSize: 11, fontWeight: 700, color: "#E8561B", marginBottom: 4, fontFamily: "var(--font-dm-sans), sans-serif" }}>
+                                {Math.round(pct)}%
+                              </div>
+                            ) : (
+                              <div style={{ height: 19 }} />
+                            )}
+                            <div style={{
+                              width: "100%",
+                              maxWidth: 36,
+                              height: barH,
+                              background: barBg,
+                              border: isMax || isSolid ? "none" : "1px solid #E4DDD4",
+                              borderRadius: "6px 6px 0 0",
+                            }} />
+                            <div style={{ fontSize: 11, color: "#9E9E9E", marginTop: 6, fontFamily: "var(--font-dm-sans), sans-serif" }}>
+                              {dayLabels[i]}
                             </div>
-                          ) : (
-                            <div style={{ height: 19 }} />
-                          )}
-                          <div style={{
-                            width: "100%",
-                            maxWidth: 36,
-                            height: barH,
-                            background: barBg,
-                            border: isMax || isSolid ? "none" : "1px solid #E4DDD4",
-                            borderRadius: "6px 6px 0 0",
-                          }} />
-                          <div style={{ fontSize: 11, color: "#9E9E9E", marginTop: 6, fontFamily: "var(--font-dm-sans), sans-serif" }}>
-                            {dayLabels[i]}
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })
+                    ) : (
+                      <div style={{
+                        flex: 1,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        height: "100%",
+                        flexDirection: "column",
+                        gap: 8,
+                      }}>
+                        <p style={{ fontSize: 12, color: "#C8C2BB", margin: 0 }}>
+                          No pipeline runs yet
+                        </p>
+                        <p style={{ fontSize: 11, color: "#E4DDD4", margin: 0 }}>
+                          Run your first session to see activity
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 

@@ -52,6 +52,7 @@ export async function POST(req: NextRequest) {
       .from("sessions")
       .select("id")
       .eq("id", session_id)
+      .eq("user_id", user.id)
       .maybeSingle();
 
     if (sessionError) {
@@ -67,9 +68,31 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const { data: memoryEntry, error: memoryEntryError } = await supabase
+      .from("memory_entries")
+      .select("id, sessions!inner(id)")
+      .eq("session_id", session_id)
+      .eq("memory_key", output_key)
+      .eq("sessions.user_id", user.id)
+      .maybeSingle();
+
+    if (memoryEntryError) {
+      return NextResponse.json(
+        { success: false, error: memoryEntryError.message },
+        { status: 500 }
+      );
+    }
+    if (!memoryEntry) {
+      return NextResponse.json(
+        { success: false, error: "Editable content not found" },
+        { status: 404 }
+      );
+    }
+
     const { data, error } = await supabase
       .from("memory_entries")
       .update({ content: updated_content })
+      .eq("id", memoryEntry.id)
       .eq("session_id", session_id)
       .eq("memory_key", output_key)
       .select("id")
