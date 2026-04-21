@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
 import {
@@ -31,8 +32,6 @@ import {
 } from "@/lib/pipeline-input";
 import { useActiveSession } from "@/lib/active-session-context";
 import {
-  migrateGlobalToScopedOnce,
-  readScopedRaw,
   removeScopedRaw,
   writeScopedRaw,
 } from "@/lib/session-scoped-storage";
@@ -43,7 +42,6 @@ import { createClient } from "@/lib/supabase/client";
 import { StepInspector } from "@/components/StepInspector";
 
 const LS_KEY = "specflow_sessions";
-const INGEST_GLOBAL_KEY = "ingest_entries";
 
 const CONTEXT_PREVIEW_CONFIG = {
   sectionTitle: "Context Preview",
@@ -382,16 +380,6 @@ export default function SessionsPage() {
     [mergedForContextPanel]
   );
 
-  // Ingest form state
-  const [activeTab, setActiveTab] = useState<"interview" | "product_data">("interview");
-  const [interviewContent, setInterviewContent] = useState("");
-  const [interviewMeta, setInterviewMeta] = useState({ user: "", pain: "", context: "" });
-  const [productContent, setProductContent] = useState("");
-  const [productMeta, setProductMeta] = useState({
-    metricName: "", metricValue: "", metricBaseline: "",
-    metricUnit: "", timePeriod: "", dataSource: "",
-  });
-
   // Create form state
   const [newSessionName, setNewSessionName] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
@@ -660,53 +648,9 @@ export default function SessionsPage() {
     ]
   );
 
-  // Build inputData from the ingest form (scoped to sessionId)
+  // Build inputData for the pipeline (ingest comes from research entries server-side)
   const buildInputData = useCallback(
     async (sessionId: string): Promise<Record<string, unknown>> => {
-      const entry =
-        activeTab === "interview"
-          ? {
-              id: crypto.randomUUID(),
-              type: "interview",
-              content: interviewContent,
-              metadata: interviewMeta,
-              createdAt: new Date().toISOString(),
-            }
-          : {
-              id: crypto.randomUUID(),
-              type: "product_data",
-              content: productContent,
-              metadata: {
-                metrics: [{
-                  metric_name:     productMeta.metricName     || undefined,
-                  metric_value:    productMeta.metricValue    ? parseFloat(productMeta.metricValue)    : undefined,
-                  metric_baseline: productMeta.metricBaseline ? parseFloat(productMeta.metricBaseline) : undefined,
-                  metric_unit:     productMeta.metricUnit     || undefined,
-                  time_period:     productMeta.timePeriod     || undefined,
-                  data_source:     productMeta.dataSource     || undefined,
-                }],
-              },
-              createdAt: new Date().toISOString(),
-            };
-
-      try {
-        migrateGlobalToScopedOnce(
-          sessionId,
-          "ingest_entries",
-          INGEST_GLOBAL_KEY
-        );
-        const existingRaw = readScopedRaw(sessionId, "ingest_entries");
-        const existing = JSON.parse(existingRaw || "[]") as unknown[];
-        const list = Array.isArray(existing) ? existing : [];
-        writeScopedRaw(
-          sessionId,
-          "ingest_entries",
-          JSON.stringify([entry, ...list].slice(0, 10))
-        );
-      } catch {
-        /* ignore */
-      }
-
       let research: unknown[] = [];
       try {
         research = await fetchResearchEntries("session", sessionId);
@@ -717,10 +661,10 @@ export default function SessionsPage() {
       return {
         context: getContextObject(sessionId),
         research,
-        ingest: [entry],
+        ingest: [],
       };
     },
-    [activeTab, interviewContent, interviewMeta, productContent, productMeta]
+    []
   );
 
   // Run pipeline
@@ -1180,22 +1124,10 @@ export default function SessionsPage() {
                     >
                       Research ({researchCount}){researchCount > 0 ? " ✓" : ""}
                     </span>
-                    <span
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 500,
-                        padding: "3px 10px",
-                        borderRadius: 20,
-                        border: "1px solid #BBF7D0",
-                        background: "#F0FDF4",
-                        color: "#15803D",
-                      }}
-                    >
-                      Ingest (this tab) ✓
-                    </span>
+
                   </div>
 
-                  {/* Input data — structured ingest form */}
+                  {/* Research card */}
                   <div
                     style={{
                       background: "#FFFFFF",
@@ -1205,137 +1137,22 @@ export default function SessionsPage() {
                       marginBottom: 18,
                     }}
                   >
-                    <div style={{ fontSize: 11, fontWeight: 600, color: "#9B9189", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 14 }}>
-                      Input Data
-                    </div>
-
-                    {/* Tabs */}
-                    <div style={{ display: "flex", gap: 4, marginBottom: 16, background: "#F8F4EF", borderRadius: 9, padding: 3 }}>
-                      {(["interview", "product_data"] as const).map((tab) => (
-                        <button
-                          key={tab}
-                          onClick={() => setActiveTab(tab)}
-                          style={{
-                            flex: 1,
-                            padding: "6px 12px",
-                            borderRadius: 7,
-                            border: "none",
-                            fontSize: 12.5,
-                            fontWeight: 500,
-                            cursor: "pointer",
-                            transition: "all 0.18s ease",
-                            background: activeTab === tab ? "#FFFFFF" : "transparent",
-                            color: activeTab === tab ? "#0D0D0D" : "#9B9189",
-                            boxShadow: activeTab === tab ? "0 1px 4px rgba(13,13,13,0.08)" : "none",
-                          }}
-                        >
-                          {tab === "interview" ? "Interview" : "Product Data"}
-                        </button>
-                      ))}
-                    </div>
-
-                    {activeTab === "interview" ? (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                        <textarea
-                          value={interviewContent}
-                          onChange={(e) => setInterviewContent(e.target.value)}
-                          placeholder="Paste interview notes, transcripts, or customer feedback…"
-                          rows={5}
-                          style={{ width: "100%", padding: "10px 12px", background: "#F8F4EF", border: "1.5px solid #E4DDD4", borderRadius: 9, fontSize: 13, color: "#0D0D0D", lineHeight: 1.6, resize: "vertical", fontFamily: "inherit" }}
-                          onFocus={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#E8561B"; (e.currentTarget as HTMLElement).style.background = "#fff"; }}
-                          onBlur={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#E4DDD4"; (e.currentTarget as HTMLElement).style.background = "#F8F4EF"; }}
-                        />
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-                          {[
-                            { key: "user", label: "Interviewee", placeholder: "Sarah, PM at Acme" },
-                            { key: "pain", label: "Pain Point", placeholder: "slow onboarding" },
-                            { key: "context", label: "Context", placeholder: "enterprise trial user" },
-                          ].map(({ key, label, placeholder }) => (
-                            <div key={key}>
-                              <label style={{ display: "block", fontSize: 10.5, fontWeight: 600, color: "#9B9189", letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 4 }}>{label}</label>
-                              <input
-                                type="text"
-                                value={interviewMeta[key as keyof typeof interviewMeta]}
-                                onChange={(e) => setInterviewMeta((prev) => ({ ...prev, [key]: e.target.value }))}
-                                placeholder={placeholder}
-                                style={{ width: "100%", padding: "7px 10px", background: "#F8F4EF", border: "1.5px solid #E4DDD4", borderRadius: 8, fontSize: 12.5, color: "#0D0D0D", fontFamily: "inherit" }}
-                                onFocus={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#E8561B"; (e.currentTarget as HTMLElement).style.background = "#fff"; }}
-                                onBlur={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#E4DDD4"; (e.currentTarget as HTMLElement).style.background = "#F8F4EF"; }}
-                              />
-                            </div>
-                          ))}
-                        </div>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: "#9B9189", letterSpacing: "0.06em", textTransform: "uppercase" }}>
+                        Research
                       </div>
-                    ) : (
-                      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                        <textarea
-                          value={productContent}
-                          onChange={(e) => setProductContent(e.target.value)}
-                          placeholder="Paste product analytics, logs, or raw usage data…"
-                          rows={5}
-                          style={{ width: "100%", padding: "10px 12px", background: "#F8F4EF", border: "1.5px solid #E4DDD4", borderRadius: 9, fontSize: 13, color: "#0D0D0D", lineHeight: 1.6, resize: "vertical", fontFamily: "inherit" }}
-                          onFocus={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#E8561B"; (e.currentTarget as HTMLElement).style.background = "#fff"; }}
-                          onBlur={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#E4DDD4"; (e.currentTarget as HTMLElement).style.background = "#F8F4EF"; }}
-                        />
-                        {/* Metric Name — full width */}
-                        <div>
-                          <label style={{ display: "block", fontSize: 10.5, fontWeight: 600, color: "#9B9189", letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 4 }}>Metric Name</label>
-                          <input
-                            type="text"
-                            value={productMeta.metricName}
-                            onChange={(e) => setProductMeta((prev) => ({ ...prev, metricName: e.target.value }))}
-                            placeholder='e.g. "30-day activation rate"'
-                            style={{ width: "100%", padding: "7px 10px", background: "#F8F4EF", border: "1.5px solid #E4DDD4", borderRadius: 8, fontSize: 12.5, color: "#0D0D0D", fontFamily: "inherit", boxSizing: "border-box" }}
-                            onFocus={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#E8561B"; (e.currentTarget as HTMLElement).style.background = "#fff"; }}
-                            onBlur={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#E4DDD4"; (e.currentTarget as HTMLElement).style.background = "#F8F4EF"; }}
-                          />
-                        </div>
-                        {/* Current Value + Baseline — 2-col grid */}
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                          {[
-                            { key: "metricValue",    label: "Current Value",  placeholder: "42",  type: "number" },
-                            { key: "metricBaseline", label: "Baseline Value", placeholder: "28",  type: "number" },
-                          ].map(({ key, label, placeholder, type }) => (
-                            <div key={key}>
-                              <label style={{ display: "block", fontSize: 10.5, fontWeight: 600, color: "#9B9189", letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 4 }}>{label}</label>
-                              <input
-                                type={type}
-                                value={productMeta[key as keyof typeof productMeta]}
-                                onChange={(e) => setProductMeta((prev) => ({ ...prev, [key]: e.target.value }))}
-                                placeholder={placeholder}
-                                style={{ width: "100%", padding: "7px 10px", background: "#F8F4EF", border: "1.5px solid #E4DDD4", borderRadius: 8, fontSize: 12.5, color: "#0D0D0D", fontFamily: "inherit" }}
-                                onFocus={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#E8561B"; (e.currentTarget as HTMLElement).style.background = "#fff"; }}
-                                onBlur={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#E4DDD4"; (e.currentTarget as HTMLElement).style.background = "#F8F4EF"; }}
-                              />
-                            </div>
-                          ))}
-                        </div>
-                        {/* Unit + Time Period + Data Source — 3-col grid */}
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
-                          {[
-                            { key: "metricUnit", label: "Unit",        placeholder: '"%"' },
-                            { key: "timePeriod", label: "Time Period",  placeholder: "Q1 2026" },
-                            { key: "dataSource", label: "Data Source",  placeholder: "Mixpanel" },
-                          ].map(({ key, label, placeholder }) => (
-                            <div key={key}>
-                              <label style={{ display: "block", fontSize: 10.5, fontWeight: 600, color: "#9B9189", letterSpacing: "0.04em", textTransform: "uppercase", marginBottom: 4 }}>{label}</label>
-                              <input
-                                type="text"
-                                value={productMeta[key as keyof typeof productMeta]}
-                                onChange={(e) => setProductMeta((prev) => ({ ...prev, [key]: e.target.value }))}
-                                placeholder={placeholder}
-                                style={{ width: "100%", padding: "7px 10px", background: "#F8F4EF", border: "1.5px solid #E4DDD4", borderRadius: 8, fontSize: 12.5, color: "#0D0D0D", fontFamily: "inherit" }}
-                                onFocus={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#E8561B"; (e.currentTarget as HTMLElement).style.background = "#fff"; }}
-                                onBlur={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "#E4DDD4"; (e.currentTarget as HTMLElement).style.background = "#F8F4EF"; }}
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    <p style={{ fontSize: 11.5, color: "#9B9189", marginTop: 12, lineHeight: 1.5 }}>
-                      Add Context on the Context page and Research on the Research page — both are merged into runs automatically.
+                      {researchCount > 0 && (
+                        <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "#F0FDF4", border: "1px solid #BBF7D0", color: "#15803D" }}>
+                          {researchCount} {researchCount === 1 ? "entry" : "entries"}
+                        </span>
+                      )}
+                    </div>
+                    <p style={{ fontSize: 13, color: "#5C5248", lineHeight: 1.55, margin: "0 0 14px" }}>
+                      Add interviews, usage data, and market insights to power your pipeline.
                     </p>
+                    <Link href="/research" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "#E8561B", textDecoration: "none" }}>
+                      Manage Research →
+                    </Link>
                   </div>
 
                   {/* Pipeline step tracker */}
