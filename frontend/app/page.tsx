@@ -1,5 +1,6 @@
 import Navbar from "@/components/Navbar";
-import AetherFlowHero from "@/components/ui/aether-flow-hero";
+import SpecFlowHero from "@/components/ui/specflow-hero";
+import CinematicScroll from "@/components/ui/cinematic-scroll";
 import TrustedBand from "@/components/TrustedBand";
 import ProductDiscoveryStrip from "@/components/ProductDiscoveryStrip";
 import MeetSpecFlow from "@/components/MeetSpecFlow";
@@ -14,7 +15,8 @@ export default function Home() {
   return (
     <main>
       <Navbar />
-      <AetherFlowHero />
+      <SpecFlowHero />
+      <CinematicScroll />
       <TrustedBand />
       <ProductDiscoveryStrip />
       <MeetSpecFlow />
@@ -55,7 +57,7 @@ export default function Home() {
               <span style={{ color: "var(--orange)", fontStyle: "italic" }}>no surprises</span>
             </h2>
             <p style={{ color: "var(--text-muted)", fontSize: "1.0625rem", maxWidth: 480, margin: "0 auto" }}>
-              Start free with 2 pipeline runs. Upgrade when you're ready to ship faster.
+              Start free with 2 pipeline runs. Upgrade when you&apos;re ready to ship faster.
             </p>
           </div>
           <PricingSection />

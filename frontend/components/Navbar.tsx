@@ -4,15 +4,17 @@ import Image from "next/image";
 import { useState } from "react";
 
 const navLinks = [
-  { label: "Product", hasDropdown: true, href: "#" },
-  { label: "Docs", hasDropdown: true, href: "#" },
-  { label: "Resources", hasDropdown: true, href: "#" },
+  { label: "Product", hasDropdown: false, href: "#" },
+  { label: "Pipeline", hasDropdown: false, href: "#" },
   { label: "Pricing", hasDropdown: false, href: "/pricing" },
-  { label: "Blog", hasDropdown: false, href: "#" },
+  { label: "Docs", hasDropdown: false, href: "#" },
 ];
 
 export default function Navbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
+
+  const accent = "var(--orange)";
+  const accentDark = "var(--orange-hover)";
 
   return (
     <header
@@ -56,23 +58,6 @@ export default function Navbar() {
               className="nav-link px-3 py-1.5 rounded-md hover:bg-black/5"
             >
               {link.label}
-              {link.hasDropdown && (
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 12 12"
-                  fill="none"
-                  className="opacity-50 ml-0.5"
-                >
-                  <path
-                    d="M3 4.5L6 7.5L9 4.5"
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  />
-                </svg>
-              )}
             </a>
           ))}
         </nav>
@@ -80,8 +65,14 @@ export default function Navbar() {
         {/* Right — Desktop */}
         <div className="hidden md:flex items-center gap-3">
           <a href="/login" className="nav-link px-3 py-1.5">Log in</a>
-          <a href="#" className="btn-dark text-sm" style={{ border: "1px solid var(--charcoal)" }}>
-            Book a demo
+          <a
+            href="#"
+            className="text-white text-sm px-5 py-2 rounded-lg font-medium transition-colors"
+            style={{ backgroundColor: accent }}
+            onMouseEnter={(e) => ((e.currentTarget as HTMLAnchorElement).style.backgroundColor = accentDark)}
+            onMouseLeave={(e) => ((e.currentTarget as HTMLAnchorElement).style.backgroundColor = accent)}
+          >
+            Get started free
           </a>
         </div>
 
@@ -119,8 +110,13 @@ export default function Navbar() {
             </a>
           ))}
           <a href="/login" className="nav-link py-2 text-[15px]" onClick={() => setMobileOpen(false)}>Log in</a>
-          <a href="#" className="btn-dark mt-2 w-full justify-center" style={{ border: "1px solid var(--charcoal)" }}>
-            Book a demo
+          <a
+            href="#"
+            className="text-white text-sm px-5 py-2 rounded-lg font-medium text-center mt-2 transition-colors"
+            style={{ backgroundColor: accent }}
+            onClick={() => setMobileOpen(false)}
+          >
+            Get started free
           </a>
         </div>
       )}
