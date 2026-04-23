@@ -36,7 +36,7 @@ class ProductContextAgent(BaseAgent):
         )
         return super().build_prompt(prompt_task, context=prompt_context, memory=None)
 
-    async def _persist_product_profile(self, user_id: str, profile_data: dict):
+    async def _persist_product_profile(self, session_id: str, user_id: str, profile_data: dict):
         payload = {
             "user_id": user_id,
             "product_name": profile_data.get("product_name"),
@@ -59,6 +59,7 @@ class ProductContextAgent(BaseAgent):
             )
 
         await run_sync(_upsert)
+        logger.info(f"[ProductContextAgent] persisted product_profile for session {session_id}")
 
     async def execute_async(
         self,
@@ -76,6 +77,7 @@ class ProductContextAgent(BaseAgent):
             )
             return result
 
+        session_id = (session or {}).get("id")
         user_id = (session or {}).get("user_id")
         product_name = result.get("product_name")
         if not user_id or not product_name:
@@ -88,7 +90,7 @@ class ProductContextAgent(BaseAgent):
             return result
 
         try:
-            await self._persist_product_profile(user_id, result)
+            await self._persist_product_profile(session_id, user_id, result)
         except Exception:
             logger.exception(
                 "Failed to persist product profile for user_id=%s product_name=%s",

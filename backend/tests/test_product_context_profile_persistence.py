@@ -56,7 +56,7 @@ class FakeSupabaseClient:
 
 
 @pytest.mark.asyncio
-async def test_product_context_execute_async_persists_profile(monkeypatch):
+async def test_product_context_execute_async_persists_profile(monkeypatch, caplog):
     from services.agents import base_agent
     from services.agents import product_context_agent
     from services.agents.product_context_agent import ProductContextAgent
@@ -83,11 +83,12 @@ async def test_product_context_execute_async_persists_profile(monkeypatch):
     )
 
     agent = ProductContextAgent("product_context", _product_context_config())
-    result = await agent.execute_async(
-        "Extract context",
-        context={"product_context": {}, "ingest": []},
-        session={"id": "session-1", "user_id": "user-1"},
-    )
+    with caplog.at_level(logging.INFO, logger="services.agents.product_context_agent"):
+        result = await agent.execute_async(
+            "Extract context",
+            context={"product_context": {}, "ingest": []},
+            session={"id": "session-1", "user_id": "user-1"},
+        )
 
     assert result["product_name"] == "SpecFlow"
     assert table.on_conflict == "user_id,product_name"
@@ -104,6 +105,7 @@ async def test_product_context_execute_async_persists_profile(monkeypatch):
         "updated_at": "now()",
     }
     assert table.executed is True
+    assert "[ProductContextAgent] persisted product_profile for session session-1" in caplog.text
 
 
 @pytest.mark.asyncio
