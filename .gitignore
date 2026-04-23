@@ -61,3 +61,10 @@ test-results/
 Thumbs.db
 *.swp
 *~
+
+# Local tooling config (never commit)
+.mcp.json
+.opencode.json
+*.mp4
+*.mov
+worktrees/
