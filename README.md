@@ -1,4 +1,5 @@
 # SpecflowAI
+![Backend Tests](https://github.com/work-yugtilva/SpecflowAI/actions/workflows/backend-tests.yml/badge.svg)
 
 SpecFlow is an AI-powered product management automation platform. It uses a single repo-root env file for the frontend, Express API, and FastAPI pipeline service.
 

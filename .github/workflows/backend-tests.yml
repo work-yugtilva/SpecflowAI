@@ -1,0 +1,52 @@
+name: Backend Tests
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio pytest-mock
+
+      - name: Run backend tests
+        env:
+          ANTHROPIC_API_KEY: "test-stub"
+          GOOGLE_API_KEY: "test-stub"
+          OPENAI_API_KEY: "test-stub"
+          SUPABASE_URL: "https://stub.supabase.co"
+          SUPABASE_SERVICE_KEY: "test-stub"
+          SUPABASE_SERVICE_ROLE_KEY: "test-stub"
+          SUPABASE_ANON_KEY: "test-stub"
+          AI_MAX_TOKENS: "2048"
+        run: |
+          cd backend
+          mkdir -p test-results
+          python -m pytest tests/ -v --tb=short --junitxml=test-results/pytest.xml
+
+      - name: Upload test results on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-results
+          path: backend/test-results/
+          if-no-files-found: ignore
