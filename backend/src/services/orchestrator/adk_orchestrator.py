@@ -50,7 +50,14 @@ class _SpecFlowStep(GoogleBaseAgent):
         agent = AgentFactory.create(self._agent_name)
         # Pass the full ADK session state as context; each typed agent's
         # build_prompt() extracts only the keys it needs.
-        result = await agent.execute_async(self._task, context=dict(state))
+        result = await agent.execute_async(
+            self._task,
+            context=dict(state),
+            session={
+                "id": state.get("_session_id"),
+                "user_id": state.get("_user_id"),
+            },
+        )
 
         size = len(result) if isinstance(result, (list, dict)) else 0
         logger.info(
@@ -98,6 +105,7 @@ class ADKOrchestrator:
         self,
         input_data: dict,
         session_id: str,
+        user_id: str | None = None,
         completed_steps: Optional[set] = None,
         prior_state: Optional[dict] = None,
         progress_callback: Optional[Callable[[dict], Coroutine]] = None,
@@ -121,6 +129,8 @@ class ADKOrchestrator:
             ),
             "ingest": input_data.get("ingest", []),
             "_completed": {s: True for s in (completed_steps or set())},
+            "_session_id": session_id,
+            "_user_id": user_id,
         }
         # Seed prior outputs so skipped steps' data is still available downstream
         if prior_state:

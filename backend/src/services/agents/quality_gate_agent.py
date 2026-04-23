@@ -2,6 +2,8 @@ import logging
 
 from services.agents.base_agent import BaseAgent
 from services.ai.client import run_ai, run_ai_async
+from services.db.supabase_async import run_sync
+from services.db.supabase_client import get_supabase_client
 
 logger = logging.getLogger("specflow.quality_gate")
 
@@ -24,6 +26,56 @@ class QualityGateAgent(BaseAgent):
     def _get_threshold(self, step_name: str) -> int:
         thresholds = self.config.get("thresholds", {})
         return thresholds.get(step_name, thresholds.get("default", 65))
+
+    async def _persist_quality_score(
+        self,
+        session_id: str,
+        step_name: str,
+        score: float,
+        passed: bool,
+        details: dict,
+    ):
+        payload = {
+            "session_id": session_id,
+            "step_name": step_name,
+            "score": score,
+            "passed": passed,
+            "critical_issues": details.get("critical_issues", []),
+            "item_scores": details.get("item_scores", []),
+            "created_at": "now()",
+        }
+
+        def _insert():
+            client = get_supabase_client()
+            return client.table("quality_scores").insert(payload).execute()
+
+        await run_sync(_insert)
+
+    async def _persist_quality_score_if_session(self, step_name: str, result: dict) -> dict:
+        session_id = getattr(self, "session_id", None)
+        if not session_id:
+            logger.debug(
+                "Skipping quality score persistence for step=%s: missing session_id",
+                step_name,
+            )
+            return result
+
+        try:
+            await self._persist_quality_score(
+                session_id=session_id,
+                step_name=step_name,
+                score=result.get("score", 0),
+                passed=result.get("passed", False),
+                details=result,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to persist quality score for session_id=%s step=%s",
+                session_id,
+                step_name,
+            )
+
+        return result
 
     def _build_check_prompt(self, step_name: str, output: list, research_context: dict) -> str:
         binary_checks = self.config.get("binary_checks", [])
@@ -204,13 +256,14 @@ class QualityGateAgent(BaseAgent):
         threshold = self._get_threshold(step_name)
 
         if not output or not isinstance(output, list):
-            return {
+            result = {
                 "score": 0,
                 "passed": False,
                 "critical_issues": [f"No valid {step_name} output — list is empty or malformed"],
                 "item_scores": [],
                 "items": [],
             }
+            return await self._persist_quality_score_if_session(step_name, result)
 
         # Deterministic pre-checks — fail fast before touching the LLM
         det_failures = self._run_deterministic_checks(step_name, output)
@@ -219,13 +272,14 @@ class QualityGateAgent(BaseAgent):
                 "[quality_gate_async][deterministic] step=%s failures=%s",
                 step_name, det_failures,
             )
-            return {
+            result = {
                 "score": 0,
                 "passed": False,
                 "critical_issues": det_failures,
                 "item_scores": [],
                 "items": [],
             }
+            return await self._persist_quality_score_if_session(step_name, result)
 
         binary_checks = self.config.get("binary_checks", [])
         num_checks = len(binary_checks) or 1
@@ -281,20 +335,22 @@ class QualityGateAgent(BaseAgent):
             else:
                 logger.info("[quality_gate_async] step=%s score=%d passed=True", step_name, score)
 
-            return {
+            result = {
                 "score": score,
                 "passed": passed,
                 "critical_issues": critical_issues,
                 "item_scores": item_scores,
                 "items": items,
             }
+            return await self._persist_quality_score_if_session(step_name, result)
 
         except Exception as e:
             logger.error("[quality_gate_async] evaluation failed for step=%s: %s", step_name, e)
-            return {
+            result = {
                 "score": 0,
                 "passed": False,
                 "critical_issues": [f"Quality gate evaluation failed: {e}"],
                 "item_scores": [],
                 "items": [],
             }
+            return await self._persist_quality_score_if_session(step_name, result)

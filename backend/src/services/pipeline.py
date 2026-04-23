@@ -358,7 +358,7 @@ class Pipeline:
 
             memory_slice = await memory_manager.read_for_agent(agent_memory_config)
             memory_slice = {k: self._unwrap_persisted_content(v) for k, v in memory_slice.items()}
-            agent_session = {"id": session_id, "state": {}} if session_id else None
+            agent_session = {"id": session_id, "user_id": user_id, "state": {}} if session_id else None
 
             _RAG_ELIGIBLE = {"problems", "features", "decompose", "tasks"}
             if single_agent_name in _RAG_ELIGIBLE:
@@ -451,6 +451,7 @@ class Pipeline:
                 adk_result = await self.orchestrator.run(
                     input_data,
                     session_id=session_id or "anon",
+                    user_id=user_id,
                     completed_steps=completed_steps,
                     prior_state=prior_state,
                     progress_callback=progress_callback,
@@ -481,7 +482,12 @@ class Pipeline:
 
                 qg_result = None
                 try:
-                    qg_result = await self._run_quality_gate_async(out_key, state[out_key], state)
+                    qg_result = await self._run_quality_gate_async(
+                        out_key,
+                        state[out_key],
+                        state,
+                        session_id=session_id,
+                    )
                     if (
                         qg_result is not None
                         and not qg_result.get("passed", False)
@@ -502,7 +508,7 @@ class Pipeline:
                             step_task=step_cfg["task"],
                             base_context=state,
                             memory_slice=memory_slice,
-                            session={"id": session_id, "state": {}} if session_id else None,
+                            session={"id": session_id, "user_id": user_id, "state": {}} if session_id else None,
                             out_key=out_key,
                             state=state,
                         )
@@ -703,7 +709,13 @@ class Pipeline:
 
         return self._strip_reasoning_field(data)
 
-    async def _run_quality_gate_async(self, out_key: str, output: Any, state: dict) -> Optional[dict]:
+    async def _run_quality_gate_async(
+        self,
+        out_key: str,
+        output: Any,
+        state: dict,
+        session_id: str = None,
+    ) -> Optional[dict]:
         """Async version of _run_quality_gate — uses evaluate_async to avoid blocking the event loop."""
         if out_key not in ("problems", "features", "decompositions", "tasks"):
             return None
@@ -712,6 +724,7 @@ class Pipeline:
 
         _qg_config = ConfigManager.load_agent("quality_gate").model_dump()
         _qg_agent = QualityGateAgent("quality_gate", _qg_config)
+        _qg_agent.session_id = session_id
         _research_ctx = {
             "ingest": state.get("ingest", []),
             "product_context": state.get("product_context", {}),
@@ -743,7 +756,12 @@ class Pipeline:
 
             qg_result = None
             try:
-                qg_result = await self._run_quality_gate_async(out_key, data, state)
+                qg_result = await self._run_quality_gate_async(
+                    out_key,
+                    data,
+                    state,
+                    session_id=(session or {}).get("id"),
+                )
                 if qg_result is not None:
                     logger.info(
                         "[pipeline] quality_gate step=%s score=%d passed=%s",

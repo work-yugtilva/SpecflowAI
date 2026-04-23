@@ -1,0 +1,53 @@
+product_context:
+  provider: anthropic
+  model: claude-haiku-4-5-20251001
+  use_cache: true
+  use_batch: false
+
+quality_gate:
+  provider: anthropic
+  model: claude-haiku-4-5-20251001
+  use_cache: false
+  use_batch: true
+
+problems:
+  provider: anthropic
+  model: claude-haiku-4-5-20251001
+  use_cache: true
+  use_batch: false
+
+features:
+  provider: google
+  model: gemini-2.5-flash
+  use_cache: true
+  use_batch: false
+
+decompose:
+  provider: google
+  model: gemini-2.5-flash
+  use_cache: true
+  use_batch: false
+
+tasks:
+  provider: anthropic
+  model: claude-haiku-4-5-20251001
+  use_cache: false
+  use_batch: false
+
+prd:
+  provider: anthropic
+  model: claude-sonnet-4-5
+  use_cache: true
+  use_batch: false
+
+linear_sync:
+  provider: anthropic
+  model: claude-haiku-4-5-20251001
+  use_cache: false
+  use_batch: false
+
+query:
+  provider: google
+  model: gemini-2.5-flash
+  use_cache: false
+  use_batch: false

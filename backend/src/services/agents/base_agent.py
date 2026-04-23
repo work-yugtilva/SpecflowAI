@@ -8,7 +8,8 @@ from typing import Any, Dict, List, Optional
 
 from json_repair import loads as repair_loads
 from core.exceptions import JSONParsingError
-from services.ai.client import run_ai, run_ai_async
+from services.ai.llm_client import call_llm
+from services.ai.client import run_ai
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +23,15 @@ class BaseAgent:
         self.max_retries = config.get("max_retries", 2)
         self.use_critic = config.get("use_critic", False)
         self.tools = config.get("tools", {})
+
+    async def _call_llm(self, system_prompt: str, user_message: str) -> str:
+        return await call_llm(
+            provider=self.config.get("provider", "anthropic"),
+            model=self.config.get("model", "claude-haiku-4-5-20251001"),
+            system_prompt=system_prompt,
+            user_message=user_message,
+            use_cache=self.config.get("use_cache", False),
+        )
 
     # -------------------------
     # PROMPT BUILDER
@@ -408,7 +418,7 @@ class BaseAgent:
 
     async def _critic_check_async(self, output: list, binary_checks: list) -> list:
         """
-        Async version of _critic_check — uses run_ai_async.
+        Async version of _critic_check.
         Phase 1 — Binary check each item against the configured binary_checks.
         Returns list of dicts: [{index, binary_checks: {name: bool}, quality_issues: [...]}]
         """
@@ -438,12 +448,9 @@ class BaseAgent:
         max_output_tokens = token_ctrl.get("max_output_tokens", 2048)
         retries = token_ctrl.get("retries", self.max_retries)
 
-        response = await run_ai_async(
-            prompt,
-            max_tokens=max_output_tokens,
-            retries=retries,
-            model=self.config.get("model"),
-            temperature=self.config.get("temperature"),
+        response = await self._call_llm(
+            system_prompt=self.config.get("system_prompt", ""),
+            user_message=prompt,
         )
         try:
             parsed = self.parse_json(response)
@@ -461,7 +468,7 @@ class BaseAgent:
 
     async def _critic_rewrite_async(self, output: list, failing: list, binary_checks: list) -> list:
         """
-        Async version of _critic_rewrite — uses run_ai_async.
+        Async version of _critic_rewrite.
         Phase 2 — Rewrite only the items that failed >= 1 binary check.
         Returns rewritten items in the same order as `failing`.
         """
@@ -508,12 +515,9 @@ class BaseAgent:
         max_output_tokens = token_ctrl.get("max_output_tokens", 2048)
         retries = token_ctrl.get("retries", self.max_retries)
 
-        response = await run_ai_async(
-            prompt,
-            max_tokens=max_output_tokens,
-            retries=retries,
-            model=self.config.get("model"),
-            temperature=self.config.get("temperature"),
+        response = await self._call_llm(
+            system_prompt=self.config.get("system_prompt", ""),
+            user_message=prompt,
         )
         try:
             parsed = self.parse_json(response)
@@ -836,16 +840,12 @@ class BaseAgent:
                 len(parsed) if isinstance(parsed, (list, dict)) else "N/A",
             )
         else:
-            from services.ai.client import run_ai_async
-
             attempt_prompt = prompt
             parse_error: JSONParsingError | None = None
             for attempt in range(retries + 1):
-                response = await run_ai_async(
-                    attempt_prompt,
-                    max_tokens=max_output_tokens,
-                    model=self.config.get("model"),
-                    temperature=self.config.get("temperature"),
+                response = await self._call_llm(
+                    system_prompt=self.config.get("system_prompt", ""),
+                    user_message=attempt_prompt,
                 )
                 logger.info(
                     "[execute_async] agent=%s raw_response_len=%d attempt=%d",
