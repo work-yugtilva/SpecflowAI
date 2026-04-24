@@ -62,7 +62,7 @@ function toAppError(error: unknown, fallback: string): AppError {
 }
 
 router.post('/upload', (req: AuthRequest, res, next) => {
-  upload.array('files', 10)(req, res, async (uploadError) => {
+  upload.array('files', 10)(req, res, async (uploadError: unknown) => {
     try {
       if (uploadError) throw uploadError;
       const userId = requireUser(req);
