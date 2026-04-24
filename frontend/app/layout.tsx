@@ -1,28 +1,9 @@
 import type { Metadata } from "next";
-import { Instrument_Serif, DM_Sans } from "next/font/google";
 import { Providers } from "./providers";
 import "./globals.css";
 
-const instrumentSerif = Instrument_Serif({
-  subsets: ["latin"],
-  weight: ["400"],
-  style: ["normal", "italic"],
-  variable: "--font-instrument",
-  display: "swap",
-});
-
-const dmSans = DM_Sans({
-  subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
-  variable: "--font-dm-sans",
-  display: "swap",
-});
-
 export const metadata: Metadata = {
-  title: "SpecFlow AI — Build Specs That Power Your AI Workflow",
-  description:
-    "SpecFlow connects AI tools with your development workflow, uniting engineers and PMs to tackle key spec challenges. Generate, manage, and ship specs faster.",
-  keywords: ["AI specs", "specification management", "software specs", "AI workflow"],
+  title: "SpecFlow — AI-powered product discovery",
 };
 
 export default function RootLayout({
@@ -31,7 +12,33 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className={`${instrumentSerif.variable} ${dmSans.variable}`}>
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <link
+          href="https://api.fontshare.com/v2/css?f[]=instrument-serif@400&display=swap"
+          rel="stylesheet"
+        />
+        <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300..700&display=swap" rel="stylesheet" />
+        <link href="https://fonts.googleapis.com" rel="preconnect" />
+        <link crossOrigin="anonymous" href="https://fonts.gstatic.com" rel="preconnect" />
+        <meta
+          content="SpecFlow turns customer signals into product briefs in under 12 minutes."
+          name="description"
+        />
+        <meta content="SpecFlow — AI-powered product discovery" property="og:title" />
+        <meta
+          content="From 4 days to 12 minutes. SpecFlow synthesizes customer signals into complete feature briefs."
+          property="og:description"
+        />
+        <meta content="/og-image.png" property="og:image" />
+        <link href="/favicon.svg" rel="icon" type="image/svg+xml" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{var d=localStorage.getItem('specflow-theme');if(d==='dark'||(!d&&matchMedia('(prefers-color-scheme:dark)').matches)){document.documentElement.setAttribute('data-dark','true')}}catch(e){}})()",
+          }}
+        />
+      </head>
       <body className="font-sans">
         <Providers>{children}</Providers>
       </body>

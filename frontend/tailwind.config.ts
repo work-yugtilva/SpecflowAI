@@ -8,12 +8,17 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
+        orange: {
+          DEFAULT: "#e4611a",
+          hover: "#c95215",
+        },
         brand: {
           DEFAULT: "var(--orange)",
           hover: "var(--orange-hover)",
           light: "rgba(228,97,26,0.12)",
           glow: "rgba(241,107,36,0.25)",
         },
+        bg: "var(--bg)",
         cream: "var(--bg)",
         "cream-dark": "var(--bg-dark)",
         surface: "var(--surface)",
@@ -55,7 +60,8 @@ const config: Config = {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
-        display: ["var(--font-instrument)", "Georgia", "serif"],
+        body: ["DM Sans", "system-ui", "sans-serif"],
+        display: ["Instrument Serif", "Georgia", "serif"],
         sans: ["var(--font-dm-sans)", "system-ui", "sans-serif"],
       },
       animation: {
