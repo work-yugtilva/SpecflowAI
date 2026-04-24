@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
@@ -26,6 +26,7 @@ import {
   type StepStatus,
 } from "@/lib/pipeline-session";
 import {
+  buildPipelineInputFromStorage,
   getContextObject,
   LS_CONTEXT,
   setAutorunFlag,
@@ -38,8 +39,15 @@ import {
 import { importGlobalContextToSession } from "@/lib/api/context";
 import type { MergedContextPayload } from "@/lib/api/context";
 import { fetchResearchEntries } from "@/lib/api/research";
+import { listSourceEvidence, listSources } from "@/lib/api/sources";
 import { createClient } from "@/lib/supabase/client";
 import { StepInspector } from "@/components/StepInspector";
+import {
+  getNextRecommendedAction,
+  getSessionHomeSummary,
+  type SessionHomeAction,
+  type SourceReadinessCounts,
+} from "@/lib/session-home";
 
 const LS_KEY = "specflow_sessions";
 
@@ -69,6 +77,8 @@ interface StoredSession {
   status: string;
   created_at: string | null;
 }
+
+const EMPTY_SOURCE_COUNTS: SourceReadinessCounts = { available: false };
 
 function shortId(id: string): string {
   return id.slice(0, 8).toUpperCase();
@@ -349,6 +359,7 @@ export default function SessionsPage() {
   const [localSessionContext, setLocalSessionContext] = useState<Record<string, unknown>>({});
   const [localResearchCount, setLocalResearchCount] = useState(0);
   const [localContextSaved, setLocalContextSaved] = useState(false);
+  const [sourceCounts, setSourceCounts] = useState<SourceReadinessCounts>(EMPTY_SOURCE_COUNTS);
 
   const merged = contextPreview?.context?.merged;
 
@@ -369,6 +380,29 @@ export default function SessionsPage() {
     },
     [setLocalSessionContext, setLocalResearchCount, setLocalContextSaved]
   );
+
+  const refreshSourceCounts = useCallback(async (sessionId: string | null) => {
+    if (!sessionId) {
+      setSourceCounts(EMPTY_SOURCE_COUNTS);
+      return;
+    }
+
+    const [sourcesResult, evidenceResult] = await Promise.allSettled([
+      listSources("session", sessionId),
+      listSourceEvidence("session", sessionId),
+    ]);
+
+    if (sourcesResult.status === "fulfilled" && evidenceResult.status === "fulfilled") {
+      setSourceCounts({
+        available: true,
+        sourceCount: sourcesResult.value.length,
+        evidenceCount: evidenceResult.value.length,
+      });
+      return;
+    }
+
+    setSourceCounts(EMPTY_SOURCE_COUNTS);
+  }, []);
 
   const mergedForContextPanel = useMemo(
     () => mergedContextForSession(merged, localSessionContext),
@@ -395,6 +429,7 @@ export default function SessionsPage() {
   const [handoffGenerateOk, setHandoffGenerateOk] = useState(false);
   const [handoffGenerateError, setHandoffGenerateError] = useState<string | null>(null);
   const selectedIdRef = useRef<string | null>(null);
+  const handoffPanelRef = useRef<HTMLDivElement | null>(null);
   selectedIdRef.current = selectedId;
 
   const openCreateModal = useCallback(() => {
@@ -476,7 +511,8 @@ export default function SessionsPage() {
   // Fetch context preview when a session is selected (Bearer required — Express /api/context/merged uses verifyAuth)
   useEffect(() => {
     void refreshLocalSessionData(selectedId);
-  }, [selectedId, refreshLocalSessionData]);
+    void refreshSourceCounts(selectedId);
+  }, [selectedId, refreshLocalSessionData, refreshSourceCounts]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -551,12 +587,13 @@ export default function SessionsPage() {
           /* keep prior preview */
         } finally {
           void refreshLocalSessionData(selectedId);
+          void refreshSourceCounts(selectedId);
         }
       })();
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => document.removeEventListener("visibilitychange", onVisible);
-  }, [selectedId, refreshLocalSessionData, setContextPreview]);
+  }, [selectedId, refreshLocalSessionData, refreshSourceCounts, setContextPreview]);
 
   // Create session
   const handleCreate = useCallback(async () => {
@@ -648,21 +685,10 @@ export default function SessionsPage() {
     ]
   );
 
-  // Build inputData for the pipeline (ingest comes from research entries server-side)
+  // Build inputData for the pipeline (research + uploaded sources come from server-side APIs)
   const buildInputData = useCallback(
     async (sessionId: string): Promise<Record<string, unknown>> => {
-      let research: unknown[] = [];
-      try {
-        research = await fetchResearchEntries("session", sessionId);
-      } catch {
-        research = [];
-      }
-
-      return {
-        context: getContextObject(sessionId),
-        research,
-        ingest: [],
-      };
+      return (await buildPipelineInputFromStorage(sessionId)) as unknown as Record<string, unknown>;
     },
     []
   );
@@ -749,6 +775,46 @@ export default function SessionsPage() {
   const isSessionFailed = detail?.session.status === "failed";
   const researchCount = localResearchCount;
   const contextSaved = localContextSaved;
+  const sessionHomeSummary = useMemo(
+    () =>
+      getSessionHomeSummary({
+        detail,
+        context: mergedForContextPanel,
+        researchCount,
+        sourceCounts,
+        hasHandoff: Boolean(sessionHandoff),
+      }),
+    [detail, mergedForContextPanel, researchCount, sourceCounts, sessionHandoff]
+  );
+  const primaryHomeAction = useMemo(
+    () => getNextRecommendedAction(sessionHomeSummary),
+    [sessionHomeSummary]
+  );
+
+  const runHomeAction = useCallback(
+    (action: SessionHomeAction) => {
+      if (action.type === "link" && action.href) {
+        const href =
+          action.href === "/context" && selectedId
+            ? `/context?sessionId=${encodeURIComponent(selectedId)}`
+            : action.href;
+        router.push(href);
+        return;
+      }
+      if (action.type === "run-step" && action.step && action.step !== "prd") {
+        void handleRun(action.step);
+        return;
+      }
+      if (action.type === "generate-handoff") {
+        void handleGenerateHandoff();
+        return;
+      }
+      if (action.type === "view-handoff") {
+        handoffPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    },
+    [handleGenerateHandoff, handleRun, router, selectedId]
+  );
 
   return (
     <>
@@ -910,7 +976,19 @@ export default function SessionsPage() {
                       </svg>
                     </div>
                     <div style={{ fontSize: 13.5, fontWeight: 500, color: "#0D0D0D", marginBottom: 5 }}>No sessions yet</div>
-                    <div style={{ fontSize: 12, color: "#9B9189", lineHeight: 1.5 }}>Create a session to run the pipeline in steps</div>
+                    <div style={{ fontSize: 12, color: "#9B9189", lineHeight: 1.5, marginBottom: 14 }}>
+                      Create a session to start turning research into product decisions.
+                    </div>
+                    <div style={{ textAlign: "left", display: "grid", gap: 6 }}>
+                      {["Create a session", "Add context", "Add research/sources", "Generate problems"].map((step, index) => (
+                        <div key={step} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "#6B6B6B" }}>
+                          <span style={{ width: 18, height: 18, borderRadius: "50%", background: "#F8F4EF", border: "1px solid #E4DDD4", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#E8561B", flexShrink: 0 }}>
+                            {index + 1}
+                          </span>
+                          {step}
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ) : (
                   sessions.map((s) => {
@@ -925,7 +1003,9 @@ export default function SessionsPage() {
                           padding: "10px 14px",
                           background: isSelected ? "rgba(232,86,27,0.06)" : "transparent",
                           borderLeft: isSelected ? "2px solid #E8561B" : "2px solid transparent",
-                          border: "none",
+                          borderTop: "none",
+                          borderRight: "none",
+                          borderBottom: "none",
                           cursor: "pointer",
                           transition: "all 0.15s ease",
                           display: "block",
@@ -989,7 +1069,7 @@ export default function SessionsPage() {
                       Select a session
                     </div>
                     <div style={{ fontSize: 13.5, color: "#9B9189", lineHeight: 1.6 }}>
-                      Choose from the list or create a new session<br />to run the pipeline step by step.
+                      Create or select a session to start turning research into product decisions.
                     </div>
                     <button
                       type="button"
@@ -1018,6 +1098,300 @@ export default function SessionsPage() {
                 </div>
               ) : (
                 <div style={{ animation: "fadeUp 0.4s ease", maxWidth: 760 }}>
+
+                  {/* Session Home overview */}
+                  <div
+                    style={{
+                      background: "#FFFFFF",
+                      border: "1px solid #E4DDD4",
+                      borderRadius: 14,
+                      padding: "18px 22px",
+                      marginBottom: 18,
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, marginBottom: 16 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#E8561B", letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 5 }}>
+                          Session Home
+                        </div>
+                        <h2 style={{ margin: 0, fontSize: 24, lineHeight: 1.12, color: "#0D0D0D", letterSpacing: 0 }}>
+                          {sessionHomeSummary.sessionName}
+                        </h2>
+                        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8, marginTop: 8 }}>
+                          <span style={{ fontSize: 12, color: "#6B6B6B", fontFamily: "monospace", fontWeight: 600 }}>
+                            {sessionHomeSummary.shortSessionId}
+                          </span>
+                          <StatusBadge status={sessionHomeSummary.status} />
+                          <span style={{ fontSize: 12, color: "#9B9189" }}>
+                            Created {relativeTime(sessionHomeSummary.createdAt)}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => runHomeAction(primaryHomeAction)}
+                        disabled={isRunning || handoffGenerating}
+                        style={{
+                          flexShrink: 0,
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 7,
+                          padding: "9px 15px",
+                          borderRadius: 9,
+                          border: "none",
+                          background: isRunning || handoffGenerating ? "#F0EAE1" : "#0D0D0D",
+                          color: isRunning || handoffGenerating ? "#9B9189" : "#FFFFFF",
+                          fontSize: 13,
+                          fontWeight: 600,
+                          cursor: isRunning || handoffGenerating ? "not-allowed" : "pointer",
+                          fontFamily: "'DM Sans', sans-serif",
+                        }}
+                      >
+                        {primaryHomeAction.label}
+                      </button>
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 16 }}>
+                      {[
+                        {
+                          label: "Context",
+                          value: sessionHomeSummary.contextReady ? "Complete" : "Incomplete",
+                          tone: sessionHomeSummary.contextReady ? "good" : "warn",
+                        },
+                        {
+                          label: "Research",
+                          value: `${sessionHomeSummary.researchCount}`,
+                          tone: sessionHomeSummary.researchCount > 0 ? "good" : "muted",
+                        },
+                        ...(sessionHomeSummary.sourceCounts.available
+                          ? [
+                              {
+                                label: "Sources",
+                                value: `${sessionHomeSummary.sourceCounts.sourceCount ?? 0}`,
+                                tone: (sessionHomeSummary.sourceCounts.sourceCount ?? 0) > 0 ? "good" : "muted",
+                              },
+                              {
+                                label: "Evidence",
+                                value: `${sessionHomeSummary.sourceCounts.evidenceCount ?? 0}`,
+                                tone: (sessionHomeSummary.sourceCounts.evidenceCount ?? 0) > 0 ? "good" : "muted",
+                              },
+                            ]
+                          : []),
+                        {
+                          label: "Pipeline",
+                          value: `${sessionHomeSummary.completedSteps}/${sessionHomeSummary.totalSteps}`,
+                          tone: sessionHomeSummary.completedSteps > 0 ? "good" : "muted",
+                        },
+                      ].map((item) => {
+                        const tone =
+                          item.tone === "good"
+                            ? { bg: "#F0FDF4", border: "#BBF7D0", color: "#15803D" }
+                            : item.tone === "warn"
+                            ? { bg: "#FFF7ED", border: "#FED7AA", color: "#C2410C" }
+                            : { bg: "#F8F4EF", border: "#E4DDD4", color: "#6B6B6B" };
+                        return (
+                          <div
+                            key={item.label}
+                            style={{
+                              border: `1px solid ${tone.border}`,
+                              background: tone.bg,
+                              borderRadius: 10,
+                              padding: "10px 12px",
+                            }}
+                          >
+                            <div style={{ fontSize: 10.5, color: "#9B9189", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 4 }}>
+                              {item.label}
+                            </div>
+                            <div style={{ fontSize: 15, color: tone.color, fontWeight: 700 }}>{item.value}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 10 }}>
+                      <div style={{ border: "1px solid #F0EAE1", borderRadius: 10, padding: "10px 12px" }}>
+                        <div style={{ fontSize: 10.5, color: "#9B9189", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>
+                          Next best action
+                        </div>
+                        <div style={{ fontSize: 13, color: "#0D0D0D", fontWeight: 600 }}>
+                          {primaryHomeAction.label}
+                        </div>
+                        <div style={{ fontSize: 12, color: "#9B9189", marginTop: 3 }}>
+                          Next step: {sessionHomeSummary.nextRecommendedStep}
+                        </div>
+                      </div>
+                      <div style={{ border: "1px solid #F0EAE1", borderRadius: 10, padding: "10px 12px" }}>
+                        <div style={{ fontSize: 10.5, color: "#9B9189", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 5 }}>
+                          Last generated artifact
+                        </div>
+                        <div style={{ fontSize: 13, color: "#0D0D0D", fontWeight: 600 }}>
+                          {sessionHomeSummary.lastGeneratedArtifact ?? "None yet"}
+                        </div>
+                        {!sessionHomeSummary.contextReady && (
+                          <div style={{ fontSize: 12, color: "#C2410C", marginTop: 3 }}>
+                            Missing: {sessionHomeSummary.missingContextFields.join(", ")}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Evidence readiness */}
+                  <div
+                    style={{
+                      background: "#FFFFFF",
+                      border: "1px solid #E4DDD4",
+                      borderRadius: 14,
+                      padding: "16px 20px",
+                      marginBottom: 18,
+                    }}
+                  >
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#9B9189", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 12 }}>
+                      Evidence Readiness
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 8 }}>
+                      {sessionHomeSummary.evidenceRows.map((row) => (
+                        <div
+                          key={row.label}
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            gap: 10,
+                            padding: "9px 10px",
+                            borderRadius: 9,
+                            border: "1px solid #F0EAE1",
+                            background: row.ready ? "#FBFEFC" : "#FFFCF7",
+                          }}
+                        >
+                          <span style={{ fontSize: 12.5, color: "#5C5248", fontWeight: 500 }}>{row.label}</span>
+                          <span style={{ fontSize: 12.5, color: row.ready ? "#15803D" : "#C2410C", fontWeight: 700 }}>{row.value}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Quick actions */}
+                  <div
+                    style={{
+                      background: "#FFFFFF",
+                      border: "1px solid #E4DDD4",
+                      borderRadius: 14,
+                      padding: "16px 20px",
+                      marginBottom: 18,
+                    }}
+                  >
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#9B9189", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 12 }}>
+                      Quick Actions
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
+                      {[
+                        { label: "Edit Context", action: { label: "Edit Context", type: "link", href: "/context" } as SessionHomeAction },
+                        { label: "Add Research", action: { label: "Add Research", type: "link", href: "/research" } as SessionHomeAction },
+                        ...(sessionHomeSummary.sourceCounts.available
+                          ? [{ label: "Upload Sources", action: { label: "Upload Sources", type: "link", href: "/sources" } as SessionHomeAction }]
+                          : []),
+                        { label: "View Problems", action: { label: "View Problems", type: "link", href: "/problems" } as SessionHomeAction },
+                        { label: "View Features", action: { label: "View Features", type: "link", href: "/features" } as SessionHomeAction },
+                        { label: "View Decomposition", action: { label: "View Decomposition", type: "link", href: "/decompose" } as SessionHomeAction },
+                        { label: "View Tasks", action: { label: "View Tasks", type: "link", href: "/tasks" } as SessionHomeAction },
+                        { label: "View PRD", action: { label: "View PRD", type: "link", href: "/prd" } as SessionHomeAction },
+                        { label: "Generate Handoff", action: { label: "Generate Handoff", type: "generate-handoff" } as SessionHomeAction },
+                      ].map(({ label, action }) => (
+                        <button
+                          key={label}
+                          type="button"
+                          onClick={() => runHomeAction(action)}
+                          disabled={(action.type === "generate-handoff" && (handoffGenerating || isRunning || !selectedId)) || (action.type === "run-step" && isRunning)}
+                          style={{
+                            padding: "9px 10px",
+                            borderRadius: 9,
+                            border: "1px solid #E4DDD4",
+                            background: "#F8F4EF",
+                            color: "#0D0D0D",
+                            fontSize: 12.5,
+                            fontWeight: 600,
+                            cursor: "pointer",
+                            textAlign: "left",
+                            fontFamily: "'DM Sans', sans-serif",
+                          }}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Recent outputs */}
+                  <div
+                    style={{
+                      background: "#FFFFFF",
+                      border: "1px solid #E4DDD4",
+                      borderRadius: 14,
+                      padding: "16px 20px",
+                      marginBottom: 18,
+                    }}
+                  >
+                    <div style={{ fontSize: 11, fontWeight: 600, color: "#9B9189", letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 10 }}>
+                      Recent Outputs
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {sessionHomeSummary.recentOutputs.map((row) => (
+                        <div
+                          key={row.key}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "minmax(120px, 1fr) auto auto",
+                            alignItems: "center",
+                            gap: 10,
+                            padding: "9px 0",
+                            borderBottom: row.key === "handoff" ? "none" : "1px solid #F0EAE1",
+                          }}
+                        >
+                          <div>
+                            <div style={{ fontSize: 13, color: "#0D0D0D", fontWeight: 600 }}>{row.label}</div>
+                            <div style={{ fontSize: 11.5, color: "#9B9189", marginTop: 2 }}>
+                              {row.available ? "Available" : "Not generated"}
+                              {row.available && row.count > 1 ? ` · ${row.count} items` : ""}
+                              {row.qualityScore != null ? ` · Quality ${Math.round(row.qualityScore * 100)}%` : ""}
+                            </div>
+                          </div>
+                          <span
+                            style={{
+                              fontSize: 11,
+                              fontWeight: 700,
+                              padding: "3px 8px",
+                              borderRadius: 20,
+                              background: row.available ? "#F0FDF4" : "#F8F4EF",
+                              border: `1px solid ${row.available ? "#BBF7D0" : "#E4DDD4"}`,
+                              color: row.available ? "#15803D" : "#9B9189",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {row.available ? "Available" : "Not generated"}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => runHomeAction(row.action)}
+                            disabled={(row.action.type === "generate-handoff" && (handoffGenerating || isRunning || !selectedId)) || (row.action.type === "run-step" && isRunning)}
+                            style={{
+                              padding: "6px 10px",
+                              borderRadius: 8,
+                              border: "1px solid #E4DDD4",
+                              background: row.available ? "#F8F4EF" : "#FFF7ED",
+                              color: row.available ? "#0D0D0D" : "#C2410C",
+                              fontSize: 12,
+                              fontWeight: 600,
+                              cursor: "pointer",
+                              fontFamily: "'DM Sans', sans-serif",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {row.action.label}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
 
                   {/* Session header */}
                   <div
@@ -1437,6 +1811,7 @@ export default function SessionsPage() {
                   {/* Coding Agent Handoff — only after tasks step completed */}
                   {stepStatuses.tasks === "completed" && selectedId && (
                     <div
+                      ref={handoffPanelRef}
                       style={{
                         background: "#FFFFFF",
                         border: "1px solid #E4DDD4",

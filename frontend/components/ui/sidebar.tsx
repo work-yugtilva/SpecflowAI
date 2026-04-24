@@ -117,6 +117,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { id: "context", label: "Context" },
       { id: "research", label: "Research" },
+      { id: "sources", label: "Sources" },
     ],
   },
   {
@@ -291,6 +292,7 @@ const PANEL_TITLE_BY_ROUTE: Record<string, string> = {
   tasks: "Signals",
   context: "Discovery",
   research: "Discovery",
+  sources: "Discovery",
 };
 
 export function Sidebar() {

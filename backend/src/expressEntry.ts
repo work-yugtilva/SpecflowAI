@@ -13,6 +13,7 @@ import {
 } from './middleware/rate_limiter.js';
 import contextRoutes from '@/routes/context.js';
 import researchRoutes from '@/routes/research.js';
+import sourceRoutes from '@/routes/sources.js';
 
 const app = express();
 // Vercel terminates TLS at the edge; trust proxy for correct client IP / rate-limit headers.
@@ -99,6 +100,7 @@ app.get('/health', (req: Request, res: Response) => {
 
 // API Routes
 app.use('/api/research', requireAuth, researchLimiter, researchRoutes);
+app.use('/api/sources', requireAuth, researchLimiter, sourceRoutes);
 app.use('/api/context', requireAuth, contextLimiter, contextRoutes);
 app.use('/api', requireAuth, generalLimiter);
 
@@ -114,6 +116,7 @@ app.get('/', (req: Request, res: Response) => {
       contextMerged: '/api/context/merged?sessionId=<session-id>',
       contextImportGlobal: '/api/context/import-global',
       research: '/api/research',
+      sources: '/api/sources',
     },
   });
 });

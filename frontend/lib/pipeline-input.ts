@@ -3,6 +3,10 @@
 import type { PipelineInput } from "@/lib/pipeline-types";
 import { fetchResearchEntries } from "@/lib/api/research";
 import {
+  listSourceEvidence,
+  type PipelineSourceEvidence,
+} from "@/lib/api/sources";
+import {
   migrateGlobalToScopedOnce,
   readScopedRaw,
   removeScopedRaw,
@@ -73,6 +77,50 @@ export async function getResearchPayload(
   }
 }
 
+export async function getSourceEvidencePayload(
+  sessionId?: string | null
+): Promise<PipelineSourceEvidence[]> {
+  if (typeof window === "undefined") return [];
+  try {
+    return await listSourceEvidence(
+      sessionId ? "session" : "global",
+      sessionId ?? undefined
+    );
+  } catch {
+    return [];
+  }
+}
+
+function buildSourceAnalyticsContext(
+  evidence: PipelineSourceEvidence[]
+): string | undefined {
+  const lines: string[] = [];
+  for (const item of evidence) {
+    if (item.type !== "metric" && item.type !== "observation") continue;
+    const metadata = item.metadata ?? {};
+    const metricName =
+      stringValue(metadata.metric_name) ||
+      stringValue(metadata.metricName) ||
+      item.title;
+    lines.push(`SOURCE: ${item.source_title}`);
+    lines.push(`METRIC: ${metricName}`);
+    const metricValue =
+      metadata.metric_value ?? metadata.metricValue ?? metadata.average;
+    if (metricValue !== undefined && metricValue !== null) {
+      lines.push(`  Current: ${String(metricValue)}`);
+    }
+    if (item.content) {
+      lines.push(`  Observation: ${item.content}`);
+    }
+    lines.push("");
+  }
+  return lines.join("\n").trim() || undefined;
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
 /**
  * Default input for standalone pipeline pages: saved context + research + ingest
  * from pending input when set (e.g. after “Run all” from Sessions).
@@ -82,6 +130,8 @@ export function buildPipelineInputFromStorage(
 ): Promise<PipelineInput> {
   const build = async (): Promise<PipelineInput> => {
     const research = await getResearchPayload(sessionId);
+    const sourceEvidence = await getSourceEvidencePayload(sessionId);
+    const sourceAnalyticsContext = buildSourceAnalyticsContext(sourceEvidence);
     const pendingRaw =
       typeof window !== "undefined"
         ? sessionId
@@ -92,12 +142,16 @@ export function buildPipelineInputFromStorage(
     if (pendingRaw) {
       try {
         const p = JSON.parse(pendingRaw) as Partial<PipelineInput>;
+        const pendingIngest = Array.isArray(p.ingest) ? p.ingest : [];
         return {
           context:
             (p.context as Record<string, unknown>) ??
             getContextObject(sessionId),
           research,
-          ingest: Array.isArray(p.ingest) ? p.ingest : [],
+          ingest: [...pendingIngest, ...sourceEvidence],
+          ...(sourceAnalyticsContext
+            ? { analytics_context: sourceAnalyticsContext }
+            : {}),
         };
       } catch {
         /* fall through */
@@ -106,7 +160,10 @@ export function buildPipelineInputFromStorage(
     return {
       context: getContextObject(sessionId),
       research,
-      ingest: [],
+      ingest: sourceEvidence,
+      ...(sourceAnalyticsContext
+        ? { analytics_context: sourceAnalyticsContext }
+        : {}),
     };
   };
   return build();

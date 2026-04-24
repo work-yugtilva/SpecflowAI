@@ -50,6 +50,8 @@ This starts:
 - **Express API:** http://localhost:3001
 - **FastAPI pipeline:** http://localhost:8001
 
+Source uploads at `/sources` require the Express API because the upload, parsing, and source evidence endpoints live under `/api/sources`.
+
 ### 4. Verify Setup
 
 Test each service:
@@ -115,9 +117,13 @@ The **`backend/`** folder contains **two separate HTTP services**:
 | Service | Stack | Entry | Default local port | Role |
 |--------|--------|--------|--------------------|------|
 | **Pipeline API** | **Python FastAPI** | [`backend/src/main.py`](backend/src/main.py) | `8001` (`PIPELINE_PORT`) | Sessions, pipeline runs, PRD, jobs |
-| **Context / research API** | **Node + Express** | [`backend/src/expressEntry.ts`](backend/src/expressEntry.ts) | `3001` (`PORT`) | JWT auth, `/api/context`, `/api/research` |
+| **Context / research / sources API** | **Node + Express** | [`backend/src/expressEntry.ts`](backend/src/expressEntry.ts) | `3001` (`PORT`) | JWT auth, `/api/context`, `/api/research`, `/api/sources` |
 
 Your frontend talks to them via **`NEXT_PUBLIC_PIPELINE_URL`** (FastAPI) and **`NEXT_PUBLIC_EXPRESS_API_URL`** / **`NEXT_PUBLIC_BACKEND_URL`** (Express) — see [`.env.example`](.env.example).
+
+### Source ingestion migration
+
+Run `backend/src/services/db/migrations/020_create_source_ingestion_tables.sql` in Supabase before using the Source Library. It creates `source_files` and `source_evidence` with RLS policies. No new environment variables are required.
 
 ### Deploying the pipeline (**FastAPI**) — not Vercel-first
 

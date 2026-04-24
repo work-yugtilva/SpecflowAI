@@ -56,6 +56,76 @@ export interface AnalyticsEntry extends Omit<ResearchEntry, keyof AnalyticsField
   dataSource?: string;
 }
 
+// Source ingestion types
+export type SourceFileType = 'txt' | 'pdf' | 'docx' | 'csv';
+export type SourceStatus = 'uploaded' | 'processing' | 'processed' | 'failed';
+export type SourceEvidenceType =
+  | 'quote'
+  | 'pain_point'
+  | 'theme'
+  | 'metric'
+  | 'observation';
+
+export interface SourceFile {
+  id: string;
+  userId: string;
+  scope: ContextScope;
+  scopeKey: string;
+  sessionId?: string | null;
+  filename: string;
+  mimeType?: string | null;
+  fileType: SourceFileType;
+  fileSizeBytes: number;
+  status: SourceStatus;
+  parsedText?: string | null;
+  summary?: string | null;
+  errorMessage?: string | null;
+  evidenceCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface SourceEvidence {
+  id: string;
+  sourceFileId: string;
+  userId: string;
+  scope: ContextScope;
+  scopeKey: string;
+  sessionId?: string | null;
+  evidenceType: SourceEvidenceType;
+  title: string;
+  content: string;
+  customerLabel?: string | null;
+  theme?: string | null;
+  painPoint?: string | null;
+  productArea?: string | null;
+  sentiment?: string | null;
+  confidence?: number | null;
+  rowReference?: string | null;
+  metadata: Record<string, unknown>;
+  createdAt?: string;
+}
+
+export interface PipelineSourceEvidence {
+  id: string;
+  source_id: string;
+  source_title: string;
+  type: SourceEvidenceType;
+  title: string;
+  content: string;
+  theme?: string | null;
+  pain_point?: string | null;
+  product_area?: string | null;
+  sentiment?: string | null;
+  confidence?: number | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface SourceUploadResponse {
+  source: SourceFile;
+  evidenceCount: number;
+}
+
 // Problem types
 export interface Problem {
   id?: string;

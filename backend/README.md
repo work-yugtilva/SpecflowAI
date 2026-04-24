@@ -38,6 +38,13 @@ npm run dev
 - `DELETE /api/research/:id` - Delete entry
 - `GET /api/research/search?q=query` - Search entries
 
+### Sources
+- `POST /api/sources/upload?scope=global|session&sessionId=<id>` - Upload `.txt`, `.pdf`, `.docx`, or `.csv` source files
+- `GET /api/sources?scope=global|session&sessionId=<id>` - List uploaded source files
+- `GET /api/sources/evidence?scope=global|session&sessionId=<id>` - List formatted source evidence for pipeline input
+- `GET /api/sources/:id` - Get a source file with extracted evidence
+- `DELETE /api/sources/:id` - Delete a source file and cascading evidence
+
 ### Health
 - `GET /health` - API health check
 - `GET /` - API info
@@ -69,7 +76,10 @@ index.ts          - Vercel entry: re-exports ./dist/expressEntry.js after build
 
 - `context_entries` stores global and session-scoped context
 - `research_entries` stores global and session-scoped research inputs
+- `source_files` and `source_evidence` store uploaded source metadata, parsed text, and deterministic evidence records
 - Supabase credentials are read from the repo-root `.env`
+
+Apply `src/services/db/migrations/020_create_source_ingestion_tables.sql` before using `/api/sources`.
 
 ## Development
 
@@ -77,6 +87,7 @@ index.ts          - Vercel entry: re-exports ./dist/expressEntry.js after build
 - `npm run build` - Compile TypeScript
 - `npm start` - Run compiled server
 - `npm run type-check` - Check TypeScript types
+- `npm run test:node` - Run Node/TypeScript service tests
 - `npm run lint` - Run ESLint
 
 ## Environment Variables
