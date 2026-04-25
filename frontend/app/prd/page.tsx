@@ -26,6 +26,13 @@ import StarterKit from "@tiptap/starter-kit";
 import { CitationBadge } from "@/components/pipeline/CitationBadge";
 import { resolveResearchEntries, type ResolvedEntry } from "@/lib/api/research";
 import { ConversationPanel } from "@/components/ui/conversation-panel";
+import { ArtifactExportMenu } from "@/components/artifacts/ArtifactExportMenu";
+import {
+  prdToMarkdown,
+  copyToClipboard,
+  downloadTextFile,
+  safeFilename,
+} from "@/lib/artifact-export";
 const TextShimmer = dynamic(
   () => import("@/components/ui/text-shimmer").then((m) => m.TextShimmer)
 );
@@ -1520,6 +1527,30 @@ function PrdPage() {
                   </svg>
                   {copied ? "Copied!" : "Copy Link"}
                 </button>
+                <ArtifactExportMenu
+                  disabled={!prd}
+                  disabledReason="Generate PRD before exporting"
+                  align="right"
+                  actions={prd ? [
+                    {
+                      id: "copy-markdown",
+                      label: "Copy Markdown",
+                      description: "Copy PRD for docs or chat",
+                      successLabel: "Copied",
+                      errorLabel: "Copy failed",
+                      onSelect: async () => copyToClipboard(prdToMarkdown(prd)),
+                    },
+                    {
+                      id: "download-markdown",
+                      label: "Download Markdown",
+                      description: "Save PRD as Markdown",
+                      badge: ".md",
+                      successLabel: "Downloaded",
+                      errorLabel: "Export failed",
+                      onSelect: () => downloadTextFile(`${safeFilename("prd")}.md`, prdToMarkdown(prd)),
+                    },
+                  ] : []}
+                />
                 <button
                   onClick={handleExportMarkdown}
                   title="Export as Markdown"

@@ -35,6 +35,15 @@ import type {
 } from "@/lib/pipeline-contracts";
 import type { PipelineInput } from "@/lib/pipeline-types";
 import dynamic from "next/dynamic";
+import { ArtifactExportMenu } from "@/components/artifacts/ArtifactExportMenu";
+import {
+  tasksToMarkdown,
+  tasksToCsv,
+  handoffToMarkdown,
+  copyToClipboard,
+  downloadTextFile,
+  safeFilename,
+} from "@/lib/artifact-export";
 const TextShimmer = dynamic(
   () => import("@/components/ui/text-shimmer").then((m) => m.TextShimmer)
 );
@@ -571,8 +580,6 @@ export default function TasksPage() {
   const [handoffStatus, setHandoffStatus] = useState<"success" | "error" | null>(null);
   const [handoffError, setHandoffError] = useState<string | null>(null);
   const [showHandoffPanel, setShowHandoffPanel] = useState(false);
-  const [showExportDropdown, setShowExportDropdown] = useState(false);
-  const exportDropdownRef = useRef<HTMLDivElement>(null);
   const [expandedHandoffTask, setExpandedHandoffTask] = useState<string | null>(null);
 
   const selectedTask = tasks.find((t) => t.id === selectedId) ?? null;
@@ -830,17 +837,6 @@ export default function TasksPage() {
   }, [handoffStatus, setHandoffStatus]);
 
   useEffect(() => {
-    if (!showExportDropdown) return;
-    function handleClick(e: MouseEvent) {
-      if (exportDropdownRef.current && !exportDropdownRef.current.contains(e.target as Node)) {
-        setShowExportDropdown(false);
-      }
-    }
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [showExportDropdown, exportDropdownRef, setShowExportDropdown]);
-
-  useEffect(() => {
     if (!activeSessionId || !isAutorunPending(activeSessionId)) return;
     handleGenerate();
   }, [activeSessionId, handleGenerate]);
@@ -906,6 +902,39 @@ export default function TasksPage() {
                 {tasks.length} tasks
               </span>
             )}
+            <ArtifactExportMenu
+              disabled={tasks.length === 0}
+              disabledReason="Generate tasks before exporting"
+              align="right"
+              actions={tasks.length > 0 ? [
+                {
+                  id: "copy-markdown",
+                  label: "Copy Markdown",
+                  description: "Copy task list for docs or chat",
+                  successLabel: "Copied",
+                  errorLabel: "Copy failed",
+                  onSelect: async () => copyToClipboard(tasksToMarkdown(tasks)),
+                },
+                {
+                  id: "download-markdown",
+                  label: "Download Markdown",
+                  description: "Save readable task list",
+                  badge: ".md",
+                  successLabel: "Downloaded",
+                  errorLabel: "Export failed",
+                  onSelect: () => downloadTextFile(`${safeFilename("tasks")}.md`, tasksToMarkdown(tasks)),
+                },
+                {
+                  id: "download-csv",
+                  label: "Download CSV",
+                  description: "Use in spreadsheet or tracker",
+                  badge: ".csv",
+                  successLabel: "Downloaded",
+                  errorLabel: "Export failed",
+                  onSelect: () => downloadTextFile(`${safeFilename("tasks")}.csv`, tasksToCsv(tasks), "text/csv"),
+                },
+              ] : []}
+            />
             {fromSession && (
               <span style={{ fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(232,86,27,0.10)", color: "#E8561B", letterSpacing: "0.03em" }}>
                 From Session
@@ -1076,49 +1105,57 @@ export default function TasksPage() {
               </button>
             )}
             {/* Export dropdown (only when handoff exists) */}
-            {handoff && (
-              <div ref={exportDropdownRef} style={{ position: "relative" }}>
-                <button
-                  onClick={() => setShowExportDropdown((v) => !v)}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 5,
-                    padding: "0.4rem 0.875rem",
-                    borderRadius: 8,
-                    fontSize: "0.8125rem",
-                    fontWeight: 500,
-                    background: "#FFFFFF",
-                    border: "1.5px solid #E4DDD4",
-                    color: "#0D0D0D",
-                    cursor: "pointer",
-                    fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
-                    transition: "background 150ms ease",
-                  }}
-                >
-                  Export for Agent ↓
-                </button>
-                {showExportDropdown && (
-                  <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, width: 200, background: "#FFF", border: "1px solid #E4DDD4", borderRadius: 8, boxShadow: "0 4px 16px rgba(0,0,0,0.08)", zIndex: 50, overflow: "hidden" }}>
-                    {([
-                      { label: "Export CLAUDE.md",    format: "claude_md"    },
-                      { label: "Export .cursorrules", format: "cursor_rules" },
-                      { label: "Copy task prompts",   format: "task_list"    },
-                    ] as const).map(({ label, format }) => (
-                      <button
-                        key={format}
-                        onClick={() => { setShowExportDropdown(false); exportHandoff(activeSessionId!, format).catch((e) => alert(`Export failed: ${e.message}`)); }}
-                        style={{ width: "100%", textAlign: "left", padding: "9px 14px", fontSize: 12.5, color: "#0D0D0D", background: "none", border: "none", cursor: "pointer", fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif" }}
-                        onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(0,0,0,0.04)"; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.background = "none"; }}
-                      >
-                        {label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+            <ArtifactExportMenu
+              disabled={!handoff}
+              disabledReason="Generate handoff before exporting"
+              align="right"
+              actions={handoff ? [
+                {
+                  id: "copy-markdown",
+                  label: "Copy Agent Prompt",
+                  description: "Copy complete coding-agent handoff",
+                  successLabel: "Copied",
+                  errorLabel: "Copy failed",
+                  onSelect: async () => copyToClipboard(handoffToMarkdown(handoff)),
+                },
+                {
+                  id: "download-markdown",
+                  label: "Download Markdown",
+                  description: "Save handoff as Markdown",
+                  badge: ".md",
+                  successLabel: "Downloaded",
+                  errorLabel: "Export failed",
+                  onSelect: () => downloadTextFile(`${safeFilename("handoff")}.md`, handoffToMarkdown(handoff)),
+                },
+                {
+                  id: "claude-md",
+                  label: "Export CLAUDE.md",
+                  description: "For Claude Code project context",
+                  badge: "CLAUDE.md",
+                  successLabel: "Exported",
+                  errorLabel: "Export failed",
+                  onSelect: async () => exportHandoff(activeSessionId!, "claude_md"),
+                },
+                {
+                  id: "cursor-rules",
+                  label: "Export .cursorrules",
+                  description: "For Cursor project rules",
+                  badge: ".cursorrules",
+                  successLabel: "Exported",
+                  errorLabel: "Export failed",
+                  onSelect: async () => exportHandoff(activeSessionId!, "cursor_rules"),
+                },
+                {
+                  id: "task-list",
+                  label: "Export Task List",
+                  description: "Plain implementation task list",
+                  badge: ".txt",
+                  successLabel: "Exported",
+                  errorLabel: "Export failed",
+                  onSelect: async () => exportHandoff(activeSessionId!, "task_list"),
+                },
+              ] : []}
+            />
             {/* Generate Handoff button (when tasks exist) */}
             {tasks.length > 0 && (
               <button

@@ -42,6 +42,13 @@ import { fetchResearchEntries } from "@/lib/api/research";
 import { listSourceEvidence, listSources } from "@/lib/api/sources";
 import { createClient } from "@/lib/supabase/client";
 import { StepInspector } from "@/components/StepInspector";
+import { ArtifactExportMenu } from "@/components/artifacts/ArtifactExportMenu";
+import {
+  handoffToMarkdown,
+  copyToClipboard,
+  downloadTextFile,
+  safeFilename,
+} from "@/lib/artifact-export";
 import {
   getNextRecommendedAction,
   getSessionHomeSummary,
@@ -1841,6 +1848,57 @@ export default function SessionsPage() {
                           Coding Agent Handoff
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                          <ArtifactExportMenu
+                            disabled={!sessionHandoff}
+                            disabledReason="Generate handoff before exporting"
+                            align="right"
+                            actions={sessionHandoff ? [
+                              {
+                                id: "copy-markdown",
+                                label: "Copy Agent Prompt",
+                                description: "Copy complete coding-agent handoff",
+                                successLabel: "Copied",
+                                errorLabel: "Copy failed",
+                                onSelect: async () => copyToClipboard(handoffToMarkdown(sessionHandoff)),
+                              },
+                              {
+                                id: "download-markdown",
+                                label: "Download Markdown",
+                                description: "Save handoff as Markdown",
+                                badge: ".md",
+                                successLabel: "Downloaded",
+                                errorLabel: "Export failed",
+                                onSelect: () => downloadTextFile(`${safeFilename("handoff")}.md`, handoffToMarkdown(sessionHandoff)),
+                              },
+                              {
+                                id: "claude-md",
+                                label: "Export CLAUDE.md",
+                                description: "For Claude Code project context",
+                                badge: "CLAUDE.md",
+                                successLabel: "Exported",
+                                errorLabel: "Export failed",
+                                onSelect: async () => exportHandoff(selectedId!, "claude_md"),
+                              },
+                              {
+                                id: "cursor-rules",
+                                label: "Export .cursorrules",
+                                description: "For Cursor project rules",
+                                badge: ".cursorrules",
+                                successLabel: "Exported",
+                                errorLabel: "Export failed",
+                                onSelect: async () => exportHandoff(selectedId!, "cursor_rules"),
+                              },
+                              {
+                                id: "task-list",
+                                label: "Export Task List",
+                                description: "Plain implementation task list",
+                                badge: ".txt",
+                                successLabel: "Exported",
+                                errorLabel: "Export failed",
+                                onSelect: async () => exportHandoff(selectedId!, "task_list"),
+                              },
+                            ] : []}
+                          />
                           {!sessionHandoff && (
                             <button
                               type="button"
