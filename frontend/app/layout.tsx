@@ -38,6 +38,7 @@ export default function RootLayout({
               "(function(){try{var d=localStorage.getItem('specflow-theme');if(d==='dark'||(!d&&matchMedia('(prefers-color-scheme:dark)').matches)){document.documentElement.setAttribute('data-dark','true')}}catch(e){}})()",
           }}
         />
+        <script async src="https://elu.dev/v1/elu_pk_live_Di0rBYtHgCRqqs4wm6FXGVG4jk.js"></script>
       </head>
       <body className="font-sans">
         <Providers>{children}</Providers>
