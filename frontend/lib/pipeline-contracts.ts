@@ -50,6 +50,12 @@ export interface PipelineOutputs {
   linear_payload?: LinearPayload;
 }
 
+export interface ResearchEvidence {
+  title: string;
+  content: string;
+  source: string;
+}
+
 export interface ProblemViewModel {
   id: string;
   title: string;
@@ -66,6 +72,7 @@ export interface ProblemViewModel {
   };
   source_ids?: string[];
   citation_confidence?: string;
+  researchEvidence?: ResearchEvidence[];
 }
 
 export interface FeatureViewModel {
@@ -82,6 +89,7 @@ export interface FeatureViewModel {
   successMetrics: string[];
   source_ids?: string[];
   citation_confidence?: string;
+  researchEvidence?: ResearchEvidence[];
 }
 
 export interface UIComponentViewModel {
@@ -90,6 +98,7 @@ export interface UIComponentViewModel {
   type: "Screen" | "Modal" | "Component" | "Form" | "Navigation";
   description: string;
   elements: string[];
+  researchEvidence?: ResearchEvidence[];
 }
 
 export interface DataFieldViewModel {
@@ -102,6 +111,7 @@ export interface DataEntityViewModel {
   id: string;
   name: string;
   fields: DataFieldViewModel[];
+  researchEvidence?: ResearchEvidence[];
 }
 
 export interface WorkflowStepViewModel {
@@ -110,6 +120,7 @@ export interface WorkflowStepViewModel {
   description: string;
   actor: "User" | "System" | "API" | "Background";
   outputs: string[];
+  researchEvidence?: ResearchEvidence[];
 }
 
 export interface DecompositionViewModel {
@@ -118,6 +129,7 @@ export interface DecompositionViewModel {
   uiComponents: UIComponentViewModel[];
   dataEntities: DataEntityViewModel[];
   workflowSteps: WorkflowStepViewModel[];
+  researchEvidence?: ResearchEvidence[];
 }
 
 export type TaskStatus = "todo" | "in-progress" | "done";
@@ -142,6 +154,7 @@ export interface TaskViewModel {
   qualityIssues?: string[];
   source_ids?: string[];
   citation_confidence?: string;
+  researchEvidence?: ResearchEvidence[];
 }
 
 type SessionStateLike = Record<string, unknown> | null | undefined;
