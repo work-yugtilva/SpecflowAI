@@ -428,7 +428,12 @@ export default function ProblemsPage() {
                         style={{ marginBottom: 7 }}
                       >
                         <ImpactBadge impact={p.impact} />
-                        <CitationBadge sourceIds={p.source_ids ?? []} confidence={p.citation_confidence as "high" | "medium" | "insufficient" | undefined} />
+                        {/* Row 2.5: citation badges */}
+                        {p.researchEvidence && p.researchEvidence.length > 0 && (
+                          <div style={{ marginBottom: 6 }}>
+                            <CitationBadge researchEvidence={p.researchEvidence} />
+                          </div>
+                        )}
                         {p.tags.slice(0, 2).map((tag) => (
                           <span
                             key={tag}

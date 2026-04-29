@@ -1637,7 +1637,7 @@ export default function TasksPage() {
                               >
                                 {task.priority}
                               </span>
-                              <CitationBadge sourceIds={task.source_ids ?? []} confidence={task.citation_confidence as "high" | "medium" | "insufficient" | undefined} />
+                              
                             </button>
                           );
                         })}

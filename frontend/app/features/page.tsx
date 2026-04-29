@@ -452,7 +452,7 @@ export default function FeaturesPage() {
                           styles={EFFORT_STYLES[f.effort]}
                           prefix="Effort"
                         />
-                        <CitationBadge sourceIds={f.source_ids ?? []} confidence={f.citation_confidence as "high" | "medium" | "insufficient" | undefined} />
+                        
                         <span
                           style={{
                             marginLeft: "auto",

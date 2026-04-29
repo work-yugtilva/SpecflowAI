@@ -299,7 +299,7 @@ function FeatureItem({
       <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ fontWeight: 600, color: "#0D0D0D", fontSize: 13 }}>{item.title}</div>
-          <CitationBadge sourceIds={sourceIds} confidence={confidence} />
+          
         </div>
         
         {existingFeedback ? (

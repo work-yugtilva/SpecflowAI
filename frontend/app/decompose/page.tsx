@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
 import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
+import { CitationBadge } from "@/components/pipeline/CitationBadge";
 import { QualityBadge } from "@/components/pipeline/QualityBadge";
 import { getSession } from "@/lib/api/session";
 import type { SessionDetail } from "@/lib/api/session";
@@ -744,6 +745,7 @@ export default function DecomposePage() {
                 ))}
               </div>
             </div>
+
 
             {/* Column 3 — Workflow */}
             <div
