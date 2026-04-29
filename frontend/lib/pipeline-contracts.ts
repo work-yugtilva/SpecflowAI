@@ -363,6 +363,18 @@ export function describeProblemsEmptyState(
     : "Problems were returned in a shape we could not map to cards. Check pipeline logs.";
 }
 
+function extractResearchEvidence(raw: unknown): ResearchEvidence[] {
+  if (!Array.isArray(raw)) return [];
+  return (raw as unknown[])
+    .filter(isPlainObject)
+    .map((item) => ({
+      title: typeof item.title === "string" ? item.title : "",
+      content: typeof item.content === "string" ? item.content : "",
+      source: typeof item.source === "string" ? item.source : "",
+    }))
+    .filter((item) => item.title !== "" || item.content !== "");
+}
+
 export function adaptProblems(
   data: Record<string, unknown>,
   sessionState?: SessionStateLike
@@ -418,6 +430,7 @@ export function adaptProblems(
       },
       source_ids: Array.isArray(record.source_ids) ? record.source_ids.map(String) : undefined,
       citation_confidence: typeof record.citation_confidence === "string" ? record.citation_confidence : undefined,
+      researchEvidence: extractResearchEvidence(record.research_evidence),
     };
   });
 }
@@ -611,6 +624,7 @@ export function adaptFeatures(
       successMetrics,
       source_ids: Array.isArray(item.source_ids) ? item.source_ids.map(String) : undefined,
       citation_confidence: typeof item.citation_confidence === "string" ? item.citation_confidence : undefined,
+      researchEvidence: extractResearchEvidence(item.research_evidence),
     };
   });
 }
@@ -657,6 +671,7 @@ export function adaptDecomposition(
         type: "Component",
         description: String(component.description ?? ""),
         elements: [],
+        researchEvidence: extractResearchEvidence(component.research_evidence),
       }));
 
     const dataEntities: DataEntityViewModel[] = allDecomps
@@ -665,6 +680,7 @@ export function adaptDecomposition(
         id: String(component.id ?? `d${index}`),
         name: String(component.title ?? `Entity ${index + 1}`),
         fields: [],
+        researchEvidence: extractResearchEvidence(component.research_evidence),
       }));
 
     const workflowSteps: WorkflowStepViewModel[] = allDecomps
@@ -675,6 +691,7 @@ export function adaptDecomposition(
         description: String(component.description ?? ""),
         actor: "API",
         outputs: [],
+        researchEvidence: extractResearchEvidence(component.research_evidence),
       }));
 
     return {
@@ -687,6 +704,7 @@ export function adaptDecomposition(
       uiComponents: uiComponents.slice(0, 8),
       dataEntities: dataEntities.slice(0, 6),
       workflowSteps,
+      researchEvidence: extractResearchEvidence((allDecomps[0] as Record<string, unknown>)?.research_evidence),
     };
   }
 
@@ -710,6 +728,7 @@ export function adaptDecomposition(
       type: "Component",
       description: elements.slice(0, 2).join(", "),
       elements,
+      researchEvidence: extractResearchEvidence(inner.research_evidence),
     };
   });
 
@@ -738,6 +757,7 @@ export function adaptDecomposition(
         id: `d${index}`,
         name,
         fields,
+        researchEvidence: extractResearchEvidence(inner.research_evidence),
       };
     })
     .filter((entity): entity is DataEntityViewModel => entity !== null);
@@ -765,6 +785,7 @@ export function adaptDecomposition(
             : String((behavior as JsonRecord).description ?? ""),
         actor: "System",
         outputs: [],
+        researchEvidence: extractResearchEvidence((inner as JsonRecord).research_evidence),
       });
       step += 1;
       if (workflowSteps.length >= 8) break;
@@ -783,6 +804,7 @@ export function adaptDecomposition(
     uiComponents: uiComponents.slice(0, 8),
     dataEntities: dataEntities.slice(0, 6),
     workflowSteps,
+    researchEvidence: extractResearchEvidence((allDecomps[0] as Record<string, unknown>)?.research_evidence),
   };
 }
 
@@ -962,6 +984,7 @@ export function adaptTasks(
         : undefined,
       source_ids: Array.isArray(item.source_ids) ? item.source_ids.map(String) : undefined,
       citation_confidence: typeof item.citation_confidence === "string" ? item.citation_confidence : undefined,
+      researchEvidence: extractResearchEvidence(item.research_evidence),
     };
   });
 }
