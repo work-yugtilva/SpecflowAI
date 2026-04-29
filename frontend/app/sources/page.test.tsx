@@ -19,10 +19,41 @@ const sourceRow = {
   createdAt: "2026-04-24T00:00:00.000Z",
 };
 
+const researchRow = {
+  id: "research-1",
+  type: "Market Insight" as const,
+  title: "Cursor for Product Managers",
+  content:
+    "There is an opportunity for an AI-native product management workspace that helps teams decide what to build, not only how to build it.",
+  user: "Andrew Miklas",
+  pain: "Product discovery context is scattered across tools.",
+  context: "Article",
+  tags: ["ai", "product"],
+  scope: "session" as const,
+  sessionId: "session-1",
+  createdAt: "2026-04-24T00:00:00.000Z",
+};
+
 const listSourcesMock = vi.fn();
 const getSourceMock = vi.fn();
 const deleteSourceMock = vi.fn();
 const uploadSourceFilesMock = vi.fn();
+const fetchResearchEntriesMock = vi.fn();
+const createResearchEntryMock = vi.fn();
+const updateResearchEntryMock = vi.fn();
+const deleteResearchEntryMock = vi.fn();
+
+vi.mock("next/link", () => ({
+  default: ({
+    href,
+    children,
+    ...props
+  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) => (
+    <a href={href} {...props}>
+      {children}
+    </a>
+  ),
+}));
 
 vi.mock("@/components/ui/sidebar", () => ({
   Sidebar: () => <aside>Sidebar</aside>,
@@ -37,6 +68,13 @@ vi.mock("@/lib/api/sources", () => ({
   getSource: (...args: unknown[]) => getSourceMock(...args),
   deleteSource: (...args: unknown[]) => deleteSourceMock(...args),
   uploadSourceFiles: (...args: unknown[]) => uploadSourceFilesMock(...args),
+}));
+
+vi.mock("@/lib/api/research", () => ({
+  fetchResearchEntries: (...args: unknown[]) => fetchResearchEntriesMock(...args),
+  createResearchEntry: (...args: unknown[]) => createResearchEntryMock(...args),
+  updateResearchEntry: (...args: unknown[]) => updateResearchEntryMock(...args),
+  deleteResearchEntry: (...args: unknown[]) => deleteResearchEntryMock(...args),
 }));
 
 const { default: SourcesPage } = await import("./page");
@@ -63,16 +101,30 @@ beforeEach(() => {
   });
   deleteSourceMock.mockResolvedValue(undefined);
   uploadSourceFilesMock.mockResolvedValue([{ source: sourceRow, evidenceCount: 2 }]);
+  fetchResearchEntriesMock.mockResolvedValue([researchRow]);
+  createResearchEntryMock.mockResolvedValue({ ...researchRow, id: "research-2", title: "New article" });
+  updateResearchEntryMock.mockResolvedValue(researchRow);
+  deleteResearchEntryMock.mockResolvedValue(undefined);
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ channels: [{ id: "C1", name: "product-feedback" }] }),
+    })
+  );
 });
 
 describe("SourcesPage", () => {
   it("renders upload UI", async () => {
     render(<SourcesPage />);
 
-    expect(screen.getByRole("heading", { name: /upload source evidence/i })).toBeTruthy();
+    expect(screen.getByRole("heading", { level: 1, name: /^sources$/i })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: /references & links/i })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: /research & articles/i })).toBeTruthy();
     expect(screen.getByLabelText(/upload source files/i)).toBeTruthy();
     expect(screen.getByRole("button", { name: /choose files/i })).toBeTruthy();
     await waitFor(() => expect(listSourcesMock).toHaveBeenCalledWith("session", "session-1"));
+    await waitFor(() => expect(fetchResearchEntriesMock).toHaveBeenCalledWith("session", "session-1"));
   });
 
   it("renders source list and detail evidence", async () => {
@@ -95,11 +147,25 @@ describe("SourcesPage", () => {
   it("delete action calls API and refreshes list", async () => {
     render(<SourcesPage />);
 
-    fireEvent.click(await screen.findByRole("button", { name: /delete/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /delete source usage.csv/i }));
 
     await waitFor(() => {
       expect(deleteSourceMock).toHaveBeenCalledWith("source-1");
       expect(listSourcesMock).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it("renders research entries and opens the add research modal", async () => {
+    render(<SourcesPage />);
+
+    await waitFor(() => expect(screen.getAllByText("Cursor for Product Managers").length).toBeGreaterThan(0));
+    expect(screen.getAllByText(/ai-native product management workspace/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Andrew Miklas").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: /import from slack/i })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /add research/i }));
+
+    expect(screen.getByRole("heading", { name: /add research/i })).toBeTruthy();
+    expect(screen.getByPlaceholderText(/user interview with sarah/i)).toBeTruthy();
   });
 });

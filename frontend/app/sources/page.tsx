@@ -1,8 +1,17 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { Sidebar } from "@/components/ui/sidebar";
 import { useActiveSession } from "@/lib/active-session-context";
+import {
+  createResearchEntry,
+  deleteResearchEntry,
+  fetchResearchEntries,
+  updateResearchEntry,
+  type ResearchEntryRecord,
+  type ResearchType,
+} from "@/lib/api/research";
 import {
   deleteSource,
   getSource,
@@ -15,6 +24,53 @@ import {
 
 const ACCEPTED_EXTENSIONS = ".txt,.pdf,.docx,.csv";
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const RESEARCH_TYPES: ResearchType[] = [
+  "Interview",
+  "Survey",
+  "Analytics",
+  "Market Insight",
+];
+
+type ResearchEntry = ResearchEntryRecord;
+
+interface ResearchFormState {
+  type: ResearchType;
+  title: string;
+  content: string;
+  user: string;
+  pain: string;
+  context: string;
+  tagsRaw: string;
+  metricName: string;
+  metricValue: string;
+  metricBaseline: string;
+  metricUnit: string;
+  timePeriod: string;
+  dataSource: string;
+}
+
+const EMPTY_RESEARCH_FORM: ResearchFormState = {
+  type: "Interview",
+  title: "",
+  content: "",
+  user: "",
+  pain: "",
+  context: "",
+  tagsRaw: "",
+  metricName: "",
+  metricValue: "",
+  metricBaseline: "",
+  metricUnit: "",
+  timePeriod: "",
+  dataSource: "",
+};
+
+const TYPE_COLORS: Record<ResearchType, { bg: string; color: string }> = {
+  Interview: { bg: "#EFF6FF", color: "#3B82F6" },
+  Survey: { bg: "#F5F3FF", color: "#7C3AED" },
+  Analytics: { bg: "#FFF7ED", color: "#D97706" },
+  "Market Insight": { bg: "#F0FDF4", color: "#16A34A" },
+};
 
 const pageShell: React.CSSProperties = {
   display: "flex",
@@ -40,6 +96,19 @@ const buttonStyle: React.CSSProperties = {
   fontFamily: "inherit",
 };
 
+const inputStyle: React.CSSProperties = {
+  width: "100%",
+  padding: "0.6rem 0.875rem",
+  background: "#FFFFFF",
+  border: "1.5px solid #E4DDD4",
+  borderRadius: 8,
+  fontSize: "0.875rem",
+  color: "#0D0D0D",
+  outline: "none",
+  fontFamily: "inherit",
+  boxSizing: "border-box",
+};
+
 function formatDate(iso?: string): string {
   if (!iso) return "Unknown";
   return new Date(iso).toLocaleDateString("en-US", {
@@ -62,16 +131,58 @@ function statusColor(status: SourceFileRecord["status"]) {
   return { bg: "#F8F4EF", color: "#6B6B6B" };
 }
 
+function TypeBadge({ type }: { type: ResearchType }) {
+  const colors = TYPE_COLORS[type];
+  return (
+    <span style={{ borderRadius: 4, padding: "2px 7px", fontSize: 11, fontWeight: 600, background: colors.bg, color: colors.color, whiteSpace: "nowrap" }}>
+      {type}
+    </span>
+  );
+}
+
+function FieldLabel({ children, optional }: { children: React.ReactNode; optional?: boolean }) {
+  return (
+    <label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 5, color: "#6B6B6B", fontSize: 12, fontWeight: 600 }}>
+      {children}
+      {optional && <span style={{ color: "#B8AEA4", fontWeight: 400 }}>optional</span>}
+    </label>
+  );
+}
+
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ margin: "16px 0 6px", fontSize: 10, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: "#9B9189" }}>
+      {children}
+    </div>
+  );
+}
+
 export default function SourcesPage() {
   const { activeSessionId } = useActiveSession();
   const [scope, setScope] = useState<SourceScope>(activeSessionId ? "session" : "global");
   const [sources, setSources] = useState<SourceFileRecord[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<SourceDetailResponse | null>(null);
+  const [researchEntries, setResearchEntries] = useState<ResearchEntry[]>([]);
+  const [selectedResearchId, setSelectedResearchId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [researchLoading, setResearchLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [researchError, setResearchError] = useState<string | null>(null);
+  const [showResearchModal, setShowResearchModal] = useState(false);
+  const [editingResearchId, setEditingResearchId] = useState<string | null>(null);
+  const [researchForm, setResearchForm] = useState<ResearchFormState>(EMPTY_RESEARCH_FORM);
+  const [researchFormError, setResearchFormError] = useState(false);
+  const [confirmResearchDeleteId, setConfirmResearchDeleteId] = useState<string | null>(null);
+  const [showSlackModal, setShowSlackModal] = useState(false);
+  const [slackChannels, setSlackChannels] = useState<Array<{ id: string; name: string }>>([]);
+  const [slackChannelsLoading, setSlackChannelsLoading] = useState(false);
+  const [slackSelectedIds, setSlackSelectedIds] = useState<Set<string>>(new Set());
+  const [slackImporting, setSlackImporting] = useState(false);
+  const [slackImportMsg, setSlackImportMsg] = useState<string | null>(null);
+  const [slackNotConnected, setSlackNotConnected] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
@@ -133,6 +244,73 @@ export default function SourcesPage() {
     [selectedId, sources]
   );
 
+  const loadResearch = useCallback(async () => {
+    setResearchLoading(true);
+    setResearchError(null);
+    try {
+      const rows = await fetchResearchEntries(scope, sessionId);
+      setResearchEntries(rows);
+      setSelectedResearchId((prev) => {
+        if (prev && rows.some((row) => row.id === prev)) return prev;
+        return rows[0]?.id ?? null;
+      });
+    } catch (err) {
+      setResearchEntries([]);
+      setSelectedResearchId(null);
+      setResearchError(err instanceof Error ? err.message : "Failed to load research");
+    } finally {
+      setResearchLoading(false);
+    }
+  }, [scope, sessionId]);
+
+  useEffect(() => {
+    void loadResearch();
+  }, [loadResearch]);
+
+  const selectedResearch = useMemo(
+    () => researchEntries.find((entry) => entry.id === selectedResearchId) ?? null,
+    [selectedResearchId, researchEntries]
+  );
+
+  function updateResearchForm(field: keyof ResearchFormState, value: string) {
+    setResearchForm((prev) => ({ ...prev, [field]: value }));
+    if (researchFormError) setResearchFormError(false);
+  }
+
+  function openAddResearch() {
+    setResearchForm(EMPTY_RESEARCH_FORM);
+    setEditingResearchId(null);
+    setResearchFormError(false);
+    setShowResearchModal(true);
+  }
+
+  function openEditResearch(entry: ResearchEntry) {
+    setResearchForm({
+      type: entry.type,
+      title: entry.title,
+      content: entry.content,
+      user: entry.user,
+      pain: entry.pain,
+      context: entry.context,
+      tagsRaw: entry.tags.join(", "),
+      metricName: entry.metricName ?? "",
+      metricValue: entry.metricValue != null ? String(entry.metricValue) : "",
+      metricBaseline: entry.metricBaseline != null ? String(entry.metricBaseline) : "",
+      metricUnit: entry.metricUnit ?? "",
+      timePeriod: entry.timePeriod ?? "",
+      dataSource: entry.dataSource ?? "",
+    });
+    setEditingResearchId(entry.id);
+    setResearchFormError(false);
+    setShowResearchModal(true);
+  }
+
+  function closeResearchModal() {
+    setShowResearchModal(false);
+    setEditingResearchId(null);
+    setResearchFormError(false);
+  }
+
   function validateFiles(files: File[]): string | null {
     const allowed = new Set(["txt", "pdf", "docx", "csv"]);
     for (const file of files) {
@@ -188,6 +366,144 @@ export default function SourcesPage() {
     }
   }
 
+  async function handleResearchSave() {
+    if (!researchForm.title.trim() || !researchForm.content.trim()) {
+      setResearchFormError(true);
+      return;
+    }
+
+    setResearchError(null);
+    const payload = {
+      type: researchForm.type,
+      title: researchForm.title,
+      content: researchForm.content,
+      user: researchForm.user,
+      pain: researchForm.pain,
+      context: researchForm.context,
+      tags: researchForm.tagsRaw
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean),
+      ...(researchForm.type === "Analytics" && {
+        metricName: researchForm.metricName || undefined,
+        metricValue: researchForm.metricValue ? Number.parseFloat(researchForm.metricValue) : undefined,
+        metricBaseline: researchForm.metricBaseline ? Number.parseFloat(researchForm.metricBaseline) : undefined,
+        metricUnit: researchForm.metricUnit || undefined,
+        timePeriod: researchForm.timePeriod || undefined,
+        dataSource: researchForm.dataSource || undefined,
+      }),
+    };
+
+    try {
+      if (editingResearchId) {
+        const updated = await updateResearchEntry(editingResearchId, payload);
+        setResearchEntries((prev) => prev.map((entry) => (entry.id === editingResearchId ? updated : entry)));
+        setSelectedResearchId(updated.id);
+      } else {
+        const created = await createResearchEntry(scope, payload, sessionId);
+        setResearchEntries((prev) => [created, ...prev]);
+        setSelectedResearchId(created.id);
+      }
+      closeResearchModal();
+    } catch (err) {
+      setResearchError(err instanceof Error ? err.message : "Failed to save research entry");
+    }
+  }
+
+  async function handleResearchDelete(id: string) {
+    setResearchError(null);
+    try {
+      await deleteResearchEntry(id);
+      const remaining = researchEntries.filter((entry) => entry.id !== id);
+      setResearchEntries(remaining);
+      if (selectedResearchId === id) {
+        setSelectedResearchId(remaining[0]?.id ?? null);
+      }
+      setConfirmResearchDeleteId(null);
+    } catch (err) {
+      setResearchError(err instanceof Error ? err.message : "Failed to delete research entry");
+    }
+  }
+
+  async function openSlackModal() {
+    setSlackNotConnected(false);
+    setSlackImportMsg(null);
+    setSlackChannelsLoading(true);
+    setSlackChannels([]);
+    setSlackSelectedIds(new Set());
+
+    try {
+      const res = await fetch("/api/slack/channels");
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { code?: string };
+        if (body.code === "slack_not_connected") setSlackNotConnected(true);
+        return;
+      }
+      const data = (await res.json()) as { channels?: Array<{ id: string; name: string }> };
+      setSlackChannels(data.channels ?? []);
+      setShowSlackModal(true);
+    } catch {
+      /* keep the research page usable if Slack discovery fails */
+    } finally {
+      setSlackChannelsLoading(false);
+    }
+  }
+
+  function closeSlackModal() {
+    setShowSlackModal(false);
+    setSlackSelectedIds(new Set());
+  }
+
+  function toggleSlackChannel(id: string) {
+    setSlackSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleSlackImport() {
+    if (slackSelectedIds.size === 0) return;
+    setSlackImporting(true);
+    let totalImported = 0;
+
+    for (const channel of slackChannels.filter((item) => slackSelectedIds.has(item.id))) {
+      try {
+        const res = await fetch("/api/slack/ingest", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            channel_id: channel.id,
+            channel_name: channel.name,
+            ...(scope === "session" && activeSessionId ? { session_id: activeSessionId } : {}),
+          }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { imported?: number };
+          totalImported += data.imported ?? 0;
+        } else {
+          const body = (await res.json().catch(() => ({}))) as { code?: string };
+          if (body.code === "slack_not_connected") {
+            setSlackNotConnected(true);
+            closeSlackModal();
+            setSlackImporting(false);
+            return;
+          }
+        }
+      } catch {
+        /* continue importing selected channels */
+      }
+    }
+
+    await loadResearch().catch(() => {});
+    setSlackImporting(false);
+    closeSlackModal();
+    const label = totalImported === 1 ? "1 message" : `${totalImported} messages`;
+    setSlackImportMsg(`Imported ${label}`);
+    setTimeout(() => setSlackImportMsg(null), 3000);
+  }
+
   return (
     <div style={pageShell}>
       <Sidebar />
@@ -197,14 +513,24 @@ export default function SourcesPage() {
             Source Library
           </div>
           <h1 style={{ margin: "6px 0 6px", fontSize: 34, letterSpacing: 0, lineHeight: 1.1 }}>
-            Upload source evidence
+            Sources
           </h1>
           <p style={{ margin: 0, color: "#6B6B6B", maxWidth: 720, fontSize: 15 }}>
-            Add customer interviews and product usage data. Parsed evidence is stored in Supabase and included in pipeline runs.
+            Manage reference links, uploaded evidence, and long-form research in one library for pipeline runs.
           </p>
         </header>
 
-        <section style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 18, alignItems: "start" }}>
+        <section style={{ marginBottom: 28 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "end", marginBottom: 12 }}>
+            <div>
+              <h2 style={{ margin: "0 0 4px", fontSize: 20, letterSpacing: 0 }}>References & Links</h2>
+              <p style={{ margin: 0, color: "#6B6B6B", fontSize: 13 }}>
+                Short-form citations, uploaded documents, and extracted evidence.
+              </p>
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 18, alignItems: "start" }}>
           <div style={{ ...panelStyle, padding: 18 }}>
             <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
               {(["global", "session"] as SourceScope[]).map((option) => {
@@ -354,6 +680,7 @@ export default function SourcesPage() {
               {selectedSource && (
                 <button
                   type="button"
+                  aria-label={`Delete source ${selectedSource.filename}`}
                   onClick={() => void handleDelete(selectedSource.id)}
                   style={{ ...buttonStyle, padding: "0.45rem 0.7rem", background: "#FEF2F2", color: "#B91C1C" }}
                 >
@@ -413,7 +740,347 @@ export default function SourcesPage() {
               </div>
             )}
           </div>
+          </div>
         </section>
+
+        <section style={{ marginBottom: 28 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 16, alignItems: "end", marginBottom: 12, flexWrap: "wrap" }}>
+            <div>
+              <h2 style={{ margin: "0 0 4px", fontSize: 20, letterSpacing: 0 }}>Research & Articles</h2>
+              <p style={{ margin: 0, color: "#6B6B6B", fontSize: 13 }}>
+                Longer-form notes, articles, and reading material that shape product decisions.
+              </p>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={() => void openSlackModal()}
+                disabled={slackChannelsLoading}
+                style={{ ...buttonStyle, background: "#FFFFFF", color: slackChannelsLoading ? "#B8AEA4" : "#6B6B6B", border: "1px solid #E4DDD4" }}
+              >
+                {slackChannelsLoading ? "Loading..." : "Import from Slack"}
+              </button>
+              <button
+                type="button"
+                onClick={openAddResearch}
+                style={{ ...buttonStyle, background: "#111111", color: "#FFFFFF" }}
+              >
+                Add Research
+              </button>
+            </div>
+          </div>
+
+          {researchError && (
+            <div role="alert" style={{ marginBottom: 12, color: "#B91C1C", fontSize: 13 }}>
+              {researchError}
+            </div>
+          )}
+          {slackNotConnected && (
+            <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(74,21,75,0.12)", background: "rgba(74,21,75,0.05)", color: "#6B6B6B", fontSize: 13 }}>
+              Connect Slack in{" "}
+              <Link href="/settings/integrations" style={{ color: "#E8561B", fontWeight: 700, textDecoration: "none" }}>
+                Settings → Integrations
+              </Link>{" "}
+              to import messages.
+            </div>
+          )}
+          {slackImportMsg && (
+            <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(22,163,74,0.18)", background: "rgba(22,163,74,0.07)", color: "#15803D", fontSize: 13 }}>
+              {slackImportMsg}
+            </div>
+          )}
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 18, alignItems: "start" }}>
+            <div style={{ ...panelStyle, overflow: "hidden" }}>
+              <div style={{ padding: "14px 16px", borderBottom: "1px solid #EFE8DE", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <h3 style={{ margin: 0, fontSize: 15 }}>Reading list</h3>
+                <span style={{ color: "#9B9189", fontSize: 12 }}>{researchLoading ? "Loading" : `${researchEntries.length} total`}</span>
+              </div>
+              <div style={{ maxHeight: 420, overflowY: "auto" }}>
+                {researchEntries.length === 0 && !researchLoading ? (
+                  <div style={{ padding: 18, color: "#6B6B6B", fontSize: 14 }}>
+                    No research or articles added for this scope yet.
+                  </div>
+                ) : (
+                  researchEntries.map((entry) => {
+                    const active = entry.id === selectedResearchId;
+                    return (
+                      <button
+                        key={entry.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedResearchId(entry.id);
+                          setConfirmResearchDeleteId(null);
+                        }}
+                        style={{
+                          display: "block",
+                          width: "100%",
+                          textAlign: "left",
+                          padding: 14,
+                          border: "none",
+                          borderBottom: "1px solid #F0EDE9",
+                          background: active ? "#FFF7ED" : "#FFFFFF",
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                          <strong style={{ fontSize: 14, lineHeight: 1.35, overflowWrap: "anywhere" }}>{entry.title}</strong>
+                          <TypeBadge type={entry.type} />
+                        </div>
+                        <p style={{ margin: "8px 0 0", color: "#6B6B6B", fontSize: 12.5, lineHeight: 1.5, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
+                          {entry.content}
+                        </p>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8, color: "#9B9189", fontSize: 12 }}>
+                          {entry.user && <span>{entry.user}</span>}
+                          <span>{formatDate(entry.createdAt ?? entry.updatedAt)}</span>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            <div style={{ ...panelStyle, minHeight: 420, overflow: "hidden" }}>
+              <div style={{ padding: "14px 16px", borderBottom: "1px solid #EFE8DE", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                <h3 style={{ margin: 0, fontSize: 15 }}>
+                  {selectedResearch ? selectedResearch.title : "Research detail"}
+                </h3>
+                {selectedResearch && (
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                      <button type="button" onClick={() => openEditResearch(selectedResearch)} style={{ ...buttonStyle, padding: "0.45rem 0.7rem", background: "#FFFFFF", color: "#3A3530", border: "1px solid #E4DDD4" }}>
+                      Edit
+                    </button>
+                    {confirmResearchDeleteId === selectedResearch.id ? (
+                      <>
+                        <button type="button" onClick={() => void handleResearchDelete(selectedResearch.id)} style={{ ...buttonStyle, padding: "0.45rem 0.7rem", background: "#FEF2F2", color: "#B91C1C" }}>
+                          Confirm
+                        </button>
+                        <button type="button" onClick={() => setConfirmResearchDeleteId(null)} style={{ ...buttonStyle, padding: "0.45rem 0.7rem", background: "#F8F4EF", color: "#6B6B6B" }}>
+                          Cancel
+                        </button>
+                      </>
+                    ) : (
+                      <button type="button" aria-label={`Delete research ${selectedResearch.title}`} onClick={() => setConfirmResearchDeleteId(selectedResearch.id)} style={{ ...buttonStyle, padding: "0.45rem 0.7rem", background: "#FEF2F2", color: "#B91C1C" }}>
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {!selectedResearch ? (
+                <div style={{ padding: 18, color: "#6B6B6B", fontSize: 14 }}>
+                  Select a research entry to inspect the key insight and source context.
+                </div>
+              ) : (
+                <div style={{ padding: 18 }}>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
+                    <TypeBadge type={selectedResearch.type} />
+                    <span style={{ color: "#9B9189", fontSize: 12 }}>
+                      {formatDate(selectedResearch.createdAt ?? selectedResearch.updatedAt)}
+                    </span>
+                    {selectedResearch.tags.map((tag) => (
+                      <span key={tag} style={{ borderRadius: 4, padding: "2px 7px", fontSize: 11, color: "#6B6B6B", background: "#F0EDE9" }}>
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+
+                  <SectionLabel>Key Insight</SectionLabel>
+                  <p style={{ margin: 0, color: "#3A3530", fontSize: 14, lineHeight: 1.65, whiteSpace: "pre-wrap" }}>
+                    {selectedResearch.content}
+                  </p>
+
+                  {(selectedResearch.user || selectedResearch.pain || selectedResearch.context) && (
+                    <>
+                      {selectedResearch.user && (
+                        <>
+                          <SectionLabel>Author / Source</SectionLabel>
+                          <p style={{ margin: 0, color: "#3A3530", fontSize: 13, lineHeight: 1.55 }}>{selectedResearch.user}</p>
+                        </>
+                      )}
+                      {selectedResearch.pain && (
+                        <>
+                          <SectionLabel>Pain Point</SectionLabel>
+                          <p style={{ margin: 0, color: "#3A3530", fontSize: 13, lineHeight: 1.55 }}>{selectedResearch.pain}</p>
+                        </>
+                      )}
+                      {selectedResearch.context && (
+                        <>
+                          <SectionLabel>Context / Link</SectionLabel>
+                          <p style={{ margin: 0, color: "#3A3530", fontSize: 13, lineHeight: 1.55 }}>{selectedResearch.context}</p>
+                        </>
+                      )}
+                    </>
+                  )}
+
+                  {selectedResearch.type === "Analytics" &&
+                    (selectedResearch.metricName ||
+                      selectedResearch.metricValue != null ||
+                      selectedResearch.metricBaseline != null ||
+                      selectedResearch.metricUnit ||
+                      selectedResearch.timePeriod ||
+                      selectedResearch.dataSource) && (
+                      <>
+                        <SectionLabel>Analytics Metric</SectionLabel>
+                        <div style={{ display: "grid", gap: 6, color: "#3A3530", fontSize: 13 }}>
+                          {selectedResearch.metricName && <span>Metric: {selectedResearch.metricName}</span>}
+                          {(selectedResearch.metricValue != null || selectedResearch.metricBaseline != null) && (
+                            <span>
+                              Value:{" "}
+                              {selectedResearch.metricValue != null
+                                ? `${selectedResearch.metricValue}${selectedResearch.metricUnit ? ` ${selectedResearch.metricUnit}` : ""}`
+                                : ""}
+                              {selectedResearch.metricValue != null && selectedResearch.metricBaseline != null ? " | " : ""}
+                              {selectedResearch.metricBaseline != null
+                                ? `baseline ${selectedResearch.metricBaseline}${selectedResearch.metricUnit ? ` ${selectedResearch.metricUnit}` : ""}`
+                                : ""}
+                            </span>
+                          )}
+                          {selectedResearch.timePeriod && <span>Period: {selectedResearch.timePeriod}</span>}
+                          {selectedResearch.dataSource && <span>Data source: {selectedResearch.dataSource}</span>}
+                        </div>
+                      </>
+                    )}
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {showSlackModal && (
+          <div
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 }}
+            onClick={(event) => {
+              if (event.target === event.currentTarget) closeSlackModal();
+            }}
+          >
+            <div style={{ background: "#FFFFFF", borderRadius: 12, width: "100%", maxWidth: 480, maxHeight: "80vh", overflowY: "auto", padding: "24px 28px", boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, marginBottom: 16 }}>
+                <h3 style={{ margin: 0, fontSize: 17 }}>Import from Slack</h3>
+                <button type="button" onClick={closeSlackModal} style={{ ...buttonStyle, padding: "0.35rem 0.55rem", background: "#F8F4EF", color: "#6B6B6B" }}>
+                  Close
+                </button>
+              </div>
+              {slackChannels.length === 0 ? (
+                <p style={{ margin: 0, color: "#6B6B6B", fontSize: 13 }}>No channels found.</p>
+              ) : (
+                <>
+                  <p style={{ margin: "0 0 14px", color: "#6B6B6B", fontSize: 13, lineHeight: 1.5 }}>
+                    Select channels to import the latest messages as research entries.
+                  </p>
+                  <div style={{ display: "grid", gap: 4, marginBottom: 18 }}>
+                    {slackChannels.slice(0, 20).map((channel) => {
+                      const checked = slackSelectedIds.has(channel.id);
+                      return (
+                        <label key={channel.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, border: checked ? "1px solid rgba(232,86,27,0.18)" : "1px solid transparent", background: checked ? "rgba(232,86,27,0.05)" : "transparent", cursor: "pointer" }}>
+                          <input type="checkbox" checked={checked} onChange={() => toggleSlackChannel(channel.id)} style={{ accentColor: "#E8561B" }} />
+                          <span style={{ fontSize: 13, color: "#0D0D0D" }}># {channel.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+                    <button type="button" onClick={closeSlackModal} style={{ ...buttonStyle, background: "#FFFFFF", color: "#6B6B6B", border: "1px solid #E4DDD4" }}>
+                      Cancel
+                    </button>
+                    <button type="button" onClick={() => void handleSlackImport()} disabled={slackSelectedIds.size === 0 || slackImporting} style={{ ...buttonStyle, background: slackSelectedIds.size === 0 || slackImporting ? "#C8C2BB" : "#111111", color: "#FFFFFF", cursor: slackSelectedIds.size === 0 || slackImporting ? "not-allowed" : "pointer" }}>
+                      {slackImporting ? "Importing..." : slackSelectedIds.size > 0 ? `Import Selected (${slackSelectedIds.size})` : "Import Selected"}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {showResearchModal && (
+          <div
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.35)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 50, padding: 20 }}
+            onClick={(event) => {
+              if (event.target === event.currentTarget) closeResearchModal();
+            }}
+          >
+            <div style={{ background: "#FFFFFF", borderRadius: 12, width: "100%", maxWidth: 560, maxHeight: "90vh", overflowY: "auto", padding: "24px 28px", boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, marginBottom: 18 }}>
+                <h3 style={{ margin: 0, fontSize: 17 }}>{editingResearchId ? "Edit Research" : "Add Research"}</h3>
+                <button type="button" onClick={closeResearchModal} style={{ ...buttonStyle, padding: "0.35rem 0.55rem", background: "#F8F4EF", color: "#6B6B6B" }}>
+                  Close
+                </button>
+              </div>
+
+              <div style={{ display: "grid", gap: 14 }}>
+                <div>
+                  <FieldLabel>Type</FieldLabel>
+                  <select value={researchForm.type} onChange={(event) => updateResearchForm("type", event.target.value as ResearchType)} style={inputStyle}>
+                    {RESEARCH_TYPES.map((type) => (
+                      <option key={type} value={type}>
+                        {type}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <FieldLabel>
+                    Title
+                    {researchFormError && !researchForm.title.trim() && <span style={{ color: "#B91C1C", fontSize: 11 }}>required</span>}
+                  </FieldLabel>
+                  <input type="text" placeholder="e.g., User interview with Sarah K." value={researchForm.title} onChange={(event) => updateResearchForm("title", event.target.value)} style={{ ...inputStyle, borderColor: researchFormError && !researchForm.title.trim() ? "#B91C1C" : "#E4DDD4" }} />
+                </div>
+                <div>
+                  <FieldLabel>
+                    Key Insight
+                    {researchFormError && !researchForm.content.trim() && <span style={{ color: "#B91C1C", fontSize: 11 }}>required</span>}
+                  </FieldLabel>
+                  <textarea placeholder="Summarize the research findings, observations, or data..." value={researchForm.content} onChange={(event) => updateResearchForm("content", event.target.value)} style={{ ...inputStyle, minHeight: 100, resize: "vertical", lineHeight: 1.6, borderColor: researchFormError && !researchForm.content.trim() ? "#B91C1C" : "#E4DDD4" }} />
+                </div>
+
+                {researchForm.type === "Analytics" && (
+                  <div style={{ display: "grid", gap: 12, padding: 12, border: "1px solid #EFE8DE", borderRadius: 8, background: "#FBF8F4" }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#D97706", letterSpacing: "0.08em", textTransform: "uppercase" }}>Analytics Metric</div>
+                    <input type="text" aria-label="Metric Name" placeholder='Metric name, e.g. "30-day activation rate"' value={researchForm.metricName} onChange={(event) => updateResearchForm("metricName", event.target.value)} style={inputStyle} />
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                      <input type="number" aria-label="Current Value" placeholder="Current value" value={researchForm.metricValue} onChange={(event) => updateResearchForm("metricValue", event.target.value)} style={inputStyle} />
+                      <input type="number" aria-label="Baseline Value" placeholder="Baseline value" value={researchForm.metricBaseline} onChange={(event) => updateResearchForm("metricBaseline", event.target.value)} style={inputStyle} />
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                      <input type="text" aria-label="Unit" placeholder="Unit" value={researchForm.metricUnit} onChange={(event) => updateResearchForm("metricUnit", event.target.value)} style={inputStyle} />
+                      <input type="text" aria-label="Time Period" placeholder="Time period" value={researchForm.timePeriod} onChange={(event) => updateResearchForm("timePeriod", event.target.value)} style={inputStyle} />
+                      <input type="text" aria-label="Data Source" placeholder="Data source" value={researchForm.dataSource} onChange={(event) => updateResearchForm("dataSource", event.target.value)} style={inputStyle} />
+                    </div>
+                  </div>
+                )}
+
+                <div>
+                  <FieldLabel optional>Author / Source</FieldLabel>
+                  <input type="text" placeholder="e.g., Andrew Miklas" value={researchForm.user} onChange={(event) => updateResearchForm("user", event.target.value)} style={inputStyle} />
+                </div>
+                <div>
+                  <FieldLabel optional>Pain Point</FieldLabel>
+                  <input type="text" placeholder="e.g., Discovery context is scattered across tools" value={researchForm.pain} onChange={(event) => updateResearchForm("pain", event.target.value)} style={inputStyle} />
+                </div>
+                <div>
+                  <FieldLabel optional>Context / Link</FieldLabel>
+                  <textarea placeholder="e.g., Article URL or source context" value={researchForm.context} onChange={(event) => updateResearchForm("context", event.target.value)} style={{ ...inputStyle, minHeight: 64, resize: "vertical", lineHeight: 1.6 }} />
+                </div>
+                <div>
+                  <FieldLabel optional>Tags</FieldLabel>
+                  <input type="text" placeholder="e.g., pm, discovery, prd (comma-separated)" value={researchForm.tagsRaw} onChange={(event) => updateResearchForm("tagsRaw", event.target.value)} style={inputStyle} />
+                </div>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, paddingTop: 4 }}>
+                  <button type="button" onClick={closeResearchModal} style={{ ...buttonStyle, background: "#FFFFFF", color: "#6B6B6B", border: "1px solid #E4DDD4" }}>
+                    Cancel
+                  </button>
+                  <button type="button" onClick={() => void handleResearchSave()} style={{ ...buttonStyle, background: "#111111", color: "#FFFFFF" }}>
+                    {editingResearchId ? "Save Changes" : "Add Entry"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

@@ -13,7 +13,7 @@ const PROTECTED_PATHS = [
   "/decompose",
   "/tasks",
   "/context",
-  "/research",
+  "/sources",
   "/onboarding",
   "/sessions",
   "/settings",

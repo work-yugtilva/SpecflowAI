@@ -149,8 +149,8 @@ test.describe("SpecFlow full smoke", () => {
       });
     });
 
-    await test.step("4 RESEARCH (form paste — no file upload in app)", async () => {
-      await page.goto("/research");
+    await test.step("4 SOURCES (research form paste — no file upload in app)", async () => {
+      await page.goto("/sources");
       await page.getByRole("button", { name: /add research/i }).first().click();
       await expect(page.getByRole("heading", { name: /add research/i })).toBeVisible();
       await page.getByPlaceholder(/user interview with sarah/i).fill(researchTitle);

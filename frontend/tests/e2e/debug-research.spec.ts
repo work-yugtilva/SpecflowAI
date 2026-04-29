@@ -1,6 +1,6 @@
 import { test } from "@playwright/test";
 
-test("debug research API", async ({ page }) => {
+test("debug sources research API", async ({ page }) => {
   const log: string[] = [];
 
   page.on("request", req => {
@@ -13,7 +13,7 @@ test("debug research API", async ({ page }) => {
     if (msg.type() === "error") log.push(`CONSOLE_ERR: ${msg.text().substring(0, 200)}`);
   });
 
-  await page.goto("http://localhost:3000/research", { waitUntil: "networkidle" });
+  await page.goto("http://localhost:3000/sources", { waitUntil: "networkidle" });
   await page.waitForTimeout(3000);
 
   // Try to evaluate the withAuth behavior directly in the page context

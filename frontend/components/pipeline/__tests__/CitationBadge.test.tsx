@@ -1,5 +1,7 @@
 import "@testing-library/jest-dom";
+import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
 import { CitationBadge } from "../CitationBadge";
 
 const evidence = [
@@ -38,8 +40,9 @@ describe("CitationBadge", () => {
 
   it("collapses the panel when the same badge is clicked again", () => {
     render(<CitationBadge researchEvidence={evidence} />);
-    fireEvent.click(screen.getByText(/User Interview #3/));
-    fireEvent.click(screen.getByText(/User Interview #3/));
+    const badge = screen.getByRole("button", { name: /User Interview #3/ });
+    fireEvent.click(badge);
+    fireEvent.click(badge);
     expect(screen.queryByText("Users reported friction")).not.toBeInTheDocument();
   });
 

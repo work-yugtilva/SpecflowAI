@@ -38,7 +38,7 @@ Refs (`e12`, …) change each run — always `**snapshot**` before `**click**`.
   ```
    Open **New Session**, submit name, choose **Start Fresh Context** in the modal.
 4. **Context gate** — `/context`: fill Company Name, Product Name, Description, Target Users, Goals → **Save Context**.
-5. **Research** — `/research`: **Add Research**, paste `tests/e2e/fixtures/sample-transcript.txt`, **Add Entry**.
+5. **Sources** — `/sources`: **Add Research**, paste `tests/e2e/fixtures/sample-transcript.txt`, **Add Entry**.
 6. **Pipeline** — `/sessions`: select session → **Run full pipeline** → wait until “Session completed”.
 7. **Query** — QueryPanel is not mounted in the app today; skip or use **Ask SpecFlow** float on `/features` (different from `QueryPanel`).
 8. **Evidence** — `/features`: select a feature → **View source evidence →**.

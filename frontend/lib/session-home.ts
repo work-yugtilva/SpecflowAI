@@ -230,9 +230,7 @@ export function getNextRecommendedAction(summary: SessionHomeSummary): SessionHo
   const hasResearch = summary.researchCount > 0;
   const hasSourceEvidence = summary.sourceCounts.available && (summary.sourceCounts.evidenceCount ?? 0) > 0;
   if (!hasResearch && !hasSourceEvidence) {
-    return summary.sourceCounts.available
-      ? { label: "Add Sources", type: "link", href: "/sources" }
-      : { label: "Add Research", type: "link", href: "/research" };
+    return { label: "Add Sources", type: "link", href: "/sources" };
   }
 
   const output = (key: RecentOutputRow["key"]) =>

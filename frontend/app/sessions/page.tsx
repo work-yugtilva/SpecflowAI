@@ -1166,7 +1166,7 @@ export default function SessionsPage() {
                           tone: sessionHomeSummary.contextReady ? "good" : "warn",
                         },
                         {
-                          label: "Research",
+                          label: "Research & Articles",
                           value: `${sessionHomeSummary.researchCount}`,
                           tone: sessionHomeSummary.researchCount > 0 ? "good" : "muted",
                         },
@@ -1293,7 +1293,7 @@ export default function SessionsPage() {
                     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
                       {[
                         { label: "Edit Context", action: { label: "Edit Context", type: "link", href: "/context" } as SessionHomeAction },
-                        { label: "Add Research", action: { label: "Add Research", type: "link", href: "/research" } as SessionHomeAction },
+                        { label: "Add Sources", action: { label: "Add Sources", type: "link", href: "/sources" } as SessionHomeAction },
                         ...(sessionHomeSummary.sourceCounts.available
                           ? [{ label: "Upload Sources", action: { label: "Upload Sources", type: "link", href: "/sources" } as SessionHomeAction }]
                           : []),
@@ -1503,12 +1503,12 @@ export default function SessionsPage() {
                         color: researchCount > 0 ? "#15803D" : "#9B9189",
                       }}
                     >
-                      Research ({researchCount}){researchCount > 0 ? " ✓" : ""}
+                      Research & Articles ({researchCount}){researchCount > 0 ? " ✓" : ""}
                     </span>
 
                   </div>
 
-                  {/* Research card */}
+                  {/* Research & articles card */}
                   <div
                     style={{
                       background: "#FFFFFF",
@@ -1520,7 +1520,7 @@ export default function SessionsPage() {
                   >
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
                       <div style={{ fontSize: 11, fontWeight: 600, color: "#9B9189", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                        Research
+                        Research & Articles
                       </div>
                       {researchCount > 0 && (
                         <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "#F0FDF4", border: "1px solid #BBF7D0", color: "#15803D" }}>
@@ -1529,10 +1529,10 @@ export default function SessionsPage() {
                       )}
                     </div>
                     <p style={{ fontSize: 13, color: "#5C5248", lineHeight: 1.55, margin: "0 0 14px" }}>
-                      Add interviews, usage data, and market insights to power your pipeline.
+                      Add interviews, usage data, market insights, and uploaded evidence to power your pipeline.
                     </p>
-                    <Link href="/research" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "#E8561B", textDecoration: "none" }}>
-                      Manage Research →
+                    <Link href="/sources" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "#E8561B", textDecoration: "none" }}>
+                      Manage Sources →
                     </Link>
                   </div>
 
