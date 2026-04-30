@@ -27,6 +27,7 @@ import { CitationBadge } from "@/components/pipeline/CitationBadge";
 import { resolveResearchEntries, type ResolvedEntry } from "@/lib/api/research";
 import { ConversationPanel } from "@/components/ui/conversation-panel";
 import { ArtifactExportMenu } from "@/components/artifacts/ArtifactExportMenu";
+import { PRDExportButton } from "@/features/prd/PRDExportButton";
 import {
   prdToMarkdown,
   copyToClipboard,
@@ -1527,6 +1528,7 @@ function PrdPage() {
                   </svg>
                   {copied ? "Copied!" : "Copy Link"}
                 </button>
+                <PRDExportButton prd={prd} />
                 <ArtifactExportMenu
                   disabled={!prd}
                   disabledReason="Generate PRD before exporting"
