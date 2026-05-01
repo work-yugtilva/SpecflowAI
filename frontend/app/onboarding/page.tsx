@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { createClient } from "@/lib/supabase/client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -106,11 +107,28 @@ export default function OnboardingPage() {
     return Object.keys(errs).length === 0;
   }
 
-  function handleSubmit() {
+  async function handleSubmit() {
     setAttempted(true);
     if (!validate(form)) return;
-    // Mock API — log collected data
-    console.log("Onboarding data:", form);
+    try {
+      const supabase = createClient();
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const { error: profileError } = await supabase.from("user_profiles").upsert({
+          user_id: user.id,
+          first_name: form.firstName,
+          last_name: form.lastName,
+          job_title: form.jobTitle,
+          company_name: form.companyName,
+          company_type: form.companyType,
+          work_experience: form.workExperience !== "" ? Number(form.workExperience) : null,
+          onboarding_completed_at: new Date().toISOString(),
+        }, { onConflict: "user_id" });
+        if (profileError) console.error("Failed to save onboarding profile:", profileError);
+      }
+    } catch (e) {
+      console.error("Onboarding profile save error:", e);
+    }
     router.push("/dashboard");
   }
 

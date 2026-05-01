@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
 import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
 import { QualityBadge } from "@/components/pipeline/QualityBadge";
-import { CitationBadge } from "@/components/pipeline/CitationBadge";
+import { PipelineTrace } from "@/components/pipeline/PipelineTrace";
+import { EvidencePanel } from "@/components/pipeline/EvidencePanel";
 import {
   getSession,
   generateHandoff,
@@ -44,6 +45,7 @@ import {
   downloadTextFile,
   safeFilename,
 } from "@/lib/artifact-export";
+import { useSessionStore } from "@/lib/store/session-store";
 const TextShimmer = dynamic(
   () => import("@/components/ui/text-shimmer").then((m) => m.TextShimmer)
 );
@@ -543,6 +545,7 @@ function HandoffSummaryPanel({
 export default function TasksPage() {
   const router = useRouter();
   const { activeSessionId } = useActiveSession();
+  const setActiveSessionDetail = useSessionStore((s) => s.setActiveSessionDetail);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -602,12 +605,14 @@ export default function TasksPage() {
     setShowLinearConfirm(false);
     setLinearNotConnected(false);
     setHandoff(null);
+    setActiveSessionDetail(null);
     if (!activeSessionId) return;
     let cancelled = false;
     getSession(activeSessionId)
       .then((d) => {
         if (cancelled) return;
         setSessionDetail(d);
+        setActiveSessionDetail(d);
         const out = d.state?.state?.outputs as
           | Record<string, unknown>
           | undefined;
@@ -635,7 +640,10 @@ export default function TasksPage() {
           .catch(() => { /* 404 is expected — stay null */ });
       })
       .catch(() => {
-        if (!cancelled) setSessionDetail(null);
+        if (!cancelled) {
+          setSessionDetail(null);
+          setActiveSessionDetail(null);
+        }
       });
     return () => {
       cancelled = true;
@@ -654,6 +662,7 @@ export default function TasksPage() {
     setLinearNotConnected,
     setHandoff,
     setQualityScore,
+    setActiveSessionDetail,
   ]);
 
   const tasksByGroup = GROUPS.map((type) => ({
@@ -715,7 +724,9 @@ export default function TasksPage() {
       if (adapted.length > 0) setSelectedId(adapted[0].id);
       if (activeSessionId) {
         try {
-          setSessionDetail(await getSession(activeSessionId));
+          const d = await getSession(activeSessionId);
+          setSessionDetail(d);
+          setActiveSessionDetail(d);
         } catch {
           /* ignore */
         }
@@ -740,6 +751,7 @@ export default function TasksPage() {
     setQualityScore,
     setTasks,
     setSessionDetail,
+    setActiveSessionDetail,
   ]);
 
   async function handleGeneratePrd() {
@@ -1758,6 +1770,11 @@ export default function TasksPage() {
                   {selectedTask.description}
                 </p>
 
+                <div className="mt-5">
+                  <SectionLabel>Evidence Trace</SectionLabel>
+                  <EvidencePanel evidence={selectedTask.researchEvidence ?? []} />
+                </div>
+
                 {/* Quality Issues */}
                 {selectedTask.qualityIssues && selectedTask.qualityIssues.length > 0 && (
                   <>
@@ -1917,6 +1934,8 @@ export default function TasksPage() {
                     ))}
                   </div>
                 )}
+
+                <PipelineTrace stepKey="tasks" />
 
                 {/* Bottom padding */}
                 <div style={{ height: 32 }} />

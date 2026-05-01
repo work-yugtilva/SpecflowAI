@@ -28,6 +28,8 @@ export interface SessionStoreActions {
   selectSession: (sessionId: string | null) => void;
   /** Load full detail for a session from the backend. */
   hydrateSession: (sessionId: string) => Promise<SessionDetail | null>;
+  /** Replace the active session detail with a detail already fetched elsewhere. */
+  setActiveSessionDetail: (detail: SessionDetail | null) => void;
   /** Remove a session from local state only. */
   removeLocal: (sessionId: string) => void;
   /** Update a session in local state (e.g., after status change). */
@@ -148,6 +150,24 @@ export const useSessionStore = create<SessionStore>()(
           set({ isLoading: false, activeSessionDetail: null });
           return null;
         }
+      },
+
+      setActiveSessionDetail: (detail) => {
+        set((s) => ({
+          activeSessionDetail: detail,
+          sessions:
+            detail == null
+              ? s.sessions
+              : s.sessions.map((sess) =>
+                  sess.id === detail.session.id
+                    ? {
+                        ...sess,
+                        status: detail.session.status,
+                        updated_at: detail.session.updated_at,
+                      }
+                    : sess
+                ),
+        }));
       },
 
       removeLocal: (sessionId) => {

@@ -4,9 +4,18 @@ import os
 from typing import Any
 
 from anthropic import AsyncAnthropic
+from fastapi import HTTPException
 from openai import AsyncOpenAI
 
 logger = logging.getLogger("specflow.llm_client")
+
+# Model context limit (safe for claude-3 models; 200k limit minus buffer)
+MODEL_CONTEXT_LIMIT = 180_000
+
+
+def _estimate_tokens(text: str) -> int:
+    """Estimate token count. Simple approximation: 1 token ≈ 4 characters."""
+    return len(text) // 4
 
 
 def _approx_input_tokens(system_prompt: str, user_message: str) -> int:
@@ -43,9 +52,22 @@ async def call_llm(
 
     if provider == "anthropic":
         client = AsyncAnthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+        
+        # Pre-flight token safety check
+        max_tokens = int(os.environ.get("AI_MAX_TOKENS", 2048))
+        estimated_input_tokens = _estimate_tokens(system_prompt) + _estimate_tokens(user_message)
+        total_tokens = estimated_input_tokens + max_tokens
+        token_limit = int(MODEL_CONTEXT_LIMIT * 0.90)
+        
+        if total_tokens > token_limit:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Input too large: estimated {estimated_input_tokens} tokens exceeds limit. Reduce your research documents or context."
+            )
+        
         message = await client.messages.create(
             model=model,
-            max_tokens=int(os.environ.get("AI_MAX_TOKENS", 2048)),
+            max_tokens=max_tokens,
             temperature=temperature,
             system=_anthropic_system_prompt(system_prompt, use_cache),
             messages=[{"role": "user", "content": user_message}],

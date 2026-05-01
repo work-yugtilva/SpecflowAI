@@ -10,12 +10,15 @@ import {
 
 function proxyErrorMessage(error: unknown): string {
   if (error instanceof SyntaxError) {
-    return (
+    console.error(
       "Pipeline API returned a non-JSON response (often wrong URL or a proxy/HTML error page). " +
-      "Confirm NEXT_PUBLIC_PIPELINE_URL on Vercel points to FastAPI, e.g. https://api.specflowai.com"
+      "Confirm NEXT_PUBLIC_PIPELINE_URL on Vercel points to FastAPI, e.g. https://api.specflowai.com",
+      error,
     );
+  } else {
+    console.error("Backend service is offline. Please start the backend server.", error);
   }
-  return "Backend service is offline. Please start the backend server.";
+  return "Something went wrong — please try again.";
 }
 
 export async function GET() {

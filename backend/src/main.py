@@ -2219,6 +2219,37 @@ async def get_session(request: Request, session_id: str, auth: SupabaseUser = De
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+@app.delete("/session/{session_id}")
+@limiter.limit(GENERAL_API_LIMIT)
+async def delete_session(
+    request: Request,
+    session_id: str,
+    auth: SupabaseUser = Depends(require_auth),
+):
+    """Delete a session and all associated data (CASCADE handled by DB)."""
+    try:
+        # Verify the session exists and belongs to the requesting user.
+        lookup = (
+            auth.client.table("sessions")
+            .select("id, user_id")
+            .eq("id", session_id)
+            .single()
+            .execute()
+        )
+        if not lookup.data:
+            raise HTTPException(status_code=404, detail="Session not found")
+        if lookup.data["user_id"] != auth.user_id:
+            raise HTTPException(status_code=403, detail="Forbidden")
+
+        auth.client.table("sessions").delete().eq("id", session_id).execute()
+        return {"success": True, "message": "Session deleted"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("delete_session error: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
 # ---------------------------------------------------------------------------
 # Routes — Pipeline Runs (orphaned pipeline support)
 # ---------------------------------------------------------------------------

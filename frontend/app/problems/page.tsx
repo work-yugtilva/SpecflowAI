@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
 import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
 import { QualityBadge } from "@/components/pipeline/QualityBadge";
+import { PipelineTrace } from "@/components/pipeline/PipelineTrace";
 import { getSession } from "@/lib/api/session";
 import type { SessionDetail } from "@/lib/api/session";
 import {
@@ -20,13 +21,14 @@ import {
   describeProblemsEmptyState,
 } from "@/lib/pipeline-contracts";
 import { CitationBadge } from "@/components/pipeline/CitationBadge";
-import { EvidencePanelWithTrigger } from "@/components/pipeline/EvidencePanel";
+import { EvidencePanel } from "@/components/pipeline/EvidencePanel";
 import type { ProblemViewModel as Problem } from "@/lib/pipeline-contracts";
 import type { PipelineInput } from "@/lib/pipeline-types";
 import { TextShimmer } from "@/components/ui/text-shimmer";
 import { useOrphanedPipeline } from "@/lib/use-orphaned-pipeline";
 import { OrphanedPipelineModal } from "@/components/ui/orphaned-pipeline-modal";
 import { ConversationPanel } from "@/components/ui/conversation-panel";
+import { useSessionStore } from "@/lib/store/session-store";
 
 // ─── Impact badge ─────────────────────────────────────────────────────────────
 
@@ -86,6 +88,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 export default function ProblemsPage() {
   const router = useRouter();
   const { activeSessionId } = useActiveSession();
+  const setActiveSessionDetail = useSessionStore((s) => s.setActiveSessionDetail);
   const [problems, setProblems] = useState<Problem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -112,12 +115,14 @@ export default function ProblemsPage() {
     setError(null);
     setFromSession(false);
     setSessionDetail(null);
+    setActiveSessionDetail(null);
     if (!activeSessionId) return;
     let cancelled = false;
     getSession(activeSessionId)
       .then((d) => {
         if (cancelled) return;
         setSessionDetail(d);
+        setActiveSessionDetail(d);
         const out = d.state?.state?.outputs as
           | Record<string, unknown>
           | undefined;
@@ -133,14 +138,17 @@ export default function ProblemsPage() {
             setSelectedId(adapted[0].id);
           }
         }
-      })
+    })
       .catch(() => {
-        if (!cancelled) setSessionDetail(null);
+        if (!cancelled) {
+          setSessionDetail(null);
+          setActiveSessionDetail(null);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [activeSessionId]);
+  }, [activeSessionId, setActiveSessionDetail]);
 
   async function handleGenerate() {
     setGenerating(true);
@@ -176,6 +184,7 @@ export default function ProblemsPage() {
         try {
           const d = await getSession(activeSessionId);
           setSessionDetail(d);
+          setActiveSessionDetail(d);
         } catch {
           /* ignore */
         }
@@ -202,6 +211,12 @@ export default function ProblemsPage() {
         fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
       }}
     >
+      <style>{`
+        @media (max-width: 768px) {
+          .problems-two-col { flex-direction: column; }
+          .problems-list-panel { width: 100% !important; min-height: 240px; max-height: 40vh; border-right: none !important; border-bottom: 1px solid #E4DDD4; }
+        }
+      `}</style>
       <Sidebar />
 
       {/* Main area */}
@@ -334,7 +349,17 @@ export default function ProblemsPage() {
                     <p style={{ fontSize: 13.5, color: "#6B6B6B", lineHeight: 1.6 }}>
                       {error}
                     </p>
-                  ) : null}
+                  ) : (
+                    <p style={{ fontSize: 13.5, color: "#6B6B6B", lineHeight: 1.6 }}>
+                      Run the pipeline from your session to generate problems.{" "}
+                      <a
+                        href="/sessions"
+                        style={{ color: "#E8561B", textDecoration: "underline", fontWeight: 500 }}
+                      >
+                        Go to Sessions
+                      </a>
+                    </p>
+                  )}
                 </div>
                 <button
                   onClick={handleGenerate}
@@ -358,10 +383,10 @@ export default function ProblemsPage() {
           </div>
         ) : (
           /* ── Two-column layout ── */
-          <div className="flex-1 flex min-h-0">
+          <div className="flex-1 flex min-h-0 problems-two-col">
             {/* Left: Problems list */}
             <div
-              className="flex-shrink-0 flex flex-col overflow-y-auto"
+              className="flex-shrink-0 flex flex-col overflow-y-auto problems-list-panel"
               style={{
                 width: 320,
                 borderRight: "1px solid #E4DDD4",
@@ -556,6 +581,11 @@ export default function ProblemsPage() {
                     {selectedProblem.summary}
                   </p>
 
+                  <div className="mb-6">
+                    <SectionLabel>Evidence Trace</SectionLabel>
+                    <EvidencePanel evidence={selectedProblem.researchEvidence ?? []} />
+                  </div>
+
                   {/* Evidence */}
                   <div
                     style={{
@@ -581,22 +611,6 @@ export default function ProblemsPage() {
                         </div>
                       ))}
                     </div>
-                    {(selectedProblem.source_ids?.length ?? 0) > 0 && (
-                      <div style={{ marginTop: 10 }}>
-                        <EvidencePanelWithTrigger
-                          sourceIds={selectedProblem.source_ids!}
-                          citationConfidence={
-                            selectedProblem.citation_confidence as
-                              | "high"
-                              | "medium"
-                              | "insufficient"
-                              | undefined
-                          }
-                          researchEvidence={selectedProblem.evidence.join(" ")}
-                          itemTitle={selectedProblem.title}
-                        />
-                      </div>
-                    )}
                   </div>
 
                   {/* Root Cause */}
@@ -765,6 +779,8 @@ export default function ProblemsPage() {
                       </div>
                     </div>
                   </div>
+
+                  <PipelineTrace stepKey="problems" />
 
                   {/* CTA */}
                   <button

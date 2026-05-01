@@ -1,9 +1,13 @@
 # services/memory/memory_repository.py
 
+import asyncio
+import logging
 from typing import Any, List, Optional
 from services.db.supabase_async import first_row_from_result, rows_from_result, run_sync
 from services.db.supabase_client import get_supabase_client
 from services.memory.memory_schemas import MemoryEntry
+
+logger = logging.getLogger(__name__)
 
 TABLE = "memory_entries"
 
@@ -35,6 +39,46 @@ class MemoryRepository:
         sanitized.pop("user_id", None)
         return sanitized
 
+    async def _retry_async(
+        self,
+        fn,
+        retries: int = 3,
+        delays: tuple = (0.5, 1.0, 2.0),
+    ):
+        """
+        Execute async function with exponential backoff retry.
+        
+        Args:
+            fn: Async callable to execute
+            retries: Number of retry attempts (default 3)
+            delays: Tuple of delays in seconds between retries
+        
+        Returns:
+            Result of successful fn execution
+            
+        Raises:
+            Last exception if all retries exhausted
+        """
+        last_exception = None
+        for attempt in range(1, retries + 1):
+            try:
+                return await fn()
+            except Exception as e:
+                last_exception = e
+                if attempt < retries:
+                    delay = delays[attempt - 1] if attempt - 1 < len(delays) else delays[-1]
+                    logger.warning(
+                        f"Supabase save attempt {attempt} failed: {e}. "
+                        f"Retrying in {delay}s..."
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.warning(
+                        f"Supabase save attempt {attempt} failed: {e}. "
+                        f"All {retries} retries exhausted."
+                    )
+        raise last_exception
+
     async def save(self, entry: MemoryEntry) -> MemoryEntry:
         """
         Upsert a memory entry using (project_id, memory_key) as
@@ -45,25 +89,28 @@ class MemoryRepository:
             exclude={"created_at", "updated_at"},
         )
 
-        def _upsert():
-            return self.client.table(TABLE).upsert(
-                data, on_conflict="project_id,memory_key"
-            ).execute()
-        try:
-            result = await run_sync(_upsert)
-        except Exception as exc:
-            if not _is_missing_user_id_column_error(exc):
-                raise
-
-            fallback_data = self._without_user_id(data)
-
-            def _fallback_upsert():
+        async def _upsert_with_fallback():
+            def _upsert():
                 return self.client.table(TABLE).upsert(
-                    fallback_data, on_conflict="project_id,memory_key"
+                    data, on_conflict="project_id,memory_key"
                 ).execute()
+            try:
+                result = await run_sync(_upsert)
+            except Exception as exc:
+                if not _is_missing_user_id_column_error(exc):
+                    raise
 
-            result = await run_sync(_fallback_upsert)
+                fallback_data = self._without_user_id(data)
 
+                def _fallback_upsert():
+                    return self.client.table(TABLE).upsert(
+                        fallback_data, on_conflict="project_id,memory_key"
+                    ).execute()
+
+                result = await run_sync(_fallback_upsert)
+            return result
+
+        result = await self._retry_async(_upsert_with_fallback)
         rows = rows_from_result(result)
         if rows:
             return MemoryEntry(**rows[0])
@@ -165,25 +212,28 @@ class MemoryRepository:
             exclude={"created_at", "updated_at"},
         )
 
-        def _upsert():
-            return self.client.table(TABLE).upsert(
-                data, on_conflict="session_id,memory_key"
-            ).execute()
-        try:
-            result = await run_sync(_upsert)
-        except Exception as exc:
-            if not _is_missing_user_id_column_error(exc):
-                raise
-
-            fallback_data = self._without_user_id(data)
-
-            def _fallback_upsert():
+        async def _upsert_with_fallback():
+            def _upsert():
                 return self.client.table(TABLE).upsert(
-                    fallback_data, on_conflict="session_id,memory_key"
+                    data, on_conflict="session_id,memory_key"
                 ).execute()
+            try:
+                result = await run_sync(_upsert)
+            except Exception as exc:
+                if not _is_missing_user_id_column_error(exc):
+                    raise
 
-            result = await run_sync(_fallback_upsert)
+                fallback_data = self._without_user_id(data)
 
+                def _fallback_upsert():
+                    return self.client.table(TABLE).upsert(
+                        fallback_data, on_conflict="session_id,memory_key"
+                    ).execute()
+
+                result = await run_sync(_fallback_upsert)
+            return result
+
+        result = await self._retry_async(_upsert_with_fallback)
         rows = rows_from_result(result)
         if rows:
             return MemoryEntry(**rows[0])

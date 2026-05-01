@@ -95,7 +95,7 @@ function makeDetail(outputs: Record<string, unknown> = {}): SessionDetail {
   };
 }
 
-function seedSessions() {
+function seedSessions(metadata: Record<string, unknown> = {}) {
   window.localStorage.setItem(
     "specflow_sessions",
     JSON.stringify([
@@ -104,6 +104,7 @@ function seedSessions() {
         session_name: "Activation sprint",
         status: "active",
         created_at: "2026-04-24T00:00:00.000Z",
+        metadata,
       },
     ])
   );
@@ -153,6 +154,14 @@ describe("SessionsPage session home", () => {
     expect(screen.getByText("Evidence Readiness")).toBeTruthy();
     expect(await screen.findByText("Source files")).toBeTruthy();
     expect(await screen.findByText("Evidence objects")).toBeTruthy();
+  });
+
+  it("shows a sources badge when session metadata includes a source count", async () => {
+    seedSessions({ source_count: 3 });
+
+    render(<SessionsPage />);
+
+    expect(await screen.findByText("3 sources")).toBeTruthy();
   });
 
   it("shows generated and missing recent outputs", async () => {

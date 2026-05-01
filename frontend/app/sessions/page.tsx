@@ -83,6 +83,7 @@ interface StoredSession {
   session_name?: string;
   status: string;
   created_at: string | null;
+  metadata?: Record<string, unknown>;
 }
 
 const EMPTY_SOURCE_COUNTS: SourceReadinessCounts = { available: false };
@@ -113,6 +114,44 @@ function formatTs(iso: string): string {
   } catch {
     return iso;
   }
+}
+
+function numberFromMetadataValue(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function nestedRecordValue(
+  metadata: Record<string, unknown>,
+  key: "research" | "sources",
+  nestedKey: string
+): unknown {
+  const nested = metadata[key];
+  return typeof nested === "object" && nested !== null && !Array.isArray(nested)
+    ? (nested as Record<string, unknown>)[nestedKey]
+    : undefined;
+}
+
+function getSessionSourceCount(metadata: Record<string, unknown> | undefined): number {
+  if (!metadata) return 0;
+  const candidates = [
+    metadata.source_count,
+    metadata.sources_count,
+    metadata.research_source_count,
+    nestedRecordValue(metadata, "research", "source_count"),
+    nestedRecordValue(metadata, "sources", "count"),
+  ];
+
+  for (const value of candidates) {
+    const count = numberFromMetadataValue(value);
+    if (count !== null && count > 0) return Math.floor(count);
+  }
+
+  return 0;
 }
 
 /** Merge API merged context with session-scoped localStorage (same source as pipeline input). */
@@ -470,7 +509,9 @@ export default function SessionsPage() {
       // Update stored status
       setSessions((prev) => {
         const updated = prev.map((s) =>
-          s.session_id === id ? { ...s, status: d.session.status } : s
+          s.session_id === id
+            ? { ...s, status: d.session.status, metadata: d.session.metadata ?? {} }
+            : s
         );
         localStorage.setItem(LS_KEY, JSON.stringify(updated));
         return updated;
@@ -618,6 +659,7 @@ export default function SessionsPage() {
         session_name: result.session_name,
         status: result.status,
         created_at: result.created_at,
+        metadata: {},
       };
       const updated = [stored, ...sessions];
       persistSessions(updated);
@@ -1000,6 +1042,7 @@ export default function SessionsPage() {
                 ) : (
                   sessions.map((s) => {
                     const isSelected = s.session_id === selectedId;
+                    const sourceCount = getSessionSourceCount(s.metadata);
                     return (
                       <button
                         key={s.session_id}
@@ -1024,7 +1067,14 @@ export default function SessionsPage() {
                           <span style={{ fontSize: 12, fontWeight: 600, color: "#0D0D0D", fontFamily: "monospace" }}>
                             {shortId(s.session_id)}
                           </span>
-                          <StatusBadge status={s.status} />
+                          <div className="flex items-center gap-1.5">
+                            {sourceCount > 0 && (
+                              <span className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[0.68rem] font-semibold text-emerald-700">
+                                {sourceCount} sources
+                              </span>
+                            )}
+                            <StatusBadge status={s.status} />
+                          </div>
                         </div>
                         <div style={{ fontSize: 11.5, color: "#6B6B6B", marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                           {s.session_name || `Session ${shortId(s.session_id)}`}

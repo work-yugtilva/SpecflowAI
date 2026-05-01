@@ -631,7 +631,7 @@ export default function DashboardPage() {
           )}
 
           {/* ── Row 1: Stat cards ─────────────────────────────────────────── */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, padding: "0 40px 20px" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16, padding: "0 40px 20px" }}>
             {[
               { label: "Total Sessions", value: total, bg: "#E8561B", textColor: "#FFFFFF", hero: true },
               { label: "Completed", value: completed, bg: "#FFFFFF", textColor: "#0D0D0D", hero: false },

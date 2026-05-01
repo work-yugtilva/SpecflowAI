@@ -105,6 +105,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { id: "problems", label: "Problems" },
       { id: "features", label: "Features" },
+      { id: "opportunities", label: "Opportunities" },
       { id: "decompose", label: "Decompose" },
       { id: "tasks", label: "Tasks" },
       { id: "prd", label: "PRD" },
@@ -287,6 +288,7 @@ const PANEL_TITLE_BY_ROUTE: Record<string, string> = {
   sessions: "Sessions",
   problems: "Signals",
   features: "Signals",
+  opportunities: "Signals",
   decompose: "Signals",
   tasks: "Signals",
   context: "Discovery",

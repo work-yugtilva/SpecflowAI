@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef, Suspense } from "react";
+import { useState, useEffect, useMemo, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
 import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
+import { PipelineTrace } from "@/components/pipeline/PipelineTrace";
 import { getSession } from "@/lib/api/session";
 import type { SessionDetail } from "@/lib/api/session";
 import { iterateSseJsonLines } from "@/lib/sse-parse";
@@ -23,17 +24,19 @@ import {
 import dynamic from "next/dynamic";
 import { useEditor, EditorContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { CitationBadge } from "@/components/pipeline/CitationBadge";
+import { EvidencePanel } from "@/components/pipeline/EvidencePanel";
 import { resolveResearchEntries, type ResolvedEntry } from "@/lib/api/research";
 import { ConversationPanel } from "@/components/ui/conversation-panel";
 import { ArtifactExportMenu } from "@/components/artifacts/ArtifactExportMenu";
 import { PRDExportButton } from "@/features/prd/PRDExportButton";
+import { useSessionStore } from "@/lib/store/session-store";
 import {
   prdToMarkdown,
   copyToClipboard,
   downloadTextFile,
   safeFilename,
 } from "@/lib/artifact-export";
+import type { ResearchEvidence } from "@/lib/pipeline-contracts";
 const TextShimmer = dynamic(
   () => import("@/components/ui/text-shimmer").then((m) => m.TextShimmer)
 );
@@ -86,6 +89,65 @@ function getStringArray(value: unknown): string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string")
     ? value
     : [];
+}
+
+const TRACE_OUTPUT_KEYS = [
+  "problems",
+  "features",
+  "decompositions",
+  "tasks",
+] as const;
+
+function isResearchEvidence(value: unknown): value is ResearchEvidence {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.title === "string" &&
+    typeof value.content === "string" &&
+    typeof value.source === "string"
+  );
+}
+
+function collectResearchEvidence(value: unknown): ResearchEvidence[] {
+  if (Array.isArray(value)) {
+    return value.flatMap((entry) => collectResearchEvidence(entry));
+  }
+
+  if (!isRecord(value)) return [];
+
+  const direct = Array.isArray(value.research_evidence)
+    ? value.research_evidence.filter(isResearchEvidence)
+    : [];
+  const nested = Object.entries(value)
+    .filter(([key]) => key !== "research_evidence")
+    .flatMap(([, entry]) => collectResearchEvidence(entry));
+
+  return [...direct, ...nested];
+}
+
+function collectPrdResearchEvidence(outputs: unknown): ResearchEvidence[] {
+  if (!isRecord(outputs)) return [];
+
+  const seen = new Set<string>();
+  const evidence: ResearchEvidence[] = [];
+
+  for (const key of TRACE_OUTPUT_KEYS) {
+    for (const item of collectResearchEvidence(outputs[key])) {
+      const title = item.title.trim();
+      const content = item.content.trim();
+      const source = item.source.trim();
+      if (!title && !content) continue;
+      const dedupeKey = `${source}\u0000${title}\u0000${content}`;
+      if (seen.has(dedupeKey)) continue;
+      seen.add(dedupeKey);
+      evidence.push({ title, content, source });
+    }
+  }
+
+  return evidence;
+}
+
+function countUniqueEvidenceSources(evidence: ResearchEvidence[]): number {
+  return evidence.length;
 }
 
 // ─── Section metadata ─────────────────────────────────────────────────────────
@@ -995,6 +1057,7 @@ function renderValue(val: unknown): React.ReactNode {
 
 function PrdPage() {
   const { activeSessionId } = useActiveSession();
+  const setActiveSessionDetail = useSessionStore((s) => s.setActiveSessionDetail);
   const searchParams = useSearchParams();
   const router = useRouter();
   const [prd, setPrd] = useState<PrdData | null>(null);
@@ -1034,6 +1097,14 @@ function PrdPage() {
   const regenCount = sessionDetail?.state?.state?.regeneration_counts?.["prd"] ?? 0;
   const regenLimitReached = regenCount >= 3;
   const regenLeft = Math.max(0, 3 - regenCount);
+  const prdSourceEvidence = useMemo(
+    () => collectPrdResearchEvidence(sessionDetail?.state?.state?.outputs),
+    [sessionDetail]
+  );
+  const prdSourceDocumentCount = useMemo(
+    () => countUniqueEvidenceSources(prdSourceEvidence),
+    [prdSourceEvidence]
+  );
 
   // ── Load existing PRD from memory_entries on mount ──
   useEffect(() => {
@@ -1048,6 +1119,7 @@ function PrdPage() {
     setLinearNotConnected(false);
     setFeedback([]);
     setFeedbackLoadError(null);
+    setActiveSessionDetail(null);
     if (!activeSessionId) return;
     let cancelled = false;
 
@@ -1075,11 +1147,14 @@ function PrdPage() {
       .then((d) => {
         if (!cancelled) {
           setSessionDetail(d);
+          setActiveSessionDetail(d);
           const lp = d?.state?.state?.outputs?.linear_payload as LinearPayload | undefined;
           if (lp) setLinearPayload(lp);
         }
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setActiveSessionDetail(null);
+      });
 
     // Load PRD from memory_entries (separate from session state)
     fetch(`/api/sessions/${activeSessionId}/prd`)
@@ -1098,7 +1173,7 @@ function PrdPage() {
       .catch(() => {});
 
     return () => { cancelled = true; };
-  }, [activeSessionId]);
+  }, [activeSessionId, setActiveSessionDetail]);
 
   // Sync viewMode to URL without navigation
   useEffect(() => {
@@ -1182,7 +1257,9 @@ function PrdPage() {
             if (cits?.citations) setCitations(cits.citations as Record<string, string[]>);
             setFromSession(true);
             try {
-              setSessionDetail(await getSession(activeSessionId));
+              const d = await getSession(activeSessionId);
+              setSessionDetail(d);
+              setActiveSessionDetail(d);
             } catch {
               /* session refresh best-effort */
             }
@@ -1273,7 +1350,9 @@ function PrdPage() {
           setError(null);
           setInterruptedJobId(null);
           try {
-            setSessionDetail(await getSession(activeSessionId));
+            const d = await getSession(activeSessionId);
+            setSessionDetail(d);
+            setActiveSessionDetail(d);
           } catch {
             /* best-effort */
           }
@@ -1885,6 +1964,8 @@ function PrdPage() {
                 </div>
               )}
 
+              <PipelineTrace stepKey="prd" />
+
               {/* Section cards */}
               {PRD_SECTIONS.map(({ key, title }) => {
                 if (!SECTION_VISIBILITY[viewMode].includes(key)) return null;
@@ -1912,6 +1993,18 @@ function PrdPage() {
                   />
                 );
               })}
+
+              <section className="mt-6 rounded-xl border border-stone-200 bg-white p-5">
+                <div className="mb-4">
+                  <h2 className="text-base font-semibold text-stone-950">
+                    Sources cited
+                  </h2>
+                  <p className="mt-1 text-sm text-stone-600">
+                    This PRD was generated from {prdSourceDocumentCount} source documents.
+                  </p>
+                </div>
+                <EvidencePanel evidence={prdSourceEvidence} />
+              </section>
             </div>
 
             {/* Feedback Panel */}

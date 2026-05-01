@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
 import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
 import { QualityBadge } from "@/components/pipeline/QualityBadge";
-import { CitationBadge } from "@/components/pipeline/CitationBadge";
-import { EvidencePanelWithTrigger } from "@/components/pipeline/EvidencePanel";
+import { PipelineTrace } from "@/components/pipeline/PipelineTrace";
+import { EvidencePanel } from "@/components/pipeline/EvidencePanel";
 import { getSession } from "@/lib/api/session";
 import type { SessionDetail } from "@/lib/api/session";
 import {
@@ -20,6 +20,7 @@ import { runPipelineStepOrFull } from "@/lib/run-pipeline-client";
 import { useOrphanedPipeline } from "@/lib/use-orphaned-pipeline";
 import { OrphanedPipelineModal } from "@/components/ui/orphaned-pipeline-modal";
 import { ConversationPanel } from "@/components/ui/conversation-panel";
+import { useSessionStore } from "@/lib/store/session-store";
 import {
   adaptFeatures,
   describeFeaturesEmptyState,
@@ -105,6 +106,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 
 export default function FeaturesPage() {
   const router = useRouter();
+  const setActiveSessionDetail = useSessionStore((s) => s.setActiveSessionDetail);
   const [features, setFeatures] = useState<Feature[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -132,12 +134,14 @@ export default function FeaturesPage() {
     setError(null);
     setFromSession(false);
     setSessionDetail(null);
+    setActiveSessionDetail(null);
     if (!activeSessionId) return;
     let cancelled = false;
     getSession(activeSessionId)
       .then((d) => {
         if (cancelled) return;
         setSessionDetail(d);
+        setActiveSessionDetail(d);
         const out = d.state?.state?.outputs as
           | Record<string, unknown>
           | undefined;
@@ -153,12 +157,15 @@ export default function FeaturesPage() {
         }
       })
       .catch(() => {
-        if (!cancelled) setSessionDetail(null);
+        if (!cancelled) {
+          setSessionDetail(null);
+          setActiveSessionDetail(null);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [activeSessionId]);
+  }, [activeSessionId, setActiveSessionDetail]);
 
   async function handleGenerate() {
     setGenerating(true);
@@ -191,7 +198,9 @@ export default function FeaturesPage() {
       }
       if (activeSessionId) {
         try {
-          setSessionDetail(await getSession(activeSessionId));
+          const d = await getSession(activeSessionId);
+          setSessionDetail(d);
+          setActiveSessionDetail(d);
         } catch {
           /* ignore */
         }
@@ -219,6 +228,12 @@ export default function FeaturesPage() {
         fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
       }}
     >
+      <style>{`
+        @media (max-width: 768px) {
+          .features-two-col { flex-direction: column; }
+          .features-list-panel { width: 100% !important; min-height: 240px; max-height: 40vh; border-right: none !important; border-bottom: 1px solid #E4DDD4; }
+        }
+      `}</style>
       <Sidebar />
 
       {/* Main area */}
@@ -378,10 +393,10 @@ export default function FeaturesPage() {
           </div>
         ) : (
           /* ── Two-column layout ── */
-          <div className="flex-1 flex min-h-0">
+          <div className="flex-1 flex min-h-0 features-two-col">
             {/* Left: Features list */}
             <div
-              className="flex-shrink-0 flex flex-col overflow-y-auto"
+              className="flex-shrink-0 flex flex-col overflow-y-auto features-list-panel"
               style={{
                 width: 320,
                 borderRight: "1px solid #E4DDD4",
@@ -638,6 +653,11 @@ export default function FeaturesPage() {
                     </p>
                   </div>
 
+                  <div className="mb-5 border-t border-stone-200 pt-[18px]">
+                    <SectionLabel>Evidence Trace</SectionLabel>
+                    <EvidencePanel evidence={selectedFeature.researchEvidence ?? []} />
+                  </div>
+
                   {/* Linked Problem */}
                   <div
                     style={{
@@ -685,33 +705,6 @@ export default function FeaturesPage() {
                     </p>
                   </div>
 
-                  {/* Evidence */}
-                  {(selectedFeature.source_ids?.length ?? 0) > 0 && (
-                    <div
-                      style={{
-                        paddingTop: 18,
-                        borderTop: "1px solid #E4DDD4",
-                        marginBottom: 20,
-                      }}
-                    >
-                      <SectionLabel>Evidence</SectionLabel>
-                      <div style={{ marginTop: 8 }}>
-                        <EvidencePanelWithTrigger
-                          sourceIds={selectedFeature.source_ids!}
-                          citationConfidence={
-                            selectedFeature.citation_confidence as
-                              | "high"
-                              | "medium"
-                              | "insufficient"
-                              | undefined
-                          }
-                          researchEvidence={selectedFeature.reasoning}
-                          itemTitle={selectedFeature.title}
-                        />
-                      </div>
-                    </div>
-                  )}
-
                   {/* Success Metrics */}
                   <div
                     style={{
@@ -738,6 +731,8 @@ export default function FeaturesPage() {
                       ))}
                     </div>
                   </div>
+
+                  <PipelineTrace stepKey="features" />
 
                   {/* CTA */}
                   <button

@@ -691,24 +691,46 @@ export function QueryPanel({ sessionId }: QueryPanelProps) {
       </div>
 
       {/* Evidence drawer — opens when a cited source is clicked */}
-      {selectedSourceId && (
-        <EvidencePanel
-          sourceIds={[selectedSourceId]}
-          citationConfidence={undefined}
-          researchEvidence=""
-          itemTitle={
-            resolvedSources.find((s) => s.id === selectedSourceId)?.title ??
-            "Research Source"
-          }
-          resolvedEntries={
-            resolvedSources.find((s) => s.id === selectedSourceId)
-              ? [resolvedSources.find((s) => s.id === selectedSourceId)!]
-              : undefined
-          }
-          open={true}
-          onClose={() => setSelectedSourceId(null)}
-        />
-      )}
+      {selectedSourceId && (() => {
+        const filteredEvidence = resolvedSources
+          .filter((source) => source.id === selectedSourceId)
+          .map((source) => ({
+            title: source.title,
+            content: source.content,
+            source: source.type,
+          }));
+        return (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-stone-950/35 p-6"
+            onClick={() => setSelectedSourceId(null)}
+          >
+            <div
+              className="w-full max-w-xl rounded-xl bg-white p-4 shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="text-sm font-semibold text-stone-950">
+                  Research Source
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedSourceId(null)}
+                  className="rounded-md border border-stone-200 px-2 py-1 text-xs font-semibold text-stone-600 hover:border-stone-400 hover:text-stone-950"
+                >
+                  Close
+                </button>
+              </div>
+              {filteredEvidence.length > 0 ? (
+                <EvidencePanel evidence={filteredEvidence} />
+              ) : (
+                <p style={{ fontSize: 13, color: '#78716C', fontStyle: 'italic', padding: '12px 0' }}>
+                  Source unavailable — the referenced document could not be loaded.
+                </p>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </>
   );
 }

@@ -4,8 +4,9 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
 import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
-import { CitationBadge } from "@/components/pipeline/CitationBadge";
+import { EvidencePanel } from "@/components/pipeline/EvidencePanel";
 import { QualityBadge } from "@/components/pipeline/QualityBadge";
+import { PipelineTrace } from "@/components/pipeline/PipelineTrace";
 import { getSession } from "@/lib/api/session";
 import type { SessionDetail } from "@/lib/api/session";
 import {
@@ -19,6 +20,7 @@ import { runPipelineStepOrFull } from "@/lib/run-pipeline-client";
 import { useOrphanedPipeline } from "@/lib/use-orphaned-pipeline";
 import { OrphanedPipelineModal } from "@/components/ui/orphaned-pipeline-modal";
 import { ConversationPanel } from "@/components/ui/conversation-panel";
+import { useSessionStore } from "@/lib/store/session-store";
 import { adaptDecomposition } from "@/lib/pipeline-contracts";
 import type {
   DecompositionViewModel as Decomposition,
@@ -107,6 +109,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 export default function DecomposePage() {
   const router = useRouter();
   const { activeSessionId } = useActiveSession();
+  const setActiveSessionDetail = useSessionStore((s) => s.setActiveSessionDetail);
   const [decomposition, setDecomposition] = useState<Decomposition | null>(
     null
   );
@@ -132,12 +135,14 @@ export default function DecomposePage() {
     setError(null);
     setFromSession(false);
     setSessionDetail(null);
+    setActiveSessionDetail(null);
     if (!activeSessionId) return;
     let cancelled = false;
     getSession(activeSessionId)
       .then((d) => {
         if (cancelled) return;
         setSessionDetail(d);
+        setActiveSessionDetail(d);
         const out = d.state?.state?.outputs as
           | Record<string, unknown>
           | undefined;
@@ -149,12 +154,15 @@ export default function DecomposePage() {
         }
       })
       .catch(() => {
-        if (!cancelled) setSessionDetail(null);
+        if (!cancelled) {
+          setSessionDetail(null);
+          setActiveSessionDetail(null);
+        }
       });
     return () => {
       cancelled = true;
     };
-  }, [activeSessionId]);
+  }, [activeSessionId, setActiveSessionDetail]);
 
   async function handleGenerate() {
     setGenerating(true);
@@ -179,7 +187,9 @@ export default function DecomposePage() {
       setDecomposition(adaptDecomposition(data, sessionState));
       if (activeSessionId) {
         try {
-          setSessionDetail(await getSession(activeSessionId));
+          const d = await getSession(activeSessionId);
+          setSessionDetail(d);
+          setActiveSessionDetail(d);
         } catch {
           /* ignore */
         }
@@ -466,7 +476,8 @@ export default function DecomposePage() {
             </span>
           </div>
         ) : (
-          // Three-column layout
+          <>
+          {/* Three-column layout */}
           <div
             style={{
               flex: 1,
@@ -566,6 +577,11 @@ export default function DecomposePage() {
                         {comp.description}
                       </p>
 
+                      <div className="mt-4">
+                        <SectionLabel>Evidence Trace</SectionLabel>
+                        <EvidencePanel evidence={comp.researchEvidence ?? []} />
+                      </div>
+
                       {/* Elements */}
                       <SectionLabel>Elements</SectionLabel>
                       <ul
@@ -655,6 +671,11 @@ export default function DecomposePage() {
                       }}
                     >
                       {entity.name}
+                    </div>
+
+                    <div className="mb-4">
+                      <SectionLabel>Evidence Trace</SectionLabel>
+                      <EvidencePanel evidence={entity.researchEvidence ?? []} />
                     </div>
 
                     {/* Fields table */}
@@ -850,6 +871,11 @@ export default function DecomposePage() {
                           {step.description}
                         </p>
 
+                        <div className="mt-4">
+                          <SectionLabel>Evidence Trace</SectionLabel>
+                          <EvidencePanel evidence={step.researchEvidence ?? []} />
+                        </div>
+
                         {/* Outputs */}
                         {step.outputs.length > 0 && (
                           <>
@@ -888,6 +914,17 @@ export default function DecomposePage() {
               </div>
             </div>
           </div>
+          <div
+            style={{
+              flexShrink: 0,
+              padding: "10px 16px 14px",
+              borderTop: "1px solid #E4DDD4",
+              background: "#FFFFFF",
+            }}
+          >
+            <PipelineTrace stepKey="decompose" />
+          </div>
+          </>
         )}
       </div>
       <OrphanedPipelineModal

@@ -269,7 +269,9 @@ function priorityColor(priority?: string): string {
 
 function toStringLines(val: unknown): string[] {
   if (!val) return [];
-  if (Array.isArray(val)) return val.map(String);
+  if (Array.isArray(val)) return val.map(item =>
+    typeof item === 'string' ? item : JSON.stringify(item)
+  );
   if (typeof val === 'string') return val.split('\n').filter(Boolean);
   if (typeof val === 'object') return [JSON.stringify(val, null, 2)];
   return [String(val)];
@@ -290,16 +292,22 @@ function GoalsTable({ goals }: { goals: PRDGoal[] | string | undefined }) {
   if (typeof goals === 'string') {
     return <Text style={styles.bodyText}>{goals}</Text>;
   }
+  const hasGoal = goals.some(g => g.goal != null);
+  const hasTimeline = goals.some(g => g.timeline != null);
   return (
     <View>
       <View style={styles.tableHeaderRow}>
+        {hasGoal && <Text style={[styles.tableCellLeft, styles.tableCellHeader]}>Goal</Text>}
         <Text style={[styles.tableCellLeft, styles.tableCellHeader]}>Metric</Text>
         <Text style={[styles.tableCellRight, styles.tableCellHeader]}>Target</Text>
+        {hasTimeline && <Text style={[styles.tableCellRight, styles.tableCellHeader]}>Timeline</Text>}
       </View>
       {goals.map((g, i) => (
         <View key={i} style={styles.tableRow}>
+          {hasGoal && <Text style={styles.tableCellLeft}>{g.goal ?? '—'}</Text>}
           <Text style={styles.tableCellLeft}>{g.metric ?? '—'}</Text>
           <Text style={styles.tableCellRight}>{g.target ?? '—'}</Text>
+          {hasTimeline && <Text style={styles.tableCellRight}>{g.timeline ?? '—'}</Text>}
         </View>
       ))}
     </View>
@@ -330,16 +338,22 @@ function MetricsTable({ metrics }: { metrics: PRDMetric[] | string | undefined }
   if (typeof metrics === 'string') {
     return <Text style={styles.bodyText}>{metrics}</Text>;
   }
+  const hasBaseline = metrics.some(m => m.baseline != null);
+  const hasMeasurement = metrics.some(m => m.measurement != null);
   return (
     <View>
       <View style={styles.tableHeaderRow}>
         <Text style={[styles.tableCellLeft, styles.tableCellHeader]}>Metric</Text>
+        {hasBaseline && <Text style={[styles.tableCellRight, styles.tableCellHeader]}>Baseline</Text>}
         <Text style={[styles.tableCellRight, styles.tableCellHeader]}>Target</Text>
+        {hasMeasurement && <Text style={[styles.tableCellRight, styles.tableCellHeader]}>Measurement</Text>}
       </View>
       {metrics.map((m, i) => (
         <View key={i} style={styles.tableRow}>
           <Text style={styles.tableCellLeft}>{m.metric ?? '—'}</Text>
+          {hasBaseline && <Text style={styles.tableCellRight}>{m.baseline ?? '—'}</Text>}
           <Text style={styles.tableCellRight}>{m.target ?? '—'}</Text>
+          {hasMeasurement && <Text style={styles.tableCellRight}>{m.measurement ?? '—'}</Text>}
         </View>
       ))}
     </View>
@@ -354,7 +368,7 @@ function FeaturesList({ features }: { features: PRDFeature[] | undefined }) {
         <View key={i} style={styles.listItem}>
           <Text style={styles.listNumber}>{i + 1}.</Text>
           <View style={styles.listContent}>
-            <Text style={styles.listItemTitle}>{f.name ?? 'Untitled'}</Text>
+            <Text style={styles.listItemTitle}>{f.title ?? f.name ?? 'Untitled'}</Text>
             {f.description ? (
               <Text style={styles.listItemDesc}>{f.description}</Text>
             ) : null}

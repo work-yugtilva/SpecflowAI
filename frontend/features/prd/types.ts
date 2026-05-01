@@ -1,11 +1,14 @@
 export interface PRDGoal {
+  goal?: string;
   metric: string;
   target: string;
+  timeline?: string;
   baseline?: string;
 }
 
 export interface PRDFeature {
-  name: string;
+  title: string;
+  name?: string;
   description: string;
   priority?: string;
   [key: string]: unknown;
@@ -21,7 +24,9 @@ export interface PRDTask {
 
 export interface PRDMetric {
   metric: string;
+  baseline?: string;
   target: string;
+  measurement?: string;
 }
 
 export interface PRDArchitecture {
