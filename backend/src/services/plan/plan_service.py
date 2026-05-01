@@ -47,7 +47,7 @@ COST_CENTS: dict[str, int] = {
 }
 
 # Free plan step budget: 2 full runs × 4 pipeline steps
-# TODO: revert to 8 after testing
+
 FREE_PLAN_STEP_LIMIT: int = 8
 
 _VALID_PLANS = set(PLAN_LIMITS.keys())
