@@ -3,7 +3,30 @@ import { Providers } from "./providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "SpecFlow — AI-powered product discovery",
+  title: "SpecFlow AI — AI-Powered Product Management",
+  description:
+    "SpecFlow AI helps product managers go from raw research to a full PRD in minutes. Your AI-powered PM co-pilot.",
+  openGraph: {
+    title: "SpecFlow AI — AI-Powered Product Management",
+    description: "Go from research to PRD in minutes with AI.",
+    url: "https://www.specflowai.com",
+    siteName: "SpecFlow AI",
+    images: [
+      {
+        url: "https://www.specflowai.com/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "SpecFlow AI",
+      },
+    ],
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "SpecFlow AI",
+    description: "Go from research to PRD in minutes with AI.",
+    images: ["https://www.specflowai.com/og-image.png"],
+  },
 };
 
 export default function RootLayout({
@@ -21,16 +44,6 @@ export default function RootLayout({
         <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300..700&display=swap" rel="stylesheet" />
         <link href="https://fonts.googleapis.com" rel="preconnect" />
         <link crossOrigin="anonymous" href="https://fonts.gstatic.com" rel="preconnect" />
-        <meta
-          content="SpecFlow turns customer signals into product briefs in under 12 minutes."
-          name="description"
-        />
-        <meta content="SpecFlow — AI-powered product discovery" property="og:title" />
-        <meta
-          content="From 4 days to 12 minutes. SpecFlow synthesizes customer signals into complete feature briefs."
-          property="og:description"
-        />
-        <meta content="/og-image.png" property="og:image" />
         <link href="/favicon.svg" rel="icon" type="image/svg+xml" />
         <script
           dangerouslySetInnerHTML={{

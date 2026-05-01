@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /onboarding
+Disallow: /aether-flow
+Disallow: /settings
+
+Sitemap: https://www.specflowai.com/sitemap.xml
