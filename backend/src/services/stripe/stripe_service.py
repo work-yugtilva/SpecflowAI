@@ -131,6 +131,7 @@ class StripeService:
                         plan=plan,
                         stripe_customer_id=event_object.get("customer"),
                         stripe_subscription_id=self._event_value(event_object, "id"),
+                        payment_past_due=False,
                     )
 
         elif event_type == "customer.subscription.deleted":
@@ -145,6 +146,17 @@ class StripeService:
                     stripe_customer_id=event_object.get("customer"),
                     stripe_subscription_id=None,
                     step_runs_used=0,
+                )
+
+        elif event_type == "invoice.payment_failed":
+            row = await self._get_plan_row_by_subscription_or_customer(
+                subscription_id=event_object.get("subscription"),
+                customer_id=event_object.get("customer"),
+            )
+            if row and row.get("user_id"):
+                await self._update_plan_row(
+                    str(row["user_id"]),
+                    payment_past_due=True,
                 )
 
         return {"received": True}

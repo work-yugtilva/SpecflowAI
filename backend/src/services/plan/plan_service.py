@@ -129,6 +129,12 @@ class PlanService:
         plan = _normalize_plan(row.get("plan"))
         limits = PLAN_LIMITS.get(plan, PLAN_LIMITS["free"])
 
+        if row.get("payment_past_due"):
+            raise HTTPException(
+                status_code=402,
+                detail="Payment failed. Please update your billing info.",
+            )
+
         if plan == "free":
             runs_used = row.get("pipeline_runs_used", 0)
             steps_used = row.get("step_runs_used", 0)
