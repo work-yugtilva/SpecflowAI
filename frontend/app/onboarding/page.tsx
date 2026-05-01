@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
+import { posthog } from "@/lib/posthog";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -129,6 +130,7 @@ export default function OnboardingPage() {
     } catch (e) {
       console.error("Onboarding profile save error:", e);
     }
+    posthog.capture("onboarding_completed");
     router.push("/dashboard");
   }
 

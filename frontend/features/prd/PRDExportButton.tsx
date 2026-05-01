@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { castToPRDExportData } from './types';
+import { posthog } from '@/lib/posthog';
 import { safeFilename } from '@/lib/artifact-export';
 
 interface PRDExportButtonProps {
@@ -50,6 +51,7 @@ export function PRDExportButton({ prd, productName }: PRDExportButtonProps) {
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
+        posthog.capture("prd_exported_pdf");
       } finally {
         URL.revokeObjectURL(url);
       }

@@ -37,6 +37,7 @@ import {
   safeFilename,
 } from "@/lib/artifact-export";
 import type { ResearchEvidence } from "@/lib/pipeline-contracts";
+import { posthog } from "@/lib/posthog";
 const TextShimmer = dynamic(
   () => import("@/components/ui/text-shimmer").then((m) => m.TextShimmer)
 );
@@ -1107,6 +1108,10 @@ function PrdPage() {
   );
 
   // ── Load existing PRD from memory_entries on mount ──
+  useEffect(() => {
+    posthog.capture("prd_viewed");
+  }, []);
+
   useEffect(() => {
     setPrd(null);
     setQualityScore(null);

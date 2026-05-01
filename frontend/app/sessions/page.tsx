@@ -56,6 +56,7 @@ import {
   type SourceReadinessCounts,
 } from "@/lib/session-home";
 
+import { posthog } from "@/lib/posthog";
 const LS_KEY = "specflow_sessions";
 
 const CONTEXT_PREVIEW_CONFIG = {
@@ -653,6 +654,7 @@ export default function SessionsPage() {
     setIsCreatingSession(true);
     try {
       const result = await createSession(newSessionName.trim());
+      posthog.capture("session_created");
       setSessionMode(getLastSessionMode());
       const stored: StoredSession = {
         session_id: result.session_id,
@@ -746,6 +748,7 @@ export default function SessionsPage() {
   const handleRun = useCallback(
     async (step?: string) => {
       if (!selectedId) return;
+      posthog.capture("pipeline_run_started");
       setRunError(null);
 
       const inputData = await buildInputData(selectedId);
