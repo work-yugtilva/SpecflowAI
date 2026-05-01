@@ -544,6 +544,39 @@ export function Sidebar() {
             flexShrink: 0,
           }}
         >
+          <a
+            href="mailto:yashvardhan@specflowai.com?subject=SpecFlow Support"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              width: "100%",
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              padding: "7px 10px",
+              borderRadius: 7,
+              fontSize: 13,
+              color: "#9E9E9E",
+              background: "transparent",
+              textDecoration: "none",
+              fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+              transition: "background 120ms ease, color 120ms ease",
+              marginBottom: 2,
+            }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLAnchorElement).style.background = "rgba(0,0,0,0.04)";
+              (e.currentTarget as HTMLAnchorElement).style.color = "#0D0D0D";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLAnchorElement).style.background = "transparent";
+              (e.currentTarget as HTMLAnchorElement).style.color = "#9E9E9E";
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M2 3.5h10M2 3.5l5 4.5 5-4.5M2 3.5v7a1 1 0 001 1h8a1 1 0 001-1v-7" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            Help &amp; feedback
+          </a>
           <button
             type="button"
             onClick={async () => {
