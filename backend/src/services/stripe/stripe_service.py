@@ -159,6 +159,21 @@ class StripeService:
                     payment_past_due=True,
                 )
 
+        elif event_type == "invoice.paid":
+            # Only reset on subscription renewals, not the first invoice (covered by checkout.session.completed)
+            billing_reason = event_object.get("billing_reason")
+            if billing_reason == "subscription_cycle":
+                customer_id = event_object.get("customer")
+                row = await self._get_plan_row_by_subscription_or_customer(
+                    subscription_id=event_object.get("subscription"),
+                    customer_id=customer_id,
+                )
+                if row and row.get("user_id"):
+                    await self._update_plan_row(
+                        str(row["user_id"]),
+                        api_credit_used_cents=0,
+                    )
+
         return {"received": True}
 
     async def _get_plan_row(self, user_id: str) -> dict[str, Any]:
