@@ -656,11 +656,16 @@ async def remove_user_integration(
 async def run_pipeline(request: Request, req: RunRequest, auth: SupabaseUser = Depends(require_auth)):
     try:
         logger.info("[pipeline] Starting run | project_id=%s", req.project_id)
+        plan_svc = PlanService()
+        await plan_svc.check_limit(auth.user_id, is_full_run=True)
         pipeline = Pipeline()
         result = await pipeline.run(req.input_data, req.project_id)
+        await plan_svc.record_usage(auth.user_id, is_full_run=True)
         logger.info("[pipeline] Run complete | keys=%s", list(result.keys()))
         return {"success": True, "data": result}
     except ValueError:
+        raise
+    except HTTPException:
         raise
     except Exception as e:
         logger.exception("[pipeline] Error")
