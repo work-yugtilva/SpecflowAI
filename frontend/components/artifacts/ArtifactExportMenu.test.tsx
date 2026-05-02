@@ -128,6 +128,7 @@ describe("ArtifactExportMenu", () => {
     await waitFor(() =>
       expect(screen.getByRole("button")).toHaveTextContent("Copy failed")
     );
+    expect(screen.getByRole("button")).toHaveStyle({ color: "#EF4444" });
   });
 
   it("shows description and badge on menu items", () => {

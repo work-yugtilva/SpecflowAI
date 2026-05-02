@@ -25,17 +25,24 @@ export default function LinearIntegrationCard({
   const [error, setError] = useState<string | null>(null);
 
   async function handleDisconnect() {
+    if (disconnecting) return;
     setDisconnecting(true);
     setConnected(false); // optimistic
     setError(null);
 
-    const res = await fetch("/api/auth/linear/disconnect", { method: "DELETE" });
-    if (!res.ok) {
+    try {
+      const res = await fetch("/api/auth/linear/disconnect", { method: "DELETE" });
+      if (!res.ok) {
+        setConnected(true); // revert
+        const body = await res.json().catch(() => ({}));
+        setError((body as { error?: string }).error ?? "Failed to disconnect. Please try again.");
+      }
+    } catch {
       setConnected(true); // revert
-      const body = await res.json().catch(() => ({}));
-      setError((body as { error?: string }).error ?? "Failed to disconnect. Please try again.");
+      setError("Failed to disconnect. Please try again.");
+    } finally {
+      setDisconnecting(false);
     }
-    setDisconnecting(false);
   }
 
   // Derive a human-readable workspace label if available

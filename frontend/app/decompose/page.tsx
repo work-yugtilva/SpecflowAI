@@ -431,17 +431,19 @@ export default function DecomposePage() {
             </div>
             <button
               onClick={handleGenerate}
-              disabled={!error && !activeSessionId}
+              disabled={generating || (!error && !activeSessionId)}
               className="btn-dark"
               style={{
                 fontSize: "0.8125rem",
                 padding: "0.45rem 1rem",
                 marginTop: 4,
-                opacity: !error && !activeSessionId ? 0.6 : 1,
-                cursor: !error && !activeSessionId ? "not-allowed" : "pointer",
+                opacity: generating || (!error && !activeSessionId) ? 0.6 : 1,
+                cursor: generating || (!error && !activeSessionId) ? "not-allowed" : "pointer",
               }}
             >
-              {error
+              {generating
+                ? "Decomposing..."
+                : error
                 ? "Retry"
                 : !activeSessionId
                   ? "Select a session in Sessions"

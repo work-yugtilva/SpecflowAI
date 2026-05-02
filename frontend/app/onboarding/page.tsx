@@ -1,7 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { posthog } from "@/lib/posthog";
@@ -74,10 +73,10 @@ function FormField({
 // ─── Onboarding Page ──────────────────────────────────────────────────────────
 
 export default function OnboardingPage() {
-  const router = useRouter();
   const [form, setForm] = useState<FormData>(INITIAL_FORM);
   const [errors, setErrors] = useState<FormErrors>({});
   const [attempted, setAttempted] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
   // Validity check for enabling the CTA
   const isValid = Boolean(
@@ -111,6 +110,7 @@ export default function OnboardingPage() {
   async function handleSubmit() {
     setAttempted(true);
     if (!validate(form)) return;
+    setSubmitting(true);
     try {
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
@@ -127,11 +127,12 @@ export default function OnboardingPage() {
         }, { onConflict: "user_id" });
         if (profileError) console.error("Failed to save onboarding profile:", profileError);
       }
+      posthog.capture("onboarding_completed");
     } catch (e) {
       console.error("Onboarding profile save error:", e);
+      setSubmitting(false);
     }
-    posthog.capture("onboarding_completed");
-    router.push("/dashboard");
+    window.location.href = "/dashboard";
   }
 
   // Shared input style (no icon prefix offset)
@@ -354,17 +355,17 @@ export default function OnboardingPage() {
           {/* CTA */}
           <button
             onClick={handleSubmit}
-            disabled={!isValid}
+            disabled={!isValid || submitting}
             className="btn-dark w-full mt-2"
             style={{
-              opacity: isValid ? 1 : 0.38,
-              cursor: isValid ? "pointer" : "not-allowed",
+              opacity: isValid && !submitting ? 1 : 0.38,
+              cursor: isValid && !submitting ? "pointer" : "not-allowed",
               transition: "opacity 200ms ease",
               fontSize: "0.9375rem",
               padding: "0.75rem 1.5rem",
             }}
           >
-            Continue →
+            {submitting ? "Setting up..." : "Continue →"}
           </button>
         </div>
       </div>

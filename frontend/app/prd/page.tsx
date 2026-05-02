@@ -247,6 +247,7 @@ function InlineEvidenceSummary({ sourceIds }: { sourceIds: string[] }) {
   const [expanded, setExpanded] = useState(false);
   const [entries, setEntries] = useState<ResolvedEntry[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   if (!sourceIds.length) return null;
 
@@ -255,9 +256,15 @@ function InlineEvidenceSummary({ sourceIds }: { sourceIds: string[] }) {
     setExpanded(next);
     if (next && entries === null) {
       setLoading(true);
-      const result = await resolveResearchEntries(sourceIds);
-      setEntries(result);
-      setLoading(false);
+      setError(null);
+      try {
+        const result = await resolveResearchEntries(sourceIds);
+        setEntries(result);
+      } catch {
+        setError("Failed to load sources.");
+      } finally {
+        setLoading(false);
+      }
     }
   }
 
@@ -265,9 +272,11 @@ function InlineEvidenceSummary({ sourceIds }: { sourceIds: string[] }) {
     <div style={{ marginTop: 6 }}>
       <button
         onClick={handleToggle}
+        disabled={loading}
         style={{
           background: "none", border: "none", padding: 0,
-          cursor: "pointer", fontSize: 11, color: "#E8561B",
+          cursor: loading ? "not-allowed" : "pointer", fontSize: 11, color: "#E8561B",
+          opacity: loading ? 0.65 : 1,
           display: "flex", alignItems: "center", gap: 4,
           fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
         }}
@@ -282,7 +291,9 @@ function InlineEvidenceSummary({ sourceIds }: { sourceIds: string[] }) {
       </button>
       {expanded && (
         <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
-          {loading ? (
+          {error ? (
+            <div style={{ fontSize: 11, color: "#EF4444", fontStyle: "italic" }}>{error}</div>
+          ) : loading ? (
             <div style={{ fontSize: 11, color: "#9E9E9E", fontStyle: "italic" }}>Loading sources…</div>
           ) : (entries ?? []).length === 0 ? (
             <div style={{ fontSize: 11, color: "#9E9E9E", fontStyle: "italic" }}>No source details available.</div>
@@ -319,6 +330,7 @@ function FeatureItem({
   const [type, setType] = useState<FeedbackType>(DEFAULT_FEEDBACK_TYPE);
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [feedbackError, setFeedbackError] = useState<string | null>(null);
 
   const existingFeedback = feedback?.find((f) => f.prd_item_title === item.title);
   const sourceIds = Array.isArray(item.source_ids) ? item.source_ids : [];
@@ -333,8 +345,9 @@ function FeatureItem({
   };
 
   async function handleSubmit() {
-    if (!sessionId || !onAddFeedback) return;
+    if (!sessionId || !onAddFeedback || submitting) return;
     setSubmitting(true);
+    setFeedbackError(null);
     try {
       const entry = await createFeedback(sessionId, {
         prd_section: "features",
@@ -348,7 +361,7 @@ function FeatureItem({
       setShowForm(false);
       setNote("");
     } catch (err) {
-      console.error("Failed to submit feedback", err);
+      setFeedbackError(err instanceof Error ? err.message : "Failed to submit feedback");
     } finally {
       setSubmitting(false);
     }
@@ -478,6 +491,11 @@ function FeatureItem({
               {submitting ? "Saving..." : "Save Outcome"}
             </button>
           </div>
+          {feedbackError && (
+            <div style={{ marginTop: 8, fontSize: 11, color: "#EF4444" }}>
+              {feedbackError}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1079,6 +1097,8 @@ function PrdPage() {
     urlView === "engineering" || urlView === "executive" ? urlView : "full"
   );
   const [copied, setCopied] = useState(false);
+  const [copyingLink, setCopyingLink] = useState(false);
+  const [exportingMarkdown, setExportingMarkdown] = useState(false);
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [aiEditingKey, setAiEditingKey] = useState<string | null>(null);
   const [aiEditedSections, setAiEditedSections] = useState<Set<string>>(new Set());
@@ -1093,6 +1113,8 @@ function PrdPage() {
   const [chatOpen, setChatOpen] = useState(false);
   const [interruptedJobId, setInterruptedJobId] = useState<string | null>(null);
   const [resuming, setResuming] = useState(false);
+  const [feedbackDeletingId, setFeedbackDeletingId] = useState<string | null>(null);
+  const [feedbackActionError, setFeedbackActionError] = useState<string | null>(null);
 
   const stepStatuses = computeStepStatuses(sessionDetail);
   const regenCount = sessionDetail?.state?.state?.regeneration_counts?.["prd"] ?? 0;
@@ -1459,7 +1481,9 @@ function PrdPage() {
 
   // ── Export markdown ──
   async function handleExportMarkdown() {
-    if (!activeSessionId) return;
+    if (!activeSessionId || exportingMarkdown) return;
+    setExportingMarkdown(true);
+    setError(null);
     try {
       const res = await fetch(`/api/sessions/${activeSessionId}/prd/export?view=${viewMode}`);
       if (!res.ok) {
@@ -1482,6 +1506,37 @@ function PrdPage() {
       URL.revokeObjectURL(url);
     } catch {
       setError("Export failed");
+    } finally {
+      setExportingMarkdown(false);
+    }
+  }
+
+  async function handleCopyLink() {
+    if (copyingLink) return;
+    setCopyingLink(true);
+    setError(null);
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      setError("Copy link failed");
+    } finally {
+      setCopyingLink(false);
+    }
+  }
+
+  async function handleDeleteFeedback(itemId: string) {
+    if (!activeSessionId || feedbackDeletingId) return;
+    setFeedbackDeletingId(itemId);
+    setFeedbackActionError(null);
+    try {
+      await deleteFeedback(activeSessionId, itemId);
+      setFeedback(prev => prev.filter(f => f.id !== itemId));
+    } catch (err) {
+      setFeedbackActionError(err instanceof Error ? err.message : "Failed to delete feedback");
+    } finally {
+      setFeedbackDeletingId(null);
     }
   }
 
@@ -1581,13 +1636,10 @@ function PrdPage() {
           <div className="flex items-center gap-3">
             {prd && (
               <>
-                <button
-                  onClick={() => {
-                    navigator.clipboard.writeText(window.location.href);
-                    setCopied(true);
-                    setTimeout(() => setCopied(false), 2000);
-                  }}
-                  style={{
+                  <button
+                    onClick={() => void handleCopyLink()}
+                    disabled={copyingLink}
+                    style={{
                     display: "inline-flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -1600,7 +1652,8 @@ function PrdPage() {
                     background: "#FFFFFF",
                     border: "1.5px solid #E4DDD4",
                     color: "#6B6B6B",
-                    cursor: "pointer",
+                      cursor: copyingLink ? "not-allowed" : "pointer",
+                      opacity: copyingLink ? 0.65 : 1,
                     fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
                     overflow: "hidden",
                     whiteSpace: "nowrap",
@@ -1610,8 +1663,8 @@ function PrdPage() {
                     <path d="M4.5 7.5a2.5 2.5 0 003.536-3.536L6.5 2.43A2.5 2.5 0 002.964 5.965" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
                     <path d="M7.5 4.5A2.5 2.5 0 003.964 8.036L5.5 9.57A2.5 2.5 0 009.036 6.035" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/>
                   </svg>
-                  {copied ? "Copied!" : "Copy Link"}
-                </button>
+                    {copyingLink ? "Copying..." : copied ? "Copied!" : "Copy Link"}
+                  </button>
                 <PRDExportButton prd={prd} />
                 <ArtifactExportMenu
                   disabled={!prd}
@@ -1637,10 +1690,11 @@ function PrdPage() {
                     },
                   ] : []}
                 />
-                <button
-                  onClick={handleExportMarkdown}
-                  title="Export as Markdown"
-                  style={{
+                  <button
+                    onClick={handleExportMarkdown}
+                    disabled={exportingMarkdown}
+                    title="Export as Markdown"
+                    style={{
                     display: "inline-flex",
                     alignItems: "center",
                     justifyContent: "center",
@@ -1653,7 +1707,8 @@ function PrdPage() {
                     background: "#FFFFFF",
                     border: "1.5px solid #E4DDD4",
                     color: "#6B6B6B",
-                    cursor: "pointer",
+                      cursor: exportingMarkdown ? "not-allowed" : "pointer",
+                      opacity: exportingMarkdown ? 0.65 : 1,
                     fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
                     overflow: "hidden",
                     whiteSpace: "nowrap",
@@ -1662,8 +1717,8 @@ function PrdPage() {
                   <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ opacity: 0.5, flexShrink: 0 }}>
                     <path d="M2 9h8M6 2v5M3.5 5.5L6 8l2.5-2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
-                  Export MD
-                </button>
+                    {exportingMarkdown ? "Exporting..." : "Export MD"}
+                  </button>
                 <button
                   onClick={() => setChatOpen(!chatOpen)}
                   style={{
@@ -1857,33 +1912,33 @@ function PrdPage() {
                 <span style={{ fontSize: 13, color: "#6B6B6B", textAlign: "center", maxWidth: 400 }}>{error}</span>
                 {interruptedJobId ? (
                   <div className="flex flex-col items-center gap-2" style={{ marginTop: 8 }}>
-                    <button
-                      onClick={handleResume}
+                      <button
+                        onClick={handleResume}
                       disabled={resuming || !activeSessionId}
                       className="btn-dark"
                       style={{ fontSize: 13, padding: "0.4rem 1rem" }}
                     >
                       {resuming ? "Checking..." : "Resume Generation"}
                     </button>
-                    <button
-                      onClick={() => { setInterruptedJobId(null); handleGenerate(); }}
-                      disabled={!activeSessionId || regenLimitReached}
-                      title={regenLimitReached ? "Limit reached. Use the editor." : undefined}
-                      style={{ fontSize: 12, color: "#6B6B6B", background: "none", border: "none", cursor: regenLimitReached ? "not-allowed" : "pointer", opacity: regenLimitReached ? 0.5 : 0.7, textDecoration: "underline" }}
-                    >
-                      Start Over
-                    </button>
+                      <button
+                        onClick={() => { setInterruptedJobId(null); void handleGenerate(); }}
+                        disabled={generating || !activeSessionId || regenLimitReached}
+                        title={regenLimitReached ? "Limit reached. Use the editor." : undefined}
+                        style={{ fontSize: 12, color: "#6B6B6B", background: "none", border: "none", cursor: generating || regenLimitReached ? "not-allowed" : "pointer", opacity: generating || regenLimitReached ? 0.5 : 0.7, textDecoration: "underline" }}
+                      >
+                        {generating ? "Starting..." : "Start Over"}
+                      </button>
                   </div>
                 ) : (
-                  <button
-                    onClick={() => handleGenerate()}
-                    disabled={!activeSessionId || regenLimitReached}
-                    title={regenLimitReached ? "Limit reached. Use the editor." : undefined}
-                    className="btn-dark"
-                    style={{ fontSize: 13, padding: "0.4rem 1rem", marginTop: 8, opacity: regenLimitReached ? 0.6 : 1, cursor: regenLimitReached ? "not-allowed" : "pointer" }}
-                  >
-                    Try Again
-                  </button>
+                    <button
+                      onClick={() => handleGenerate()}
+                      disabled={generating || !activeSessionId || regenLimitReached}
+                      title={regenLimitReached ? "Limit reached. Use the editor." : undefined}
+                      className="btn-dark"
+                      style={{ fontSize: 13, padding: "0.4rem 1rem", marginTop: 8, opacity: generating || regenLimitReached ? 0.6 : 1, cursor: generating || regenLimitReached ? "not-allowed" : "pointer" }}
+                    >
+                      {generating ? "Generating..." : "Try Again"}
+                    </button>
                 )}
               </div>
             ) : (
@@ -2119,27 +2174,26 @@ function PrdPage() {
                                       {item.outcome_note}
                                     </div>
                                   )}
-                                  <button
-                                    onClick={async () => {
-                                      try {
-                                        await deleteFeedback(activeSessionId!, item.id);
-                                        setFeedback(prev => prev.filter(f => f.id !== item.id));
-                                      } catch (err) {
-                                        console.error("Failed to delete", err);
-                                      }
-                                    }}
-                                    style={{
-                                      position: "absolute", top: 10, right: 10,
-                                      background: "none", border: "none", color: "#9E9E9E", cursor: "pointer",
-                                      padding: 2, borderRadius: 4
-                                    }}
-                                    title="Delete"
-                                  >
+                                    <button
+                                      onClick={() => void handleDeleteFeedback(item.id)}
+                                      disabled={feedbackDeletingId === item.id}
+                                      style={{
+                                        position: "absolute", top: 10, right: 10,
+                                        background: "none", border: "none", color: "#9E9E9E", cursor: feedbackDeletingId === item.id ? "not-allowed" : "pointer",
+                                        padding: 2, borderRadius: 4, opacity: feedbackDeletingId === item.id ? 0.5 : 1
+                                      }}
+                                      title={feedbackDeletingId === item.id ? "Deleting" : "Delete"}
+                                    >
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                       <path d="M18 6L6 18M6 6l12 12" />
                                     </svg>
-                                  </button>
-                                </div>
+                                    </button>
+                                    {feedbackActionError && feedbackDeletingId === null && (
+                                      <div style={{ marginTop: 8, fontSize: 11, color: "#EF4444" }}>
+                                        {feedbackActionError}
+                                      </div>
+                                    )}
+                                  </div>
                               ))}
                             </div>
                           </div>
@@ -2202,16 +2256,17 @@ function PrdPage() {
               >
                 Cancel
               </button>
-              <button
-                onClick={() => {
-                  setShowConfirmRegenerate(false);
-                  handleGenerate();
-                }}
-                className="btn-dark"
-                style={{ fontSize: 13, padding: "0.4rem 1rem" }}
-              >
-                Regenerate
-              </button>
+                <button
+                  onClick={() => {
+                    setShowConfirmRegenerate(false);
+                    void handleGenerate();
+                  }}
+                  disabled={generating}
+                  className="btn-dark"
+                  style={{ fontSize: 13, padding: "0.4rem 1rem", opacity: generating ? 0.65 : 1, cursor: generating ? "not-allowed" : "pointer" }}
+                >
+                  {generating ? "Regenerating..." : "Regenerate"}
+                </button>
             </div>
           </div>
         </div>

@@ -475,6 +475,8 @@ export default function SessionsPage() {
   const [handoffGenerating, setHandoffGenerating] = useState(false);
   const [handoffGenerateOk, setHandoffGenerateOk] = useState(false);
   const [handoffGenerateError, setHandoffGenerateError] = useState<string | null>(null);
+  const [handoffExporting, setHandoffExporting] = useState<"claude_md" | "cursor_rules" | "task_list" | null>(null);
+  const [handoffExportError, setHandoffExportError] = useState<string | null>(null);
   const selectedIdRef = useRef<string | null>(null);
   const handoffPanelRef = useRef<HTMLDivElement | null>(null);
   selectedIdRef.current = selectedId;
@@ -747,15 +749,16 @@ export default function SessionsPage() {
   // Run pipeline
   const handleRun = useCallback(
     async (step?: string) => {
-      if (!selectedId) return;
+      if (!selectedId || isRunning) return;
       posthog.capture("pipeline_run_started");
       setRunError(null);
+      setIsRunning(true);
 
-      const inputData = await buildInputData(selectedId);
+      try {
+        const inputData = await buildInputData(selectedId);
 
-      // Full run: save input for pipeline pages and navigate immediately
-      if (!step) {
-        try {
+        // Full run: save input for pipeline pages and navigate immediately
+        if (!step) {
           selectSession(selectedId);
           writeScopedRaw(
             selectedId,
@@ -766,29 +769,24 @@ export default function SessionsPage() {
             })
           );
           setAutorunFlag(selectedId);
-        } catch {
-          /* ignore */
+          window.location.href = "/problems";
+          return;
         }
-        router.push("/problems");
-        return;
-      }
 
-      // Single step run via session API
-      setIsRunning(true);
-      try {
+        // Single step run via session API
         await runSession(selectedId, inputData, step);
         await loadDetail(selectedId);
       } catch (e) {
         if (e instanceof Error && (e.message.includes("offline") || e.message.includes("503") || e.message.includes("Failed to fetch"))) {
           setBackendOffline(true);
         }
-        setRunError(String(e));
         await loadDetail(selectedId);
+        setRunError(String(e));
       } finally {
         setIsRunning(false);
       }
     },
-    [selectedId, buildInputData, loadDetail, router, selectSession]
+    [selectedId, isRunning, buildInputData, loadDetail, selectSession]
   );
 
   const handleGenerateHandoff = useCallback(async () => {
@@ -814,6 +812,22 @@ export default function SessionsPage() {
     setHandoffGenerateOk,
     setSessionHandoff,
   ]);
+
+  const handleDirectHandoffExport = useCallback(
+    async (format: "claude_md" | "cursor_rules" | "task_list") => {
+      if (!selectedId || handoffExporting) return;
+      setHandoffExporting(format);
+      setHandoffExportError(null);
+      try {
+        await exportHandoff(selectedId, format);
+      } catch (e) {
+        setHandoffExportError(e instanceof Error ? e.message : "Export failed");
+      } finally {
+        setHandoffExporting(null);
+      }
+    },
+    [selectedId, handoffExporting]
+  );
 
   useEffect(() => {
     if (!handoffGenerateOk) return;
@@ -2047,10 +2061,11 @@ export default function SessionsPage() {
                             </p>
                           </div>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                            <button
-                              type="button"
-                              onClick={() => exportHandoff(selectedId, "claude_md")}
-                              style={{
+                              <button
+                                type="button"
+                                onClick={() => void handleDirectHandoffExport("claude_md")}
+                                disabled={handoffExporting === "claude_md"}
+                                style={{
                                 padding: "7px 12px",
                                 borderRadius: 8,
                                 fontSize: 12.5,
@@ -2058,16 +2073,18 @@ export default function SessionsPage() {
                                 background: "#F8F4EF",
                                 border: "1px solid #E4DDD4",
                                 color: "#0D0D0D",
-                                cursor: "pointer",
+                                  cursor: handoffExporting === "claude_md" ? "not-allowed" : "pointer",
+                                  opacity: handoffExporting === "claude_md" ? 0.65 : 1,
                                 fontFamily: "'DM Sans', sans-serif",
                               }}
                             >
-                              Export CLAUDE.md
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => exportHandoff(selectedId, "cursor_rules")}
-                              style={{
+                                {handoffExporting === "claude_md" ? "Exporting..." : "Export CLAUDE.md"}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handleDirectHandoffExport("cursor_rules")}
+                                disabled={handoffExporting === "cursor_rules"}
+                                style={{
                                 padding: "7px 12px",
                                 borderRadius: 8,
                                 fontSize: 12.5,
@@ -2075,13 +2092,19 @@ export default function SessionsPage() {
                                 background: "#F8F4EF",
                                 border: "1px solid #E4DDD4",
                                 color: "#0D0D0D",
-                                cursor: "pointer",
+                                  cursor: handoffExporting === "cursor_rules" ? "not-allowed" : "pointer",
+                                  opacity: handoffExporting === "cursor_rules" ? 0.65 : 1,
                                 fontFamily: "'DM Sans', sans-serif",
                               }}
                             >
-                              Export .cursorrules
-                            </button>
-                          </div>
+                                {handoffExporting === "cursor_rules" ? "Exporting..." : "Export .cursorrules"}
+                              </button>
+                            </div>
+                            {handoffExportError && (
+                              <div style={{ marginTop: 8, fontSize: 12, color: "#EF4444" }}>
+                                {handoffExportError}
+                              </div>
+                            )}
                         </>
                       )}
 
@@ -2110,10 +2133,11 @@ export default function SessionsPage() {
                             >
                               View in Tasks →
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => exportHandoff(selectedId, "claude_md")}
-                              style={{
+                              <button
+                                type="button"
+                                onClick={() => void handleDirectHandoffExport("claude_md")}
+                                disabled={handoffExporting === "claude_md"}
+                                style={{
                                 padding: "7px 12px",
                                 borderRadius: 8,
                                 fontSize: 12.5,
@@ -2121,13 +2145,19 @@ export default function SessionsPage() {
                                 background: "#F8F4EF",
                                 border: "1px solid #E4DDD4",
                                 color: "#0D0D0D",
-                                cursor: "pointer",
+                                  cursor: handoffExporting === "claude_md" ? "not-allowed" : "pointer",
+                                  opacity: handoffExporting === "claude_md" ? 0.65 : 1,
                                 fontFamily: "'DM Sans', sans-serif",
                               }}
                             >
-                              Export CLAUDE.md anyway
-                            </button>
-                          </div>
+                                {handoffExporting === "claude_md" ? "Exporting..." : "Export CLAUDE.md anyway"}
+                              </button>
+                            </div>
+                            {handoffExportError && (
+                              <div style={{ marginTop: 8, fontSize: 12, color: "#EF4444" }}>
+                                {handoffExportError}
+                              </div>
+                            )}
                         </>
                       )}
                     </div>
@@ -2377,9 +2407,9 @@ export default function SessionsPage() {
                   fontWeight: 500,
                   cursor: isApplyingBootstrap ? "not-allowed" : "pointer",
                 }}
-              >
-                Import Workspace Context
-              </button>
+                >
+                  {isApplyingBootstrap ? "Applying..." : "Import Workspace Context"}
+                </button>
               <button
                 onClick={() => handleBootstrapChoice("fresh")}
                 disabled={isApplyingBootstrap}
@@ -2395,9 +2425,9 @@ export default function SessionsPage() {
                   fontWeight: 500,
                   cursor: isApplyingBootstrap ? "not-allowed" : "pointer",
                 }}
-              >
-                Start Fresh Context
-              </button>
+                >
+                  {isApplyingBootstrap ? "Applying..." : "Start Fresh Context"}
+                </button>
             </div>
           </div>
         </div>

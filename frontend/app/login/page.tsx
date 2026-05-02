@@ -1,7 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import React, { useState } from "react";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { formatAuthErrorMessage } from "@/lib/supabase/auth-errors";
@@ -95,7 +94,6 @@ function ChipSVG() {
 // ─── Login Page ───────────────────────────────────────────────────────────────
 
 export default function LoginPage() {
-  const router = useRouter();
   const supabase = createClient();
 
   const [mode, setMode] = useState<"login" | "register">("login");
@@ -104,6 +102,7 @@ export default function LoginPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -153,8 +152,7 @@ export default function LoginPage() {
           return;
         }
 
-        router.push("/dashboard");
-        router.refresh();
+        window.location.href = "/dashboard";
       } else {
         const { error: authError } = await supabase.auth.signUp({
           email,
@@ -174,8 +172,7 @@ export default function LoginPage() {
           data: { session },
         } = await supabase.auth.getSession();
         if (session) {
-          router.push("/onboarding");
-          router.refresh();
+          window.location.href = "/onboarding";
         } else {
           setSuccessMsg("Check your email to confirm your account, then log in.");
           switchMode("login");
@@ -189,6 +186,10 @@ export default function LoginPage() {
   }
 
   async function handleGoogleLogin() {
+    if (oauthLoading) return;
+    setOauthLoading(true);
+    setError(null);
+    setSuccessMsg(null);
     try {
       const { error: authError } = await supabase.auth.signInWithOAuth({
         provider: "google",
@@ -199,6 +200,8 @@ export default function LoginPage() {
       if (authError) setError(formatAuthErrorMessage(authError));
     } catch (e) {
       setError(formatAuthErrorMessage(e));
+    } finally {
+      setOauthLoading(false);
     }
   }
 
@@ -418,11 +421,12 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={handleGoogleLogin}
+                disabled={oauthLoading}
                 className="w-12 h-12 rounded-full flex items-center justify-center transition-colors"
-                style={{ border: "1.5px solid #E4DDD4", background: "#fff", cursor: "pointer" }}
+                style={{ border: "1.5px solid #E4DDD4", background: "#fff", cursor: oauthLoading ? "not-allowed" : "pointer", opacity: oauthLoading ? 0.65 : 1 }}
                 onMouseEnter={(e) => (e.currentTarget.style.background = "rgba(0,0,0,0.04)")}
                 onMouseLeave={(e) => (e.currentTarget.style.background = "#fff")}
-                aria-label="Continue with Google"
+                aria-label={oauthLoading ? "Starting Google sign in" : "Continue with Google"}
               >
                 <svg width="20" height="20" viewBox="0 0 24 24">
                   <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>

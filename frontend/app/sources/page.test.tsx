@@ -1,5 +1,5 @@
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 let activeSessionId: string | null = "session-1";
@@ -191,6 +191,66 @@ describe("SourcesPage", () => {
     await waitFor(() => expect(fetchResearchEntriesMock).toHaveBeenCalledTimes(2));
     expect(await screen.findByText(/research entry saved/i)).toBeTruthy();
     await waitFor(() => expect(screen.getAllByText("New interview").length).toBeGreaterThan(0));
+  });
+
+  it("disables the research save button while saving", async () => {
+    let resolveCreate!: (value: typeof researchRow) => void;
+    createResearchEntryMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCreate = resolve;
+      })
+    );
+
+    render(<SourcesPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /add research/i }));
+    fireEvent.change(screen.getByPlaceholderText(/user interview with sarah/i), {
+      target: { value: "New interview" },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/summarize the research findings/i), {
+      target: { value: "Customers want clearer save confirmation after adding discovery inputs." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /add entry/i }));
+
+    expect(await screen.findByRole("button", { name: /saving/i })).toHaveProperty("disabled", true);
+
+    await act(async () => {
+      resolveCreate({ ...researchRow, id: "research-2", title: "New interview" });
+      await Promise.resolve();
+    });
+  });
+
+  it("shows a visible Slack discovery error when channel loading fails", async () => {
+    vi.mocked(fetch).mockRejectedValueOnce(new Error("Slack unavailable"));
+
+    render(<SourcesPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /import from slack/i }));
+
+    expect(await screen.findByText(/failed to load slack channels/i)).toBeTruthy();
+  });
+
+  it("prevents duplicate source delete requests while deleting", async () => {
+    let resolveDelete!: () => void;
+    deleteSourceMock.mockReturnValue(
+      new Promise<void>((resolve) => {
+        resolveDelete = resolve;
+      })
+    );
+
+    render(<SourcesPage />);
+
+    const deleteButton = await screen.findByRole("button", { name: /delete source usage.csv/i });
+    fireEvent.click(deleteButton);
+    fireEvent.click(deleteButton);
+
+    expect(deleteSourceMock).toHaveBeenCalledTimes(1);
+    expect(deleteButton).toHaveProperty("disabled", true);
+
+    await act(async () => {
+      resolveDelete();
+      await Promise.resolve();
+    });
   });
 
   it("confirms when a supported source file upload completes", async () => {

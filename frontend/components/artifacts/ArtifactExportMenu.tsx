@@ -42,6 +42,7 @@ export function ArtifactExportMenu({
   const [open, setOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedbackTone, setFeedbackTone] = useState<"success" | "error" | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   const isDisabled = disabled || isLoading;
@@ -64,12 +65,14 @@ export function ArtifactExportMenu({
     try {
       await action.onSelect();
       const msg = action.successLabel ?? "Exported";
+      setFeedbackTone("success");
       setFeedback(`${msg} ✓`);
-      setTimeout(() => setFeedback(null), 1500);
+      setTimeout(() => { setFeedback(null); setFeedbackTone(null); }, 1500);
     } catch {
       const msg = action.errorLabel ?? "Export failed";
+      setFeedbackTone("error");
       setFeedback(msg);
-      setTimeout(() => setFeedback(null), 2000);
+      setTimeout(() => { setFeedback(null); setFeedbackTone(null); }, 2000);
     } finally {
       setIsLoading(false);
     }
@@ -80,7 +83,7 @@ export function ArtifactExportMenu({
     border: "1.5px solid #E4DDD4",
     borderRadius: 8,
     fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
-    color: "#0D0D0D",
+    color: feedbackTone === "error" ? "#EF4444" : "#0D0D0D",
     background: "#F8F4EF",
     fontSize: 13,
     fontWeight: 500,

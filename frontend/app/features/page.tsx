@@ -373,16 +373,18 @@ export default function FeaturesPage() {
                 </div>
                 <button
                   onClick={handleGenerate}
-                  disabled={!error && !activeSessionId}
+                  disabled={generating || (!error && !activeSessionId)}
                   className="btn-dark"
                   style={{
                     fontSize: 14,
                     padding: "0.65rem 1.5rem",
-                    opacity: !error && !activeSessionId ? 0.6 : 1,
-                    cursor: !error && !activeSessionId ? "not-allowed" : "pointer",
+                    opacity: generating || (!error && !activeSessionId) ? 0.6 : 1,
+                    cursor: generating || (!error && !activeSessionId) ? "not-allowed" : "pointer",
                   }}
                 >
-                  {error
+                  {generating
+                    ? "Running..."
+                    : error
                     ? "Retry"
                     : !activeSessionId
                       ? "Select a session in Sessions"

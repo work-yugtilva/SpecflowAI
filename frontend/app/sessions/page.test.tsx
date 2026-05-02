@@ -12,6 +12,8 @@ const exportHandoffMock = vi.fn();
 const fetchResearchEntriesMock = vi.fn();
 const listSourcesMock = vi.fn();
 const listSourceEvidenceMock = vi.fn();
+const buildPipelineInputFromStorageMock = vi.fn();
+const runSessionMock = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: pushMock }),
@@ -48,12 +50,20 @@ vi.mock("@/lib/api/session", async () => {
   return {
     ...actual,
     createSession: vi.fn(),
-    runSession: vi.fn(),
+    runSession: (...args: unknown[]) => runSessionMock(...args),
     getSession: (...args: unknown[]) => getSessionMock(...args),
     getLastSessionMode: () => "remote",
     getHandoff: (...args: unknown[]) => getHandoffMock(...args),
     generateHandoff: (...args: unknown[]) => generateHandoffMock(...args),
     exportHandoff: (...args: unknown[]) => exportHandoffMock(...args),
+  };
+});
+
+vi.mock("@/lib/pipeline-input", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/pipeline-input")>("@/lib/pipeline-input");
+  return {
+    ...actual,
+    buildPipelineInputFromStorage: (...args: unknown[]) => buildPipelineInputFromStorageMock(...args),
   };
 });
 
@@ -125,6 +135,8 @@ beforeEach(() => {
   fetchResearchEntriesMock.mockResolvedValue([{ id: "research-1" }]);
   listSourcesMock.mockResolvedValue([{ id: "source-1" }]);
   listSourceEvidenceMock.mockResolvedValue([{ id: "evidence-1" }]);
+  buildPipelineInputFromStorageMock.mockResolvedValue({ context: {}, ingest: {} });
+  runSessionMock.mockResolvedValue(undefined);
   global.fetch = vi.fn().mockResolvedValue({
     ok: true,
     json: () =>
@@ -190,5 +202,33 @@ describe("SessionsPage session home", () => {
     render(<SessionsPage />);
 
     expect(await screen.findByText("Create or select a session to start turning research into product decisions.")).toBeTruthy();
+  });
+});
+
+describe("SessionsPage button async states", () => {
+  it("uses window.location.href for full pipeline navigation", async () => {
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...originalLocation, href: "" },
+    });
+    seedSessions();
+    await selectSeededSession();
+
+    fireEvent.click(screen.getByRole("button", { name: /run full pipeline/i }));
+
+    await waitFor(() => expect(buildPipelineInputFromStorageMock).toHaveBeenCalledWith("session-123456789"));
+    expect(window.location.href).toBe("/problems");
+    expect(pushMock).not.toHaveBeenCalledWith("/problems");
+  });
+
+  it("shows a visible run error when pipeline input cannot be built", async () => {
+    buildPipelineInputFromStorageMock.mockRejectedValueOnce(new Error("Input build failed"));
+    seedSessions();
+    await selectSeededSession();
+
+    fireEvent.click(screen.getByRole("button", { name: /continue: run features only/i }));
+
+    expect(await screen.findByText(/input build failed/i)).toBeTruthy();
   });
 });

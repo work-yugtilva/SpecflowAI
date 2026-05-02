@@ -168,12 +168,15 @@ export default function SourcesPage() {
   const [loading, setLoading] = useState(false);
   const [researchLoading, setResearchLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [deletingSourceId, setDeletingSourceId] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [researchError, setResearchError] = useState<string | null>(null);
   const [sourceMessage, setSourceMessage] = useState<string | null>(null);
   const [researchMessage, setResearchMessage] = useState<string | null>(null);
   const [showResearchModal, setShowResearchModal] = useState(false);
+  const [researchSaving, setResearchSaving] = useState(false);
+  const [deletingResearchId, setDeletingResearchId] = useState<string | null>(null);
   const [editingResearchId, setEditingResearchId] = useState<string | null>(null);
   const [researchForm, setResearchForm] = useState<ResearchFormState>(EMPTY_RESEARCH_FORM);
   const [researchFormError, setResearchFormError] = useState(false);
@@ -184,6 +187,7 @@ export default function SourcesPage() {
   const [slackSelectedIds, setSlackSelectedIds] = useState<Set<string>>(new Set());
   const [slackImporting, setSlackImporting] = useState(false);
   const [slackImportMsg, setSlackImportMsg] = useState<string | null>(null);
+  const [slackError, setSlackError] = useState<string | null>(null);
   const [slackNotConnected, setSlackNotConnected] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -361,6 +365,8 @@ export default function SourcesPage() {
   }
 
   async function handleDelete(sourceId: string) {
+    if (deletingSourceId) return;
+    setDeletingSourceId(sourceId);
     setError(null);
     try {
       await deleteSource(sourceId);
@@ -371,15 +377,19 @@ export default function SourcesPage() {
       await loadSources();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to delete source");
+    } finally {
+      setDeletingSourceId(null);
     }
   }
 
   async function handleResearchSave() {
+    if (researchSaving) return;
     if (!researchForm.title.trim() || !researchForm.content.trim()) {
       setResearchFormError(true);
       return;
     }
 
+    setResearchSaving(true);
     setResearchError(null);
     setResearchMessage(null);
     const payload = {
@@ -419,10 +429,14 @@ export default function SourcesPage() {
     } catch (err) {
       setResearchError(err instanceof Error ? err.message : "Failed to save research entry");
       setResearchMessage(null);
+    } finally {
+      setResearchSaving(false);
     }
   }
 
   async function handleResearchDelete(id: string) {
+    if (deletingResearchId) return;
+    setDeletingResearchId(id);
     setResearchError(null);
     try {
       await deleteResearchEntry(id);
@@ -434,12 +448,16 @@ export default function SourcesPage() {
       setConfirmResearchDeleteId(null);
     } catch (err) {
       setResearchError(err instanceof Error ? err.message : "Failed to delete research entry");
+    } finally {
+      setDeletingResearchId(null);
     }
   }
 
   async function openSlackModal() {
+    if (slackChannelsLoading) return;
     setSlackNotConnected(false);
     setSlackImportMsg(null);
+    setSlackError(null);
     setSlackChannelsLoading(true);
     setSlackChannels([]);
     setSlackSelectedIds(new Set());
@@ -449,13 +467,14 @@ export default function SourcesPage() {
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { code?: string };
         if (body.code === "slack_not_connected") setSlackNotConnected(true);
+        else setSlackError("Failed to load Slack channels. Please try again.");
         return;
       }
       const data = (await res.json()) as { channels?: Array<{ id: string; name: string }> };
       setSlackChannels(data.channels ?? []);
       setShowSlackModal(true);
     } catch {
-      /* keep the research page usable if Slack discovery fails */
+      setSlackError("Failed to load Slack channels. Please try again.");
     } finally {
       setSlackChannelsLoading(false);
     }
@@ -476,9 +495,11 @@ export default function SourcesPage() {
   }
 
   async function handleSlackImport() {
-    if (slackSelectedIds.size === 0) return;
+    if (slackSelectedIds.size === 0 || slackImporting) return;
     setSlackImporting(true);
+    setSlackError(null);
     let totalImported = 0;
+    let failedImports = 0;
 
     for (const channel of slackChannels.filter((item) => slackSelectedIds.has(item.id))) {
       try {
@@ -502,15 +523,20 @@ export default function SourcesPage() {
             setSlackImporting(false);
             return;
           }
+          failedImports += 1;
         }
       } catch {
-        /* continue importing selected channels */
+        failedImports += 1;
       }
     }
 
     await loadResearch().catch(() => {});
     setSlackImporting(false);
     closeSlackModal();
+    if (failedImports > 0 && totalImported === 0) {
+      setSlackError("Failed to import Slack messages. Please try again.");
+      return;
+    }
     const label = totalImported === 1 ? "1 message" : `${totalImported} messages`;
     setSlackImportMsg(`Imported ${label}`);
     setTimeout(() => setSlackImportMsg(null), 3000);
@@ -699,9 +725,10 @@ export default function SourcesPage() {
                   type="button"
                   aria-label={`Delete source ${selectedSource.filename}`}
                   onClick={() => void handleDelete(selectedSource.id)}
-                  style={{ ...buttonStyle, padding: "0.45rem 0.7rem", background: "#FEF2F2", color: "#B91C1C" }}
+                  disabled={deletingSourceId === selectedSource.id}
+                  style={{ ...buttonStyle, padding: "0.45rem 0.7rem", background: "#FEF2F2", color: "#B91C1C", cursor: deletingSourceId === selectedSource.id ? "not-allowed" : "pointer", opacity: deletingSourceId === selectedSource.id ? 0.65 : 1 }}
                 >
-                  Delete
+                  {deletingSourceId === selectedSource.id ? "Deleting..." : "Delete"}
                 </button>
               )}
             </div>
@@ -806,6 +833,11 @@ export default function SourcesPage() {
               to import messages.
             </div>
           )}
+          {slackError && (
+            <div role="alert" style={{ marginBottom: 12, color: "#EF4444", fontSize: 13 }}>
+              {slackError}
+            </div>
+          )}
           {slackImportMsg && (
             <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 8, border: "1px solid rgba(22,163,74,0.18)", background: "rgba(22,163,74,0.07)", color: "#15803D", fontSize: 13 }}>
               {slackImportMsg}
@@ -876,8 +908,8 @@ export default function SourcesPage() {
                     </button>
                     {confirmResearchDeleteId === selectedResearch.id ? (
                       <>
-                        <button type="button" onClick={() => void handleResearchDelete(selectedResearch.id)} style={{ ...buttonStyle, padding: "0.45rem 0.7rem", background: "#FEF2F2", color: "#B91C1C" }}>
-                          Confirm
+                        <button type="button" onClick={() => void handleResearchDelete(selectedResearch.id)} disabled={deletingResearchId === selectedResearch.id} style={{ ...buttonStyle, padding: "0.45rem 0.7rem", background: "#FEF2F2", color: "#B91C1C", cursor: deletingResearchId === selectedResearch.id ? "not-allowed" : "pointer", opacity: deletingResearchId === selectedResearch.id ? 0.65 : 1 }}>
+                          {deletingResearchId === selectedResearch.id ? "Deleting..." : "Confirm"}
                         </button>
                         <button type="button" onClick={() => setConfirmResearchDeleteId(null)} style={{ ...buttonStyle, padding: "0.45rem 0.7rem", background: "#F8F4EF", color: "#6B6B6B" }}>
                           Cancel
@@ -1095,8 +1127,8 @@ export default function SourcesPage() {
                   <button type="button" onClick={closeResearchModal} style={{ ...buttonStyle, background: "#FFFFFF", color: "#6B6B6B", border: "1px solid #E4DDD4" }}>
                     Cancel
                   </button>
-                  <button type="button" onClick={() => void handleResearchSave()} style={{ ...buttonStyle, background: "#111111", color: "#FFFFFF" }}>
-                    {editingResearchId ? "Save Changes" : "Add Entry"}
+                  <button type="button" onClick={() => void handleResearchSave()} disabled={researchSaving} style={{ ...buttonStyle, background: researchSaving ? "#C8C2BB" : "#111111", color: "#FFFFFF", cursor: researchSaving ? "not-allowed" : "pointer" }}>
+                    {researchSaving ? "Saving..." : editingResearchId ? "Save Changes" : "Add Entry"}
                   </button>
                 </div>
               </div>

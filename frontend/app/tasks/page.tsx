@@ -549,6 +549,7 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [taskError, setTaskError] = useState<string | null>(null);
   const [fromSession, setFromSession] = useState(false);
   const [qualityScore, setQualityScore] = useState<{score: number; passed: boolean} | null>(null);
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
@@ -696,6 +697,7 @@ export default function TasksPage() {
 
   const handleGenerate = useCallback(async () => {
     setGenerating(true);
+    setTaskError(null);
     setSelectedId(null);
     setStatusMap({});
     setStepsMap({});
@@ -731,8 +733,8 @@ export default function TasksPage() {
           /* ignore */
         }
       }
-    } catch {
-      /* ignore */
+    } catch (err) {
+      setTaskError(err instanceof Error ? err.message : "Task generation failed");
     } finally {
       if (isAutorun) clearAutorunFlag(activeSessionId ?? undefined);
       setGenerating(false);
@@ -772,7 +774,7 @@ export default function TasksPage() {
         return;
       }
       setPrdStatus("success");
-      router.push("/prd");
+      window.location.href = "/prd";
     } catch (err) {
       setPrdError(err instanceof Error ? err.message : "Connection failed");
       setPrdStatus("error");
@@ -1320,6 +1322,18 @@ export default function TasksPage() {
             PRD generation failed: {prdError}
           </div>
         )}
+        {taskError && (
+          <div style={{
+            background: "rgba(239,68,68,0.07)",
+            borderBottom: "1px solid rgba(239,68,68,0.15)",
+            padding: "6px 20px",
+            fontSize: 12.5,
+            color: "#EF4444",
+            flexShrink: 0,
+          }}>
+            Task generation failed: {taskError}
+          </div>
+        )}
 
         {/* Content */}
         {!tasks.length && !generating ? (
@@ -1399,17 +1413,19 @@ export default function TasksPage() {
             </div>
             <button
               onClick={handleGenerate}
-              disabled={!activeSessionId}
+              disabled={generating || !activeSessionId}
               className="btn-dark"
               style={{
                 fontSize: "0.8125rem",
                 padding: "0.45rem 1rem",
                 marginTop: 4,
-                opacity: !activeSessionId ? 0.6 : 1,
-                cursor: !activeSessionId ? "not-allowed" : "pointer",
+                opacity: generating || !activeSessionId ? 0.6 : 1,
+                cursor: generating || !activeSessionId ? "not-allowed" : "pointer",
               }}
             >
-              {!activeSessionId
+              {generating
+                ? "Generating..."
+                : !activeSessionId
                 ? "Select a session in Sessions"
                 : "Run Tasks (this step)"}
             </button>
