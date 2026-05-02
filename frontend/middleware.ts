@@ -57,6 +57,8 @@ export async function middleware(request: NextRequest) {
 
   const isProtected = PROTECTED_PATHS.some((p) => pathname.startsWith(p));
   const isLoginPage = pathname === "/login";
+  const isProductContextOnboardingStep =
+    pathname === "/context" && request.nextUrl.searchParams.get("onboarding") === "1";
 
   // Unauthenticated → redirect to /login
   if (!user && isProtected) {
@@ -73,7 +75,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // Authenticated user on a protected path who hasn't finished onboarding → redirect
-  if (user && isProtected && !pathname.startsWith("/onboarding")) {
+  if (user && isProtected && !pathname.startsWith("/onboarding") && !isProductContextOnboardingStep) {
     try {
       const { data } = await supabase
         .from("user_profiles")
