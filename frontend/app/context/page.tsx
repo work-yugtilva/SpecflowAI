@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { Sidebar } from "@/components/ui/sidebar";
 import { useActiveSession } from "@/lib/active-session-context";
@@ -29,7 +29,7 @@ interface ContextForm {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const COMPANY_TYPES = ["SaaS", "Enterprise", "Agency", "Startup", "Marketplace", "Other"];
+const COMPANY_TYPES = ["SaaS", "Enterprise", "Agency", "Startup", "Freelancer", "Marketplace", "Other"];
 
 const INITIAL_FORM: ContextForm = {
   companyName: "",
@@ -170,6 +170,11 @@ function mergeContextFromStorage(raw: Record<string, unknown>): ContextForm {
 
 export default function ContextPage() {
   const { activeSessionId } = useActiveSession();
+  const [isOnboardingFlow] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("onboarding") === "1"
+  );
   const [scope, setScope] = useState<ContextScope>("global");
   const [form, setForm] = useState<ContextForm>(INITIAL_FORM);
 
@@ -206,15 +211,20 @@ export default function ContextPage() {
   }, [activeSessionId, scope]);
 
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveTimer, setSaveTimer] = useState<ReturnType<typeof setTimeout> | null>(null);
 
   function update(field: keyof ContextForm, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }));
     setSaved(false);
+    setSaveError(null);
   }
 
-  function handleSave() {
+  async function handleSave() {
+    if (saving) return;
+    setSaving(true);
+    setSaveError(null);
     const targetScope: ContextScope = scope === "session" && activeSessionId ? "session" : "global";
     try {
       if (targetScope === "session" && activeSessionId) {
@@ -225,17 +235,24 @@ export default function ContextPage() {
       } else {
         localStorage.setItem(LS_CONTEXT, JSON.stringify(form));
       }
+
+      await saveScopedContext(targetScope, form, activeSessionId ?? undefined);
+
+      setSaved(true);
+      if (saveTimer) clearTimeout(saveTimer);
+      const t = setTimeout(() => setSaved(false), 2500);
+      setSaveTimer(t);
+
+      if (isOnboardingFlow) {
+        window.location.href = "/dashboard";
+        return;
+      }
+
+      setSaving(false);
     } catch {
-      /* ignore */
+      setSaveError("Unable to save product context. Please try again.");
+      setSaving(false);
     }
-    setSaveError(null);
-    saveScopedContext(targetScope, form, activeSessionId ?? undefined).catch((e: unknown) => {
-      setSaveError(String(e));
-    });
-    setSaved(true);
-    if (saveTimer) clearTimeout(saveTimer);
-    const t = setTimeout(() => setSaved(false), 2500);
-    setSaveTimer(t);
   }
 
   const isEmpty = Object.values(form).every((v) => !v.trim());
@@ -379,18 +396,21 @@ export default function ContextPage() {
             {/* Save Context */}
             <button
               onClick={handleSave}
+              disabled={saving}
               className="btn-dark"
               style={{
                 fontSize: "0.8125rem",
                 padding: "0.4rem 0.875rem",
+                opacity: saving ? 0.65 : 1,
+                cursor: saving ? "not-allowed" : "pointer",
               }}
             >
-              Save Context
+              {saving ? "Saving..." : isOnboardingFlow ? "Save & Continue" : "Save Context"}
             </button>
           </div>
           {saveError && (
-            <div style={{ padding: "4px 20px 0", fontSize: 11.5, color: "#DC2626" }}>
-              Sync failed: {saveError}
+            <div style={{ padding: "4px 20px 0", fontSize: 11.5, color: "#EF4444" }}>
+              {saveError}
             </div>
           )}
         </header>

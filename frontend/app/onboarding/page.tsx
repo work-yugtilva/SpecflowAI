@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { posthog } from "@/lib/posthog";
+import { LS_CONTEXT } from "@/lib/pipeline-input";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,6 +36,22 @@ const INITIAL_FORM: FormData = {
   companyName: "",
   companyType: "",
 };
+
+function seedProductContext(data: FormData) {
+  try {
+    const existing = JSON.parse(localStorage.getItem(LS_CONTEXT) || "{}") as Record<string, unknown>;
+    localStorage.setItem(
+      LS_CONTEXT,
+      JSON.stringify({
+        ...existing,
+        ...(data.companyName.trim() ? { companyName: data.companyName.trim() } : {}),
+        companyType: data.companyType,
+      })
+    );
+  } catch {
+    // Product context can still be entered manually on the next screen.
+  }
+}
 
 // ─── FormField ────────────────────────────────────────────────────────────────
 
@@ -112,6 +129,7 @@ export default function OnboardingPage() {
     if (!validate(form)) return;
     setSubmitting(true);
     try {
+      seedProductContext(form);
       const supabase = createClient();
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
@@ -132,7 +150,7 @@ export default function OnboardingPage() {
       console.error("Onboarding profile save error:", e);
       setSubmitting(false);
     }
-    window.location.href = "/dashboard";
+    window.location.href = "/context?onboarding=1";
   }
 
   // Shared input style (no icon prefix offset)
