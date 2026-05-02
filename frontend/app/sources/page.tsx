@@ -171,6 +171,8 @@ export default function SourcesPage() {
   const [dragActive, setDragActive] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [researchError, setResearchError] = useState<string | null>(null);
+  const [sourceMessage, setSourceMessage] = useState<string | null>(null);
+  const [researchMessage, setResearchMessage] = useState<string | null>(null);
   const [showResearchModal, setShowResearchModal] = useState(false);
   const [editingResearchId, setEditingResearchId] = useState<string | null>(null);
   const [researchForm, setResearchForm] = useState<ResearchFormState>(EMPTY_RESEARCH_FORM);
@@ -330,22 +332,28 @@ export default function SourcesPage() {
     if (files.length === 0) return;
     if (!canUpload) {
       setError("Select an active session before uploading session-scoped sources.");
+      setSourceMessage(null);
       return;
     }
     const validationError = validateFiles(files);
     if (validationError) {
       setError(validationError);
+      setSourceMessage(null);
       return;
     }
 
     setUploading(true);
     setError(null);
+    setSourceMessage(null);
     try {
       const uploaded = await uploadSourceFiles(files, scope, sessionId);
       await loadSources();
       setSelectedId(uploaded[0]?.source.id ?? null);
+      const label = files.length === 1 ? "1 file" : `${files.length} files`;
+      setSourceMessage(`Uploaded ${label}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
+      setSourceMessage(null);
     } finally {
       setUploading(false);
       if (inputRef.current) inputRef.current.value = "";
@@ -373,6 +381,7 @@ export default function SourcesPage() {
     }
 
     setResearchError(null);
+    setResearchMessage(null);
     const payload = {
       type: researchForm.type,
       title: researchForm.title,
@@ -395,18 +404,21 @@ export default function SourcesPage() {
     };
 
     try {
+      let savedId: string;
       if (editingResearchId) {
         const updated = await updateResearchEntry(editingResearchId, payload);
-        setResearchEntries((prev) => prev.map((entry) => (entry.id === editingResearchId ? updated : entry)));
-        setSelectedResearchId(updated.id);
+        savedId = updated.id;
       } else {
         const created = await createResearchEntry(scope, payload, sessionId);
-        setResearchEntries((prev) => [created, ...prev]);
-        setSelectedResearchId(created.id);
+        savedId = created.id;
       }
+      await loadResearch();
+      setSelectedResearchId(savedId);
+      setResearchMessage("Research entry saved");
       closeResearchModal();
     } catch (err) {
       setResearchError(err instanceof Error ? err.message : "Failed to save research entry");
+      setResearchMessage(null);
     }
   }
 
@@ -615,6 +627,11 @@ export default function SourcesPage() {
                 {error}
               </div>
             )}
+            {sourceMessage && (
+              <div role="status" style={{ marginTop: 12, color: "#15803D", fontSize: 13 }}>
+                {sourceMessage}
+              </div>
+            )}
           </div>
 
           <div style={{ ...panelStyle, overflow: "hidden" }}>
@@ -773,6 +790,11 @@ export default function SourcesPage() {
           {researchError && (
             <div role="alert" style={{ marginBottom: 12, color: "#B91C1C", fontSize: 13 }}>
               {researchError}
+            </div>
+          )}
+          {researchMessage && (
+            <div role="status" style={{ marginBottom: 12, color: "#15803D", fontSize: 13 }}>
+              {researchMessage}
             </div>
           )}
           {slackNotConnected && (

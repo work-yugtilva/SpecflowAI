@@ -168,4 +168,45 @@ describe("SourcesPage", () => {
     expect(screen.getByRole("heading", { name: /add research/i })).toBeTruthy();
     expect(screen.getByPlaceholderText(/user interview with sarah/i)).toBeTruthy();
   });
+
+  it("refreshes research from the server and confirms after saving a new entry", async () => {
+    const created = { ...researchRow, id: "research-2", title: "New interview" };
+    fetchResearchEntriesMock
+      .mockResolvedValueOnce([researchRow])
+      .mockResolvedValueOnce([created, researchRow]);
+    createResearchEntryMock.mockResolvedValue(created);
+
+    render(<SourcesPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /add research/i }));
+    fireEvent.change(screen.getByPlaceholderText(/user interview with sarah/i), {
+      target: { value: "New interview" },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/summarize the research findings/i), {
+      target: { value: "Customers want clearer save confirmation after adding discovery inputs." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /add entry/i }));
+
+    await waitFor(() => expect(createResearchEntryMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(fetchResearchEntriesMock).toHaveBeenCalledTimes(2));
+    expect(await screen.findByText(/research entry saved/i)).toBeTruthy();
+    await waitFor(() => expect(screen.getAllByText("New interview").length).toBeGreaterThan(0));
+  });
+
+  it("confirms when a supported source file upload completes", async () => {
+    render(<SourcesPage />);
+
+    const file = new File(["hello from an interview"], "interview.txt", {
+      type: "text/plain",
+    });
+    fireEvent.change(screen.getByLabelText(/upload source files/i), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() => {
+      expect(uploadSourceFilesMock).toHaveBeenCalledWith([file], "session", "session-1");
+      expect(listSourcesMock).toHaveBeenCalledTimes(2);
+    });
+    expect(await screen.findByText(/uploaded 1 file/i)).toBeTruthy();
+  });
 });
