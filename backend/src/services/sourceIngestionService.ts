@@ -2,7 +2,6 @@ import path from 'node:path';
 
 import { parse as parseCsv } from 'csv-parse/sync';
 import mammoth from 'mammoth';
-import { PDFParse } from 'pdf-parse';
 
 import type { SourceEvidenceType, SourceFileType } from '@/types/index.js';
 
@@ -117,6 +116,8 @@ export async function parseSourceFile(file: Express.Multer.File): Promise<Source
 }
 
 async function extractPdfText(buffer: Buffer): Promise<string> {
+  await installPdfCanvasGlobals();
+  const { PDFParse } = await import('pdf-parse');
   const parser = new PDFParse({ data: buffer });
   try {
     const result = await parser.getText();
@@ -124,6 +125,18 @@ async function extractPdfText(buffer: Buffer): Promise<string> {
   } finally {
     await parser.destroy();
   }
+}
+
+async function installPdfCanvasGlobals(): Promise<void> {
+  const canvas = await import('@napi-rs/canvas');
+  const runtimeGlobal = globalThis as typeof globalThis & {
+    DOMMatrix?: unknown;
+    ImageData?: unknown;
+    Path2D?: unknown;
+  };
+  runtimeGlobal.DOMMatrix ??= canvas.DOMMatrix;
+  runtimeGlobal.ImageData ??= canvas.ImageData;
+  runtimeGlobal.Path2D ??= canvas.Path2D;
 }
 
 function normalizeWhitespace(text: string): string {
