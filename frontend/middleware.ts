@@ -72,6 +72,24 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  // Authenticated user on a protected path who hasn't finished onboarding → redirect
+  if (user && isProtected && !pathname.startsWith("/onboarding")) {
+    try {
+      const { data } = await supabase
+        .from("user_profiles")
+        .select("onboarding_completed_at")
+        .eq("user_id", user.id)
+        .single();
+      if (!data || data.onboarding_completed_at === null) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/onboarding";
+        return NextResponse.redirect(url);
+      }
+    } catch {
+      // fail open — network error should not redirect-loop the user
+    }
+  }
+
   return supabaseResponse;
 }
 
