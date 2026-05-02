@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { Sidebar } from "@/components/ui/sidebar";
 import { useActiveSession } from "@/lib/active-session-context";
+import { createClient } from "@/lib/supabase/client";
 import {
   LS_CONTEXT,
 } from "@/lib/pipeline-input";
@@ -168,6 +169,29 @@ function mergeContextFromStorage(raw: Record<string, unknown>): ContextForm {
   };
 }
 
+async function completeOnboardingProfile(form: ContextForm) {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    throw new Error("No authenticated user found.");
+  }
+
+  const { error } = await supabase.from("user_profiles").upsert(
+    {
+      user_id: user.id,
+      company_name: form.companyName,
+      company_type: form.companyType,
+      onboarding_completed_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id" }
+  );
+  if (error) {
+    throw new Error(error.message ?? "Unable to complete onboarding.");
+  }
+}
+
 export default function ContextPage() {
   const { activeSessionId } = useActiveSession();
   const [isOnboardingFlow] = useState(
@@ -236,17 +260,21 @@ export default function ContextPage() {
         localStorage.setItem(LS_CONTEXT, JSON.stringify(form));
       }
 
+      if (isOnboardingFlow) {
+        await completeOnboardingProfile(form);
+        void saveScopedContext(targetScope, form, activeSessionId ?? undefined).catch(() => {
+          // Local context plus the completed profile are enough to enter the app.
+        });
+        window.location.href = "/dashboard";
+        return;
+      }
+
       await saveScopedContext(targetScope, form, activeSessionId ?? undefined);
 
       setSaved(true);
       if (saveTimer) clearTimeout(saveTimer);
       const t = setTimeout(() => setSaved(false), 2500);
       setSaveTimer(t);
-
-      if (isOnboardingFlow) {
-        window.location.href = "/dashboard";
-        return;
-      }
 
       setSaving(false);
     } catch {
