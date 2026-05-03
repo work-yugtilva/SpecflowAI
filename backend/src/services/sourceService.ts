@@ -218,7 +218,9 @@ export class SourceService {
     }
     return sources.map((source) => ({
       ...source,
-      evidenceCount: counts.get(source.id) ?? 0,
+      evidenceCount:
+        counts.get(source.id) ??
+        (this.toSourceEvidenceFromSource(source) ? 1 : 0),
     }));
   }
 
@@ -246,11 +248,15 @@ export class SourceService {
 
     if (evidenceError) throw new Error(`Failed to fetch source evidence: ${evidenceError.message}`);
 
+    const source = this.toSourceFile(data as SourceFileRow);
+    const evidence = ((evidenceRows ?? []) as SourceEvidenceRow[]).map((row) =>
+      this.toSourceEvidence(row)
+    );
+    const fallbackEvidence = this.toSourceEvidenceFromSource(source);
+
     return {
-      source: this.toSourceFile(data as SourceFileRow),
-      evidence: ((evidenceRows ?? []) as SourceEvidenceRow[]).map((row) =>
-        this.toSourceEvidence(row)
-      ),
+      source,
+      evidence: evidence.length > 0 || !fallbackEvidence ? evidence : [fallbackEvidence],
     };
   }
 
@@ -281,7 +287,25 @@ export class SourceService {
 
     if (error) throw new Error(`Failed to fetch source evidence: ${error.message}`);
 
-    return ((data ?? []) as SourceEvidenceRow[]).map((row) => this.toPipelineEvidence(row));
+    const evidence = ((data ?? []) as SourceEvidenceRow[]).map((row) =>
+      this.toPipelineEvidence(row)
+    );
+    if (evidence.length > 0) return evidence;
+
+    const { data: sourceRows, error: sourceError } = await this.supabase(client)
+      .from(SOURCE_FILES_TABLE)
+      .select('*')
+      .eq('user_id', userId)
+      .eq('scope_key', scopeKey)
+      .eq('status', 'processed')
+      .order('created_at', { ascending: true })
+      .limit(100);
+
+    if (sourceError) throw new Error(`Failed to fetch source files: ${sourceError.message}`);
+
+    return ((sourceRows ?? []) as SourceFileRow[])
+      .map((row) => this.toPipelineEvidenceFromSource(row))
+      .filter((row): row is PipelineSourceEvidence => row !== null);
   }
 
   private supabase(client?: SupabaseClient): SupabaseClient {
@@ -346,6 +370,49 @@ export class SourceService {
       sentiment: row.sentiment,
       confidence: row.confidence,
       metadata: row.metadata ?? {},
+    };
+  }
+
+  private toPipelineEvidenceFromSource(row: SourceFileRow): PipelineSourceEvidence | null {
+    const content = (row.parsed_text ?? row.summary ?? '').replace(/\s+/g, ' ').trim();
+    if (!content) return null;
+    return {
+      id: `${row.id}:parsed-text`,
+      source_id: row.id,
+      source_title: row.filename,
+      type: 'observation',
+      title: `Uploaded source: ${row.filename}`.slice(0, 120),
+      content: content.slice(0, 4000),
+      confidence: 0.65,
+      metadata: {
+        extraction: 'processed_source_fallback',
+        fileType: row.file_type,
+        sourceSummary: row.summary,
+      },
+    };
+  }
+
+  private toSourceEvidenceFromSource(source: SourceFile): SourceEvidence | null {
+    if (source.status !== 'processed') return null;
+    const content = (source.parsedText ?? source.summary ?? '').replace(/\s+/g, ' ').trim();
+    if (!content) return null;
+    return {
+      id: `${source.id}:parsed-text`,
+      sourceFileId: source.id,
+      userId: source.userId,
+      scope: source.scope,
+      scopeKey: source.scopeKey,
+      sessionId: source.sessionId,
+      evidenceType: 'observation',
+      title: `Uploaded source: ${source.filename}`.slice(0, 120),
+      content: content.slice(0, 4000),
+      confidence: 0.65,
+      metadata: {
+        extraction: 'processed_source_fallback',
+        fileType: source.fileType,
+        sourceSummary: source.summary,
+      },
+      createdAt: source.updatedAt ?? source.createdAt,
     };
   }
 }

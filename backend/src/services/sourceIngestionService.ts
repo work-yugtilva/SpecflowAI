@@ -102,7 +102,11 @@ export async function parseSourceFile(file: Express.Multer.File): Promise<Source
         : (await mammoth.extractRawText({ buffer: file.buffer })).value;
 
     const normalizedText = normalizeWhitespace(parsedText);
-    const evidence = extractTextEvidence(normalizedText);
+    const evidence = ensureFallbackEvidence(
+      extractTextEvidence(normalizedText),
+      normalizedText,
+      filename
+    );
     return {
       parsedText: normalizedText,
       summary: buildTextSummary(filename, normalizedText, evidence.length),
@@ -137,7 +141,7 @@ type PdfjsLib = {
 
 async function extractPdfText(buffer: Buffer): Promise<string> {
   try {
-    const pdfjsLib = (await import('pdfjs-dist')) as unknown as PdfjsLib;
+    const pdfjsLib = (await import('pdfjs-dist/legacy/build/pdf.mjs')) as unknown as PdfjsLib;
     pdfjsLib.GlobalWorkerOptions.workerSrc = '';
 
     const uint8Array = new Uint8Array(buffer);
@@ -329,6 +333,29 @@ function extractTextEvidence(text: string): ExtractedEvidence[] {
   return evidence.slice(0, 50);
 }
 
+function ensureFallbackEvidence(
+  evidence: ExtractedEvidence[],
+  parsedText: string,
+  filename: string
+): ExtractedEvidence[] {
+  if (evidence.length > 0) return evidence;
+  const content = parsedText.replace(/\s+/g, ' ').trim();
+  if (!content) return evidence;
+  return [
+    {
+      evidenceType: 'observation',
+      title: makeTitle('Source evidence', content),
+      content: content.slice(0, 4000),
+      confidence: 0.65,
+      metadata: {
+        extraction: 'parsed_text_fallback',
+        dataSource: filename,
+        data_source: filename,
+      },
+    },
+  ];
+}
+
 function parseCsvFile(buffer: Buffer, filename: string): SourceParseResult {
   const records = parseCsv(buffer, {
     columns: true,
@@ -394,10 +421,11 @@ function parseCsvFile(buffer: Buffer, filename: string): SourceParseResult {
     });
   }
 
+  const fallbackEvidence = ensureFallbackEvidence(evidence, parsedText, filename);
   return {
     parsedText,
     summary: `${filename}: parsed ${records.length} CSV row${records.length === 1 ? '' : 's'} across ${columns.length} column${columns.length === 1 ? '' : 's'}.`,
-    evidence: evidence.slice(0, 100),
+    evidence: fallbackEvidence.slice(0, 100),
     metadata,
   };
 }

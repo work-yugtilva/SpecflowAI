@@ -24,7 +24,7 @@ instructions: |
   For every item you generate:
   - source_ids: list the id values from rag_context items you used as evidence. If no rag_context was provided, use an empty list.
   - citation_confidence: set to 'high' if every claim traces to a rag_context item, 'medium' if some claims are inferred, 'insufficient' if you could not find supporting evidence in rag_context.
-  - If citation_confidence would be 'insufficient' for ALL items, output a single item with title='Insufficient source data' and description explaining what context is missing.
+  - If the research_context and prior problems contain no usable evidence to ground real features, return an empty items array []. Do NOT fabricate features about missing data, the research process, or the absence of sources.
 
   If an <analytics_context> block is present, use metric targets (baseline vs current) to set measurable acceptance criteria.
 

@@ -48,6 +48,21 @@ test('txt parsing creates quote and pain point evidence from meaningful paragrap
   assert.ok(result.evidence.length <= 50);
 });
 
+test('txt parsing creates fallback evidence from short parsed text', async () => {
+  const file = makeFile({
+    originalname: 'short-note.txt',
+    mimetype: 'text/plain',
+    buffer: Buffer.from('Checkout support gaps hurt teams.'),
+  });
+
+  const result = await parseSourceFile(file);
+
+  assert.match(result.parsedText, /Checkout support gaps/);
+  assert.equal(result.evidence.length, 1);
+  assert.equal(result.evidence[0].evidenceType, 'observation');
+  assert.match(result.evidence[0].content, /Checkout support gaps/);
+});
+
 test('csv parsing creates metric evidence, observation evidence, and numeric metadata', async () => {
   const file = makeFile({
     originalname: 'usage.csv',
@@ -70,6 +85,27 @@ test('csv parsing creates metric evidence, observation evidence, and numeric met
   assert.ok(result.evidence.some((item) => item.evidenceType === 'metric'));
   assert.ok(result.evidence.some((item) => item.evidenceType === 'observation'));
   assert.ok(result.evidence.length <= 100);
+});
+
+test('csv parsing creates fallback evidence when no metric columns are present', async () => {
+  const file = makeFile({
+    originalname: 'notes.csv',
+    mimetype: 'text/csv',
+    buffer: Buffer.from(
+      [
+        'customer,comment',
+        'Acme,Checkout setup requires too much support',
+        'Beta,Local payment method coverage blocks launch',
+      ].join('\n')
+    ),
+  });
+
+  const result = await parseSourceFile(file);
+
+  assert.match(result.parsedText, /Rows: 2/);
+  assert.equal(result.evidence.length, 1);
+  assert.equal(result.evidence[0].evidenceType, 'observation');
+  assert.match(result.evidence[0].content, /Checkout setup/);
 });
 
 test('pdf parsing falls back to raw text streams when pdf structure is invalid', async () => {
