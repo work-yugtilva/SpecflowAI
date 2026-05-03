@@ -18,7 +18,7 @@ function looksLikePipelinePort(base: string): boolean {
   }
 }
 
-export function getExpressApiBase(): string {
+function resolveExpressApiBase(): string {
   const dedicated =
     process.env.NEXT_PUBLIC_EXPRESS_API_URL?.trim() ||
     process.env.NEXT_PUBLIC_CONTEXT_API_URL?.trim();
@@ -33,4 +33,19 @@ export function getExpressApiBase(): string {
   }
 
   return "http://localhost:3001";
+}
+
+export function getExpressApiBase(): string {
+  const base = resolveExpressApiBase();
+  // In the browser, never call localhost as the Express host (breaks production when
+  // Express env vars were not inlined at build). Same-origin `/api/express` proxy
+  // also avoids CORS to a separate Express deployment.
+  if (typeof window !== "undefined") {
+    const isLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(base);
+    if (isLocalhost) {
+      return "/api/express";
+    }
+  }
+
+  return base;
 }

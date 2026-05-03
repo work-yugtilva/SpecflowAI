@@ -34,10 +34,11 @@ On the **frontend** Vercel project (monorepo root or `frontend/` root, whichever
 | Variable | Value |
 |----------|--------|
 | `NEXT_PUBLIC_EXPRESS_API_URL` | Your Express deployment origin, e.g. `https://specflow-backend-xxxx.vercel.app` or your custom domain — **no trailing slash** |
+| `EXPRESS_API_URL` (optional) | Server-only duplicate of the above for the Next.js [`/api/express/*`](../../frontend/app/api/express/[...slug]/route.ts) proxy. Set this (or `NEXT_PUBLIC_*`) on the **frontend** project so the proxy can reach Express when the browser uses same-origin `/api/express` (see [`express-base.ts`](../../frontend/lib/api/express-base.ts)). |
 
 Redeploy the frontend after saving.
 
-Resolution order in code: [`frontend/lib/api/express-base.ts`](../../frontend/lib/api/express-base.ts) (`NEXT_PUBLIC_EXPRESS_API_URL` → `NEXT_PUBLIC_CONTEXT_API_URL` → `NEXT_PUBLIC_BACKEND_URL`).
+Resolution order in code: [`frontend/lib/api/express-base.ts`](../../frontend/lib/api/express-base.ts) (`NEXT_PUBLIC_EXPRESS_API_URL` → `NEXT_PUBLIC_CONTEXT_API_URL` → `NEXT_PUBLIC_BACKEND_URL`). The same-origin proxy uses [`frontend/lib/server/express-upstream.ts`](../../frontend/lib/server/express-upstream.ts) (`EXPRESS_API_URL` first, then the same public vars).
 
 ## 4. Verify
 
