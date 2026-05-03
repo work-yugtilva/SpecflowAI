@@ -1,3 +1,9 @@
+/**
+ * PRODUCTION SETUP REQUIRED:
+ * In Vercel → Project Settings → Environment Variables, set:
+ *   NEXT_PUBLIC_PIPELINE_URL = https://<your-railway-app>.railway.app
+ * Without this, all pipeline proxy routes return 503 on Vercel.
+ */
 import { NextResponse } from "next/server";
 
 /**
@@ -9,7 +15,7 @@ export function getPipelineServerBaseUrl(): string {
   const a = process.env.PIPELINE_SERVER_URL?.trim();
   const b = process.env.NEXT_PUBLIC_PIPELINE_URL?.trim();
   const raw = (a || b || "").replace(/\/$/, "");
-  return raw || "http://localhost:8001";
+  return raw || "http://localhost:8000";
 }
 
 const VERCEL_DEPLOY =

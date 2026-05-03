@@ -32,7 +32,7 @@ export interface PipelineRunResult {
 }
 
 const PIPELINE_URL =
-  process.env.NEXT_PUBLIC_PIPELINE_URL ?? "http://localhost:8001";
+  process.env.NEXT_PUBLIC_PIPELINE_URL ?? "http://localhost:8000";
 
 /** Lost in-memory job / reload / proxy drop — safe to start a fresh async job once. */
 function isRetryableStreamFailure(message: string): boolean {
