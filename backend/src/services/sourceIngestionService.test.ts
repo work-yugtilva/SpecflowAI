@@ -5,6 +5,7 @@ import zlib from 'node:zlib';
 import {
   MAX_SOURCE_FILE_SIZE_BYTES,
   SourceIngestionError,
+  installPdfNodePolyfills,
   parseSourceFile,
   validateUploadedFile,
 } from './sourceIngestionService.js';
@@ -24,6 +25,70 @@ function makeFile(overrides: Partial<Express.Multer.File>): Express.Multer.File 
     stream: undefined as never,
     ...overrides,
   };
+}
+
+function escapePdfText(text: string): string {
+  return text.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)');
+}
+
+function makeTextPdf(text: string): Buffer {
+  const content = `BT /F1 12 Tf 72 720 Td (${escapePdfText(text)}) Tj ET`;
+  return makePdfWithContentStream(content);
+}
+
+function makeAsciiHexTextPdf(text: string): Buffer {
+  const content = `BT /F1 12 Tf 72 720 Td (${escapePdfText(text)}) Tj ET`;
+  const encodedContent = `${Buffer.from(content, 'latin1').toString('hex').toUpperCase()}>`;
+  return makePdfWithContentStream(encodedContent, '/Filter /ASCIIHexDecode');
+}
+
+function makePdfWithContentStream(content: string, descriptor = ''): Buffer {
+  const objects = [
+    '1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n',
+    '2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n',
+    '3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>\nendobj\n',
+    '4 0 obj\n<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>\nendobj\n',
+    `5 0 obj\n<< /Length ${Buffer.byteLength(content, 'latin1')} ${descriptor} >>\nstream\n${content}\nendstream\nendobj\n`,
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  for (const object of objects) {
+    offsets.push(Buffer.byteLength(pdf, 'latin1'));
+    pdf += object;
+  }
+  const xrefOffset = Buffer.byteLength(pdf, 'latin1');
+  pdf += 'xref\n0 6\n0000000000 65535 f \n';
+  for (const offset of offsets.slice(1)) {
+    pdf += `${String(offset).padStart(10, '0')} 00000 n \n`;
+  }
+  pdf += `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF\n`;
+  return Buffer.from(pdf, 'latin1');
+}
+
+async function withDeletedPdfGlobals<T>(run: () => Promise<T> | T): Promise<T> {
+  const globalRef = globalThis as typeof globalThis & {
+    DOMMatrix?: unknown;
+    ImageData?: unknown;
+    Path2D?: unknown;
+  };
+  const previous = {
+    DOMMatrix: globalRef.DOMMatrix,
+    ImageData: globalRef.ImageData,
+    Path2D: globalRef.Path2D,
+  };
+  delete globalRef.DOMMatrix;
+  delete globalRef.ImageData;
+  delete globalRef.Path2D;
+  try {
+    return await run();
+  } finally {
+    if (previous.DOMMatrix === undefined) delete globalRef.DOMMatrix;
+    else globalRef.DOMMatrix = previous.DOMMatrix;
+    if (previous.ImageData === undefined) delete globalRef.ImageData;
+    else globalRef.ImageData = previous.ImageData;
+    if (previous.Path2D === undefined) delete globalRef.Path2D;
+    else globalRef.Path2D = previous.Path2D;
+  }
 }
 
 test('txt parsing creates quote and pain point evidence from meaningful paragraphs', async () => {
@@ -106,6 +171,66 @@ test('csv parsing creates fallback evidence when no metric columns are present',
   assert.equal(result.evidence.length, 1);
   assert.equal(result.evidence[0].evidenceType, 'observation');
   assert.match(result.evidence[0].content, /Checkout setup/);
+});
+
+test('pdf node polyfills define DOMMatrix before importing pdfjs', async () => {
+  await withDeletedPdfGlobals(() => {
+    const globalRef = globalThis as typeof globalThis & {
+      DOMMatrix?: new (init?: number[]) => { a: number; d: number; e: number; f: number };
+      ImageData?: unknown;
+      Path2D?: unknown;
+    };
+
+    installPdfNodePolyfills();
+
+    assert.equal(typeof globalRef.DOMMatrix, 'function');
+    assert.equal(typeof globalRef.ImageData, 'function');
+    assert.equal(typeof globalRef.Path2D, 'function');
+    const matrix = new globalRef.DOMMatrix([1, 2, 3, 4, 5, 6]);
+    assert.equal(matrix.a, 1);
+    assert.equal(matrix.d, 4);
+    assert.equal(matrix.e, 5);
+    assert.equal(matrix.f, 6);
+    const matrix16 = new globalRef.DOMMatrix([1, 2, 0, 0, 3, 4, 0, 0, 0, 0, 1, 0, 5, 6, 0, 1]);
+    assert.equal(matrix16.c, 3);
+    assert.equal(matrix16.f, 6);
+  });
+});
+
+test('pdf parsing installs node polyfills and extracts selectable text', async () => {
+  await withDeletedPdfGlobals(async () => {
+    const pdfText =
+      'Stripe product usage analysis shows developers cannot reconcile local payment method failures without manual review and customer churn rises.';
+    const file = makeFile({
+      originalname: 'stripe_product_usage_analysis.pdf',
+      mimetype: 'application/pdf',
+      buffer: makeTextPdf(pdfText),
+    });
+
+    const result = await parseSourceFile(file);
+
+    assert.match(result.parsedText, /Stripe product usage analysis/);
+    assert.ok(result.parsedText.length >= 50);
+    assert.ok(result.evidence.length > 0);
+    assert.equal(typeof (globalThis as { DOMMatrix?: unknown }).DOMMatrix, 'function');
+  });
+});
+
+test('pdf parsing uses pdfjs for filtered streams that raw fallback cannot read', async () => {
+  await withDeletedPdfGlobals(async () => {
+    const pdfText =
+      'Filtered Stripe usage evidence shows checkout teams cannot diagnose failed local payment methods without developer support.';
+    const file = makeFile({
+      originalname: 'filtered.pdf',
+      mimetype: 'application/pdf',
+      buffer: makeAsciiHexTextPdf(pdfText),
+    });
+
+    const result = await parseSourceFile(file);
+
+    assert.match(result.parsedText, /Filtered Stripe usage evidence/);
+    assert.ok(result.evidence.length > 0);
+  });
 });
 
 test('pdf parsing falls back to raw text streams when pdf structure is invalid', async () => {

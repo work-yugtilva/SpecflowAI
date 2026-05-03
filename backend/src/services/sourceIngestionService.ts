@@ -136,20 +136,334 @@ type PdfjsLib = {
     useWorkerFetch: boolean;
     isEvalSupported: boolean;
     useSystemFonts: boolean;
+    disableFontFace: boolean;
+    isOffscreenCanvasSupported: boolean;
+    isImageDecoderSupported: boolean;
+    canvasMaxAreaInBytes: number;
   }) => { promise: Promise<PdfDocument> };
 };
 
+type MatrixLike = {
+  a?: number;
+  b?: number;
+  c?: number;
+  d?: number;
+  e?: number;
+  f?: number;
+};
+
+class PdfDomMatrixPolyfill {
+  a = 1;
+  b = 0;
+  c = 0;
+  d = 1;
+  e = 0;
+  f = 0;
+
+  constructor(init?: ArrayLike<number> | MatrixLike | string) {
+    if (!init || typeof init === 'string') return;
+    if ('length' in init) {
+      if (init.length >= 16) {
+        this.a = Number(init[0]) || 0;
+        this.b = Number(init[1]) || 0;
+        this.c = Number(init[4]) || 0;
+        this.d = Number(init[5]) || 0;
+        this.e = Number(init[12]) || 0;
+        this.f = Number(init[13]) || 0;
+      } else if (init.length >= 6) {
+        this.a = Number(init[0]) || 0;
+        this.b = Number(init[1]) || 0;
+        this.c = Number(init[2]) || 0;
+        this.d = Number(init[3]) || 0;
+        this.e = Number(init[4]) || 0;
+        this.f = Number(init[5]) || 0;
+      }
+      return;
+    }
+    this.a = init.a ?? this.a;
+    this.b = init.b ?? this.b;
+    this.c = init.c ?? this.c;
+    this.d = init.d ?? this.d;
+    this.e = init.e ?? this.e;
+    this.f = init.f ?? this.f;
+  }
+
+  get m11() {
+    return this.a;
+  }
+  set m11(value: number) {
+    this.a = value;
+  }
+  get m12() {
+    return this.b;
+  }
+  set m12(value: number) {
+    this.b = value;
+  }
+  get m13() {
+    return 0;
+  }
+  get m14() {
+    return 0;
+  }
+  get m21() {
+    return this.c;
+  }
+  set m21(value: number) {
+    this.c = value;
+  }
+  get m22() {
+    return this.d;
+  }
+  set m22(value: number) {
+    this.d = value;
+  }
+  get m23() {
+    return 0;
+  }
+  get m24() {
+    return 0;
+  }
+  get m31() {
+    return 0;
+  }
+  get m32() {
+    return 0;
+  }
+  get m33() {
+    return 1;
+  }
+  get m34() {
+    return 0;
+  }
+  get m41() {
+    return this.e;
+  }
+  set m41(value: number) {
+    this.e = value;
+  }
+  get m42() {
+    return this.f;
+  }
+  set m42(value: number) {
+    this.f = value;
+  }
+  get m43() {
+    return 0;
+  }
+  get m44() {
+    return 1;
+  }
+  get is2D() {
+    return true;
+  }
+  get isIdentity() {
+    return this.a === 1 && this.b === 0 && this.c === 0 && this.d === 1 && this.e === 0 && this.f === 0;
+  }
+
+  multiplySelf(other?: ArrayLike<number> | MatrixLike): this {
+    const matrix = new PdfDomMatrixPolyfill(other);
+    const a = this.a * matrix.a + this.c * matrix.b;
+    const b = this.b * matrix.a + this.d * matrix.b;
+    const c = this.a * matrix.c + this.c * matrix.d;
+    const d = this.b * matrix.c + this.d * matrix.d;
+    const e = this.a * matrix.e + this.c * matrix.f + this.e;
+    const f = this.b * matrix.e + this.d * matrix.f + this.f;
+    this.a = a;
+    this.b = b;
+    this.c = c;
+    this.d = d;
+    this.e = e;
+    this.f = f;
+    return this;
+  }
+
+  preMultiplySelf(other?: ArrayLike<number> | MatrixLike): this {
+    const matrix = new PdfDomMatrixPolyfill(other);
+    return this.setMatrix(matrix.multiply(this));
+  }
+
+  multiply(other?: ArrayLike<number> | MatrixLike): PdfDomMatrixPolyfill {
+    return new PdfDomMatrixPolyfill(this).multiplySelf(other);
+  }
+
+  translateSelf(tx = 0, ty = 0): this {
+    return this.multiplySelf({ a: 1, b: 0, c: 0, d: 1, e: tx, f: ty });
+  }
+
+  translate(tx = 0, ty = 0): PdfDomMatrixPolyfill {
+    return new PdfDomMatrixPolyfill(this).translateSelf(tx, ty);
+  }
+
+  scaleSelf(scaleX = 1, scaleY = scaleX, _scaleZ = 1, originX = 0, originY = 0): this {
+    if (originX || originY) this.translateSelf(originX, originY);
+    this.multiplySelf({ a: scaleX, b: 0, c: 0, d: scaleY, e: 0, f: 0 });
+    if (originX || originY) this.translateSelf(-originX, -originY);
+    return this;
+  }
+
+  scale(scaleX = 1, scaleY = scaleX): PdfDomMatrixPolyfill {
+    return new PdfDomMatrixPolyfill(this).scaleSelf(scaleX, scaleY);
+  }
+
+  rotateSelf(rotX = 0): this {
+    const radians = (rotX * Math.PI) / 180;
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    return this.multiplySelf({ a: cos, b: sin, c: -sin, d: cos, e: 0, f: 0 });
+  }
+
+  rotate(rotX = 0): PdfDomMatrixPolyfill {
+    return new PdfDomMatrixPolyfill(this).rotateSelf(rotX);
+  }
+
+  invertSelf(): this {
+    const determinant = this.a * this.d - this.b * this.c;
+    if (determinant === 0) {
+      this.a = Number.NaN;
+      this.b = Number.NaN;
+      this.c = Number.NaN;
+      this.d = Number.NaN;
+      this.e = Number.NaN;
+      this.f = Number.NaN;
+      return this;
+    }
+    const a = this.d / determinant;
+    const b = -this.b / determinant;
+    const c = -this.c / determinant;
+    const d = this.a / determinant;
+    const e = (this.c * this.f - this.d * this.e) / determinant;
+    const f = (this.b * this.e - this.a * this.f) / determinant;
+    this.a = a;
+    this.b = b;
+    this.c = c;
+    this.d = d;
+    this.e = e;
+    this.f = f;
+    return this;
+  }
+
+  inverse(): PdfDomMatrixPolyfill {
+    return new PdfDomMatrixPolyfill(this).invertSelf();
+  }
+
+  transformPoint(point: { x?: number; y?: number; z?: number; w?: number } = {}) {
+    const x = point.x ?? 0;
+    const y = point.y ?? 0;
+    return {
+      x: this.a * x + this.c * y + this.e,
+      y: this.b * x + this.d * y + this.f,
+      z: point.z ?? 0,
+      w: point.w ?? 1,
+    };
+  }
+
+  toFloat32Array(): Float32Array {
+    return new Float32Array(this.toArray());
+  }
+
+  toFloat64Array(): Float64Array {
+    return new Float64Array(this.toArray());
+  }
+
+  toString(): string {
+    return `matrix(${this.a}, ${this.b}, ${this.c}, ${this.d}, ${this.e}, ${this.f})`;
+  }
+
+  private toArray(): number[] {
+    return [this.a, this.b, 0, 0, this.c, this.d, 0, 0, 0, 0, 1, 0, this.e, this.f, 0, 1];
+  }
+
+  private setMatrix(matrix: PdfDomMatrixPolyfill): this {
+    this.a = matrix.a;
+    this.b = matrix.b;
+    this.c = matrix.c;
+    this.d = matrix.d;
+    this.e = matrix.e;
+    this.f = matrix.f;
+    return this;
+  }
+}
+
+class PdfImageDataPolyfill {
+  data: Uint8ClampedArray;
+  width: number;
+  height: number;
+  colorSpace = 'srgb';
+
+  constructor(widthOrData: number | Uint8ClampedArray, width: number, height?: number) {
+    if (typeof widthOrData === 'number') {
+      this.width = widthOrData;
+      this.height = width;
+      this.data = new Uint8ClampedArray(this.width * this.height * 4);
+      return;
+    }
+    this.data = widthOrData;
+    this.width = width;
+    this.height = height ?? Math.floor(widthOrData.length / 4 / width);
+  }
+}
+
+class PdfPath2DPolyfill {
+  addPath() {}
+  closePath() {}
+  moveTo() {}
+  lineTo() {}
+  bezierCurveTo() {}
+  quadraticCurveTo() {}
+  arc() {}
+  arcTo() {}
+  ellipse() {}
+  rect() {}
+}
+
+export function installPdfNodePolyfills(): void {
+  const globalRef = globalThis as typeof globalThis & {
+    DOMMatrix?: typeof PdfDomMatrixPolyfill;
+    ImageData?: typeof PdfImageDataPolyfill;
+    Path2D?: typeof PdfPath2DPolyfill;
+  };
+
+  if (typeof globalRef.DOMMatrix !== 'function') {
+    globalRef.DOMMatrix = PdfDomMatrixPolyfill;
+  }
+  if (typeof globalRef.ImageData !== 'function') {
+    globalRef.ImageData = PdfImageDataPolyfill;
+  }
+  if (typeof globalRef.Path2D !== 'function') {
+    globalRef.Path2D = PdfPath2DPolyfill;
+  }
+}
+
+async function installPdfFakeWorker(): Promise<void> {
+  const globalRef = globalThis as typeof globalThis & {
+    pdfjsWorker?: { WorkerMessageHandler?: unknown };
+  };
+  if (globalRef.pdfjsWorker?.WorkerMessageHandler) return;
+
+  const workerModuleSpecifier: string = 'pdfjs-dist/legacy/build/pdf.worker.mjs';
+  globalRef.pdfjsWorker = (await import(workerModuleSpecifier)) as {
+    WorkerMessageHandler?: unknown;
+  };
+}
+
 async function extractPdfText(buffer: Buffer): Promise<string> {
   try {
+    installPdfNodePolyfills();
     const pdfjsLib = (await import('pdfjs-dist/legacy/build/pdf.mjs')) as unknown as PdfjsLib;
     pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+    await installPdfFakeWorker();
 
     const uint8Array = new Uint8Array(buffer);
     const pdf = await pdfjsLib.getDocument({
       data: uint8Array,
       useWorkerFetch: false,
       isEvalSupported: false,
-      useSystemFonts: true,
+      useSystemFonts: false,
+      disableFontFace: true,
+      isOffscreenCanvasSupported: false,
+      isImageDecoderSupported: false,
+      canvasMaxAreaInBytes: 0,
     }).promise;
 
     const textParts: string[] = [];

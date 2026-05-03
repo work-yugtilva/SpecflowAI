@@ -269,4 +269,45 @@ describe("SourcesPage", () => {
     });
     expect(await screen.findByText(/uploaded 1 file/i)).toBeTruthy();
   });
+
+  it("shows an upload error when a returned source failed to parse", async () => {
+    const failedSourceRow = {
+      ...sourceRow,
+      id: "source-failed",
+      filename: "stripe_product_usage_analysis.pdf",
+      fileType: "pdf" as const,
+      status: "failed" as const,
+      summary: "DOMMatrix is not defined",
+      errorMessage: "DOMMatrix is not defined",
+      evidenceCount: 0,
+    };
+    listSourcesMock.mockResolvedValueOnce([sourceRow]).mockResolvedValueOnce([failedSourceRow]);
+    getSourceMock
+      .mockResolvedValueOnce({
+        source: { ...sourceRow, parsedText: "Rows: 3\nColumns: activation_rate" },
+        evidence: [],
+      })
+      .mockResolvedValue({
+        source: { ...failedSourceRow, parsedText: null },
+        evidence: [],
+      });
+    uploadSourceFilesMock.mockResolvedValueOnce([{ source: failedSourceRow, evidenceCount: 0 }]);
+
+    render(<SourcesPage />);
+
+    const file = new File(["%PDF-1.7"], "stripe_product_usage_analysis.pdf", {
+      type: "application/pdf",
+    });
+    fireEvent.change(screen.getByLabelText(/upload source files/i), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() => {
+      expect(uploadSourceFilesMock).toHaveBeenCalledWith([file], "session", "session-1");
+      expect(listSourcesMock).toHaveBeenCalledTimes(2);
+    });
+    expect(await screen.findByText(/upload failed to parse/i)).toBeTruthy();
+    expect(screen.getAllByText(/DOMMatrix is not defined/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/uploaded 1 file/i)).toBeNull();
+  });
 });

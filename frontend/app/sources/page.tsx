@@ -20,6 +20,7 @@ import {
   type SourceDetailResponse,
   type SourceFileRecord,
   type SourceScope,
+  type SourceUploadResponse,
 } from "@/lib/api/sources";
 
 const ACCEPTED_EXTENSIONS = ".txt,.pdf,.docx,.csv";
@@ -129,6 +130,19 @@ function statusColor(status: SourceFileRecord["status"]) {
   if (status === "failed") return { bg: "#FEF2F2", color: "#B91C1C" };
   if (status === "processing") return { bg: "#EFF6FF", color: "#2563EB" };
   return { bg: "#F8F4EF", color: "#6B6B6B" };
+}
+
+function formatUploadFileCount(count: number): string {
+  return count === 1 ? "1 file" : `${count} files`;
+}
+
+function formatUploadFailures(uploaded: SourceUploadResponse[]): string {
+  return uploaded
+    .map(({ source }) => {
+      const reason = source.errorMessage || source.summary || "Unable to parse file";
+      return `${source.filename}: ${reason}`;
+    })
+    .join("; ");
 }
 
 function TypeBadge({ type }: { type: ResearchType }) {
@@ -353,8 +367,21 @@ export default function SourcesPage() {
       const uploaded = await uploadSourceFiles(files, scope, sessionId);
       await loadSources();
       setSelectedId(uploaded[0]?.source.id ?? null);
-      const label = files.length === 1 ? "1 file" : `${files.length} files`;
-      setSourceMessage(`Uploaded ${label}`);
+      const failedUploads = uploaded.filter(({ source }) => source.status === "failed");
+      const completedUploads = uploaded.filter(({ source }) => source.status !== "failed");
+
+      if (failedUploads.length > 0 && failedUploads.length === uploaded.length) {
+        setError(`Upload failed to parse: ${formatUploadFailures(failedUploads)}`);
+        setSourceMessage(null);
+        return;
+      }
+
+      if (completedUploads.length > 0) {
+        setSourceMessage(`Uploaded ${formatUploadFileCount(completedUploads.length)}`);
+      }
+      if (failedUploads.length > 0) {
+        setError(`Some files failed to parse: ${formatUploadFailures(failedUploads)}`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
       setSourceMessage(null);
