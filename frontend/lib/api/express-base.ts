@@ -18,6 +18,13 @@ function looksLikePipelinePort(base: string): boolean {
   }
 }
 
+/** Production Express deployment for https://specflowai.com (when env vars are unset). */
+const SPECFLOW_PRODUCTION_EXPRESS_ORIGIN = "https://context.specflowai.com";
+
+function isSpecflowProductionWebHost(hostname: string): boolean {
+  return hostname === "specflowai.com" || hostname === "www.specflowai.com";
+}
+
 function resolveExpressApiBase(): string {
   const dedicated =
     process.env.NEXT_PUBLIC_EXPRESS_API_URL?.trim() ||
@@ -30,6 +37,10 @@ function resolveExpressApiBase(): string {
       return "http://localhost:3001";
     }
     return stripTrailingSlash(backend);
+  }
+
+  if (typeof window !== "undefined" && isSpecflowProductionWebHost(window.location.hostname)) {
+    return SPECFLOW_PRODUCTION_EXPRESS_ORIGIN;
   }
 
   return "http://localhost:3001";

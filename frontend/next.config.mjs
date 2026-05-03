@@ -41,16 +41,18 @@ function toOrigin(value) {
 const nextConfig = {
   poweredByHeader: false,
   async headers() {
-    const connectSrc = joinDefined(
-      [
+    const connectSrc = joinDefined([
+      // Always allow production Express host so CSP does not block fetch when env was omitted at build.
+      "https://context.specflowai.com",
+      ...[
         process.env.NEXT_PUBLIC_SUPABASE_URL,
         process.env.NEXT_PUBLIC_API_URL,
         process.env.NEXT_PUBLIC_PIPELINE_URL,
         process.env.NEXT_PUBLIC_EXPRESS_API_URL,
         process.env.NEXT_PUBLIC_CONTEXT_API_URL,
         process.env.NEXT_PUBLIC_BACKEND_URL,
-      ].map(toOrigin)
-    );
+      ].map(toOrigin),
+    ]);
 
     const contentSecurityPolicy = [
       "default-src 'self'",

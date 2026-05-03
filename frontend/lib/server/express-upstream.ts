@@ -18,8 +18,24 @@ function looksLikePipelinePort(base: string): boolean {
   }
 }
 
+const SPECFLOW_PRODUCTION_EXPRESS_ORIGIN = "https://context.specflowai.com";
+
+function resolveSpecflowUpstreamFromSiteEnv(): string | null {
+  const site = process.env.NEXT_PUBLIC_APP_URL?.trim() || process.env.NEXT_PUBLIC_SITE_URL?.trim();
+  if (!site) return null;
+  try {
+    const host = new URL(site).hostname;
+    if (host === "specflowai.com" || host === "www.specflowai.com") {
+      return SPECFLOW_PRODUCTION_EXPRESS_ORIGIN;
+    }
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 /**
- * Throws if no upstream can be resolved (misconfigured deployment).
+ * Resolved Express origin for server-side proxy calls. Defaults to localhost for local dev.
  */
 export function resolveExpressUpstreamBase(): string {
   const serverOnly = process.env.EXPRESS_API_URL?.trim();
@@ -37,6 +53,9 @@ export function resolveExpressUpstreamBase(): string {
     }
     return stripTrailingSlash(backend);
   }
+
+  const specflow = resolveSpecflowUpstreamFromSiteEnv();
+  if (specflow) return specflow;
 
   return "http://127.0.0.1:3001";
 }
