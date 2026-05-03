@@ -131,6 +131,21 @@ export function buildPipelineInputFromStorage(
   const build = async (): Promise<PipelineInput> => {
     const research = await getResearchPayload(sessionId);
     const sourceEvidence = await getSourceEvidencePayload(sessionId);
+    // Map research entries into ingest format so pipeline agents can read them.
+    // Agents read ctx["ingest"], not ctx["research"] — without this, research
+    // entries never reach the pipeline and it 422s with INCOMPLETE_CONTEXT.
+    const researchAsIngest = (research as Array<{
+      id?: string;
+      type?: string;
+      content?: string;
+      summary?: string;
+      title?: string;
+    }>).map((r) => ({
+      id: r.id ?? `research-${Math.random().toString(36).slice(2)}`,
+      type: r.type ?? "interview",
+      content: r.content ?? r.summary ?? "",
+      metadata: { source: r.title ?? "research" },
+    })).filter((r) => r.content.trim().length > 0);
     const sourceAnalyticsContext = buildSourceAnalyticsContext(sourceEvidence);
     const pendingRaw =
       typeof window !== "undefined"
@@ -148,7 +163,7 @@ export function buildPipelineInputFromStorage(
             (p.context as Record<string, unknown>) ??
             getContextObject(sessionId),
           research,
-          ingest: [...pendingIngest, ...sourceEvidence],
+          ingest: [...pendingIngest, ...researchAsIngest, ...sourceEvidence],
           ...(sourceAnalyticsContext
             ? { analytics_context: sourceAnalyticsContext }
             : {}),
@@ -160,7 +175,7 @@ export function buildPipelineInputFromStorage(
     return {
       context: getContextObject(sessionId),
       research,
-      ingest: sourceEvidence,
+      ingest: [...researchAsIngest, ...sourceEvidence],
       ...(sourceAnalyticsContext
         ? { analytics_context: sourceAnalyticsContext }
         : {}),
