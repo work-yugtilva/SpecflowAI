@@ -154,11 +154,12 @@ export function buildPipelineInputFromStorage(
             readScopedRaw(sessionId, pendingSuffix()))
           : localStorage.getItem(LS_PENDING)
         : null;
+    let input: PipelineInput | null = null;
     if (pendingRaw) {
       try {
         const p = JSON.parse(pendingRaw) as Partial<PipelineInput>;
         const pendingIngest = Array.isArray(p.ingest) ? p.ingest : [];
-        return {
+        input = {
           context:
             (p.context as Record<string, unknown>) ??
             getContextObject(sessionId),
@@ -172,14 +173,22 @@ export function buildPipelineInputFromStorage(
         /* fall through */
       }
     }
-    return {
-      context: getContextObject(sessionId),
-      research,
-      ingest: [...researchAsIngest, ...sourceEvidence],
-      ...(sourceAnalyticsContext
-        ? { analytics_context: sourceAnalyticsContext }
-        : {}),
-    };
+    if (!input) {
+      input = {
+        context: getContextObject(sessionId),
+        research,
+        ingest: [...researchAsIngest, ...sourceEvidence],
+        ...(sourceAnalyticsContext
+          ? { analytics_context: sourceAnalyticsContext }
+          : {}),
+      };
+    }
+    if (input.ingest.length === 0 && input.research.length === 0) {
+      throw new Error(
+        "No sources or research found for this session. Upload documents or add research entries in the Sources page before running the pipeline."
+      );
+    }
+    return input;
   };
   return build();
 }
