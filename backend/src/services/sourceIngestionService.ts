@@ -1,17 +1,10 @@
-import { createRequire } from 'node:module';
 import path from 'node:path';
-import { pathToFileURL } from 'node:url';
 import zlib from 'node:zlib';
 
 import { parse as parseCsv } from 'csv-parse/sync';
 import mammoth from 'mammoth';
 
 import type { SourceEvidenceType, SourceFileType } from '@/types/index.js';
-
-const _require = createRequire(import.meta.url);
-const PDFJS_WORKER_SRC = pathToFileURL(
-  _require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs')
-).href;
 
 export const MAX_SOURCE_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
@@ -144,8 +137,8 @@ type PdfjsLib = {
 
 async function extractPdfText(buffer: Buffer): Promise<string> {
   try {
-    const pdfjsLib = (await import('pdfjs-dist/legacy/build/pdf.mjs')) as unknown as PdfjsLib;
-    pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_SRC;
+    const pdfjsLib = (await import('pdfjs-dist')) as unknown as PdfjsLib;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '';
 
     const uint8Array = new Uint8Array(buffer);
     const pdf = await pdfjsLib.getDocument({
