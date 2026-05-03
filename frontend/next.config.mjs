@@ -41,9 +41,13 @@ function toOrigin(value) {
 const nextConfig = {
   poweredByHeader: false,
   async headers() {
+    const expressFallbackOrigin =
+      process.env.NEXT_PUBLIC_EXPRESS_FALLBACK_ORIGIN?.trim() ||
+      process.env.EXPRESS_FALLBACK_ORIGIN?.trim() ||
+      "https://context.specflowai.com";
+
     const connectSrc = joinDefined([
-      // Always allow production Express host so CSP does not block fetch when env was omitted at build.
-      "https://context.specflowai.com",
+      toOrigin(expressFallbackOrigin),
       ...[
         process.env.NEXT_PUBLIC_SUPABASE_URL,
         process.env.NEXT_PUBLIC_API_URL,

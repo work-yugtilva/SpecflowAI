@@ -33,12 +33,15 @@ On the **frontend** Vercel project (monorepo root or `frontend/` root, whichever
 
 | Variable | Value |
 |----------|--------|
-| `NEXT_PUBLIC_EXPRESS_API_URL` | Your Express deployment origin, e.g. `https://specflow-backend-xxxx.vercel.app` or your custom domain — **no trailing slash** |
-| `EXPRESS_API_URL` (optional) | Server-only duplicate of the above for the Next.js [`/api/express/*`](../../frontend/app/api/express/[...slug]/route.ts) proxy. Set this (or `NEXT_PUBLIC_*`) on the **frontend** project so the proxy can reach Express when the browser uses same-origin `/api/express` (see [`express-base.ts`](../../frontend/lib/api/express-base.ts)). |
+| `NEXT_PUBLIC_EXPRESS_API_URL` | Your Express deployment origin, e.g. `https://context.specflowai.com` — **no trailing slash** |
+| `EXPRESS_API_URL` (optional) | **Server-only.** Preferred on Vercel for Route Handlers and SSR so the value never ships in the client bundle. Same URL as `NEXT_PUBLIC_*` is typical. Used first by [`express-origin.ts`](../../frontend/lib/api/express-origin.ts). |
+| `NEXT_PUBLIC_EXPRESS_FALLBACK_ORIGIN` / `EXPRESS_FALLBACK_ORIGIN` (optional) | When Express would otherwise resolve to loopback (`127.0.0.1:3001`) **and** the app runs on Vercel/Railway (or the browser is not on localhost), this origin is used instead. Overrides the built-in SpecFlow default. Forks should set this (or explicit `NEXT_PUBLIC_EXPRESS_API_URL`). |
 
 Redeploy the frontend after saving.
 
-Resolution order in code: [`frontend/lib/api/express-base.ts`](../../frontend/lib/api/express-base.ts) (`NEXT_PUBLIC_EXPRESS_API_URL` → `NEXT_PUBLIC_CONTEXT_API_URL` → `NEXT_PUBLIC_BACKEND_URL`). The same-origin proxy uses [`frontend/lib/server/express-upstream.ts`](../../frontend/lib/server/express-upstream.ts) (`EXPRESS_API_URL` first, then the same public vars).
+Canonical resolution order: [`frontend/lib/api/express-origin.ts`](../../frontend/lib/api/express-origin.ts) (`EXPRESS_API_URL` on server → `NEXT_PUBLIC_EXPRESS_API_URL` → `NEXT_PUBLIC_CONTEXT_API_URL` → `NEXT_PUBLIC_BACKEND_URL` except FastAPI ports → deployed/browser fallback). [`frontend/lib/api/express-base.ts`](../../frontend/lib/api/express-base.ts) wraps browser loopback with `/api/express`. [`frontend/lib/server/express-upstream.ts`](../../frontend/lib/server/express-upstream.ts) re-exports server resolution for the `/api/express/*` proxy.
+
+Railway-hosted Next.js (or any host exposing `RAILWAY_ENVIRONMENT` / `RAILWAY_PUBLIC_DOMAIN`) uses the same fallback behaviour when Express URL env vars are unset.
 
 ## 4. Verify
 
