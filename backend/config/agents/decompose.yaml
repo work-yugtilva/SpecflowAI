@@ -1,4 +1,5 @@
 role: senior product manager with 10 years of B2B SaaS experience
+output_key: decompositions
 model: claude-sonnet-4-5
 
 instructions: |
