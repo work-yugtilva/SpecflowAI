@@ -1,10 +1,17 @@
+import { createRequire } from 'node:module';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import zlib from 'node:zlib';
 
 import { parse as parseCsv } from 'csv-parse/sync';
 import mammoth from 'mammoth';
 
 import type { SourceEvidenceType, SourceFileType } from '@/types/index.js';
+
+const _require = createRequire(import.meta.url);
+const PDFJS_WORKER_SRC = pathToFileURL(
+  _require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs')
+).href;
 
 export const MAX_SOURCE_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
@@ -116,33 +123,64 @@ export async function parseSourceFile(file: Express.Multer.File): Promise<Source
   }
 }
 
+type PdfPage = {
+  getTextContent: () => Promise<{ items: Array<{ str?: string }> }>;
+};
+
+type PdfDocument = {
+  numPages: number;
+  getPage: (pageNumber: number) => Promise<PdfPage>;
+};
+
+type PdfjsLib = {
+  GlobalWorkerOptions: { workerSrc: string };
+  getDocument: (params: {
+    data: Uint8Array;
+    useWorkerFetch: boolean;
+    isEvalSupported: boolean;
+    useSystemFonts: boolean;
+  }) => { promise: Promise<PdfDocument> };
+};
+
 async function extractPdfText(buffer: Buffer): Promise<string> {
-  let parser: { getText: () => Promise<{ text: string }>; destroy: () => Promise<void> } | null = null;
   try {
-    await installPdfCanvasGlobals();
-    const { PDFParse } = await import('pdf-parse');
-    parser = new PDFParse({ data: buffer });
-    const result = await parser.getText();
-    return result.text || extractPdfTextFromRawStreams(buffer);
+    const pdfjsLib = (await import('pdfjs-dist/legacy/build/pdf.mjs')) as unknown as PdfjsLib;
+    pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_SRC;
+
+    const uint8Array = new Uint8Array(buffer);
+    const pdf = await pdfjsLib.getDocument({
+      data: uint8Array,
+      useWorkerFetch: false,
+      isEvalSupported: false,
+      useSystemFonts: true,
+    }).promise;
+
+    const textParts: string[] = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const pageText = content.items
+        .filter((item): item is { str: string } => typeof item.str === 'string')
+        .map((item) => item.str)
+        .join(' ')
+        .trim();
+      if (pageText) textParts.push(pageText);
+    }
+
+    const fullText = textParts.join('\n\n').trim();
+    if (fullText.length < 50) {
+      throw new Error(
+        'PDF parsed but extracted no readable text. ' +
+          'This may be a scanned or image-based PDF. ' +
+          'Try uploading a text-based PDF, or paste the content as a .txt file.'
+      );
+    }
+    return fullText;
   } catch (error) {
     const fallbackText = extractPdfTextFromRawStreams(buffer);
-    if (fallbackText) return fallbackText;
+    if (fallbackText && fallbackText.length >= 50) return fallbackText;
     throw error;
-  } finally {
-    await parser?.destroy();
   }
-}
-
-async function installPdfCanvasGlobals(): Promise<void> {
-  const canvas = await import('@napi-rs/canvas');
-  const runtimeGlobal = globalThis as typeof globalThis & {
-    DOMMatrix?: unknown;
-    ImageData?: unknown;
-    Path2D?: unknown;
-  };
-  runtimeGlobal.DOMMatrix ??= canvas.DOMMatrix;
-  runtimeGlobal.ImageData ??= canvas.ImageData;
-  runtimeGlobal.Path2D ??= canvas.Path2D;
 }
 
 function extractPdfTextFromRawStreams(buffer: Buffer): string {

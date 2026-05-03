@@ -117,11 +117,16 @@ router.post('/upload', (req: AuthRequest, res, next) => {
             evidenceCount: evidence.length,
           });
         } catch (error) {
-          console.error('[sources] parse failed', error);
+          const stack = error instanceof Error ? error.stack : JSON.stringify(error);
+          console.error('[sources] parse failed — full error:', stack);
+          const userMessage =
+            error instanceof Error && error.message.length > 0 && error.message.length < 300
+              ? error.message
+              : 'Unable to parse uploaded source. Check Vercel Function Logs for details.';
           const failed = await sourceService.markFailed(
             userId,
             source.id,
-            'Unable to parse uploaded source',
+            userMessage,
             req.userClient
           );
           results.push({
