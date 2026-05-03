@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import zlib from 'node:zlib';
 
 import {
   MAX_SOURCE_FILE_SIZE_BYTES,
@@ -69,6 +70,63 @@ test('csv parsing creates metric evidence, observation evidence, and numeric met
   assert.ok(result.evidence.some((item) => item.evidenceType === 'metric'));
   assert.ok(result.evidence.some((item) => item.evidenceType === 'observation'));
   assert.ok(result.evidence.length <= 100);
+});
+
+test('pdf parsing falls back to raw text streams when pdf structure is invalid', async () => {
+  const pdfText =
+    'Stripe product usage analysis showed checkout conversion improved while churn reduction became a priority.';
+  const content = `BT /F1 12 Tf 72 720 Td (${pdfText}) Tj ET`;
+  const file = makeFile({
+    originalname: 'stripe_product_usage_analysis.pdf',
+    mimetype: 'application/pdf',
+    buffer: Buffer.from(
+      [
+        '%PDF-1.7',
+        '1 0 obj',
+        `<< /Length ${content.length} >>`,
+        'stream',
+        content,
+        'endstream',
+        'endobj',
+        '%%EOF',
+      ].join('\n')
+    ),
+  });
+
+  const result = await parseSourceFile(file);
+
+  assert.match(result.parsedText, /Stripe product usage analysis/);
+  assert.match(result.summary, /parsed \d+ words/);
+  assert.ok(result.evidence.some((item) => item.evidenceType === 'quote'));
+});
+
+test('pdf parsing fallback extracts compressed FlateDecode text streams', async () => {
+  const pdfText =
+    'Stripe usage metrics revealed slow onboarding and manual reconciliation as recurring customer pain points.';
+  const content = Buffer.from(`BT /F1 12 Tf 72 720 Td (${pdfText}) Tj ET`);
+  const compressed = zlib.deflateSync(content);
+  const file = makeFile({
+    originalname: 'compressed.pdf',
+    mimetype: 'application/pdf',
+    buffer: Buffer.concat([
+      Buffer.from(
+        [
+          '%PDF-1.7',
+          '1 0 obj',
+          `<< /Length ${compressed.length} /Filter /FlateDecode >>`,
+          'stream',
+          '',
+        ].join('\n')
+      ),
+      compressed,
+      Buffer.from('\nendstream\nendobj\n%%EOF'),
+    ]),
+  });
+
+  const result = await parseSourceFile(file);
+
+  assert.match(result.parsedText, /manual reconciliation/);
+  assert.ok(result.evidence.some((item) => item.evidenceType === 'pain_point'));
 });
 
 test('unsupported file types are rejected before parsing', () => {

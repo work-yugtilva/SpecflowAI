@@ -1,4 +1,5 @@
 import path from 'node:path';
+import zlib from 'node:zlib';
 
 import { parse as parseCsv } from 'csv-parse/sync';
 import mammoth from 'mammoth';
@@ -116,14 +117,19 @@ export async function parseSourceFile(file: Express.Multer.File): Promise<Source
 }
 
 async function extractPdfText(buffer: Buffer): Promise<string> {
-  await installPdfCanvasGlobals();
-  const { PDFParse } = await import('pdf-parse');
-  const parser = new PDFParse({ data: buffer });
+  let parser: { getText: () => Promise<{ text: string }>; destroy: () => Promise<void> } | null = null;
   try {
+    await installPdfCanvasGlobals();
+    const { PDFParse } = await import('pdf-parse');
+    parser = new PDFParse({ data: buffer });
     const result = await parser.getText();
-    return result.text;
+    return result.text || extractPdfTextFromRawStreams(buffer);
+  } catch (error) {
+    const fallbackText = extractPdfTextFromRawStreams(buffer);
+    if (fallbackText) return fallbackText;
+    throw error;
   } finally {
-    await parser.destroy();
+    await parser?.destroy();
   }
 }
 
@@ -137,6 +143,113 @@ async function installPdfCanvasGlobals(): Promise<void> {
   runtimeGlobal.DOMMatrix ??= canvas.DOMMatrix;
   runtimeGlobal.ImageData ??= canvas.ImageData;
   runtimeGlobal.Path2D ??= canvas.Path2D;
+}
+
+function extractPdfTextFromRawStreams(buffer: Buffer): string {
+  const source = buffer.toString('latin1');
+  const chunks: string[] = [];
+  const streamPattern = /<<(.*?)>>\s*stream\r?\n?([\s\S]*?)\r?\n?endstream/g;
+  let match: RegExpExecArray | null;
+
+  while ((match = streamPattern.exec(source))) {
+    const [, descriptor, rawStream] = match;
+    const streamBuffer = Buffer.from(rawStream, 'latin1');
+    const candidates = [streamBuffer, stripOuterNewlines(streamBuffer)];
+    for (const candidate of candidates) {
+      const content = descriptor.includes('/FlateDecode')
+        ? inflatePdfStream(candidate)
+        : candidate.toString('latin1');
+      if (content) chunks.push(extractTextOperators(content));
+    }
+  }
+
+  if (chunks.length === 0) {
+    chunks.push(extractTextOperators(source));
+  }
+
+  return normalizeWhitespace(chunks.filter(Boolean).join('\n'));
+}
+
+function stripOuterNewlines(buffer: Buffer): Buffer {
+  let start = 0;
+  let end = buffer.length;
+  while (start < end && (buffer[start] === 0x0a || buffer[start] === 0x0d)) start += 1;
+  while (end > start && (buffer[end - 1] === 0x0a || buffer[end - 1] === 0x0d)) end -= 1;
+  return buffer.subarray(start, end);
+}
+
+function inflatePdfStream(buffer: Buffer): string {
+  try {
+    return zlib.inflateSync(buffer).toString('latin1');
+  } catch {
+    return '';
+  }
+}
+
+function extractTextOperators(content: string): string {
+  const parts: string[] = [];
+
+  for (const arrayMatch of content.matchAll(/\[((?:\\.|[^\]])*)\]\s*TJ/g)) {
+    parts.push(...extractPdfLiteralStrings(arrayMatch[1]).map(decodePdfLiteralString));
+    parts.push(...extractPdfHexStrings(arrayMatch[1]).map(decodePdfHexString));
+  }
+
+  for (const stringMatch of content.matchAll(/\(((?:\\.|[^\\()])*)\)\s*(?:Tj|'|")/g)) {
+    parts.push(decodePdfLiteralString(stringMatch[1]));
+  }
+
+  for (const hexMatch of content.matchAll(/<([0-9A-Fa-f\s]+)>\s*Tj/g)) {
+    parts.push(decodePdfHexString(hexMatch[1]));
+  }
+
+  return parts.filter(Boolean).join(' ');
+}
+
+function extractPdfLiteralStrings(content: string): string[] {
+  return [...content.matchAll(/\(((?:\\.|[^\\()])*)\)/g)].map((match) => match[1]);
+}
+
+function extractPdfHexStrings(content: string): string[] {
+  return [...content.matchAll(/<([0-9A-Fa-f\s]+)>/g)].map((match) => match[1]);
+}
+
+function decodePdfLiteralString(value: string): string {
+  return value.replace(/\\([0-7]{1,3}|[nrtbf()\\])/g, (_match, escape: string) => {
+    if (/^[0-7]+$/.test(escape)) return String.fromCharCode(parseInt(escape, 8));
+    const escapes: Record<string, string> = {
+      n: '\n',
+      r: '\r',
+      t: '\t',
+      b: '\b',
+      f: '\f',
+      '(': '(',
+      ')': ')',
+      '\\': '\\',
+    };
+    return escapes[escape] ?? escape;
+  });
+}
+
+function decodePdfHexString(value: string): string {
+  const cleaned = value.replace(/\s+/g, '');
+  if (!cleaned || cleaned.length % 2 !== 0) return '';
+  const bytes = Buffer.from(cleaned, 'hex');
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    return decodeUtf16Be(bytes.subarray(2));
+  }
+  if (bytes.length > 2 && bytes.every((byte, index) => index % 2 === 0 || byte < 128)) {
+    const likelyUtf16 = bytes.filter((_byte, index) => index % 2 === 0).every((byte) => byte === 0);
+    if (likelyUtf16) return decodeUtf16Be(bytes);
+  }
+  return bytes.toString('latin1');
+}
+
+function decodeUtf16Be(bytes: Buffer): string {
+  const chars: string[] = [];
+  for (let i = 0; i + 1 < bytes.length; i += 2) {
+    chars.push(String.fromCharCode((bytes[i] << 8) | bytes[i + 1]));
+  }
+  return chars.join('');
 }
 
 function normalizeWhitespace(text: string): string {
