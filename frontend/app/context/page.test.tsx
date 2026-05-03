@@ -55,6 +55,7 @@ beforeEach(() => {
   saveScopedContextMock.mockResolvedValue({});
   getUserMock.mockResolvedValue({ data: { user: { id: "user-1" } } });
   upsertMock.mockResolvedValue({ error: null });
+  document.cookie = "specflow_onboarding_complete=; Path=/; Max-Age=0; SameSite=Lax";
 });
 
 describe("ContextPage onboarding flow", () => {
@@ -90,5 +91,15 @@ describe("ContextPage onboarding flow", () => {
       { onConflict: "user_id" }
     ));
     await waitFor(() => expect(window.location.href).toBe("/dashboard"));
+  });
+
+  it("continues to dashboard when the profile completion sync fails", async () => {
+    upsertMock.mockResolvedValue({ error: { message: "profile write failed" } });
+    render(<ContextPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: /save/i }));
+
+    await waitFor(() => expect(window.location.href).toBe("/dashboard"));
+    expect(document.cookie).toContain("specflow_onboarding_complete=1");
   });
 });

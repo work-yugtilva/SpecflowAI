@@ -42,6 +42,12 @@ const INITIAL_FORM: ContextForm = {
   constraints: "",
 };
 
+const ONBOARDING_COMPLETE_COOKIE = "specflow_onboarding_complete";
+
+function markOnboardingCompleteCookie() {
+  document.cookie = `${ONBOARDING_COMPLETE_COOKIE}=1; Path=/; Max-Age=31536000; SameSite=Lax`;
+}
+
 // ─── Shared Styles ────────────────────────────────────────────────────────────
 
 const inputStyle: React.CSSProperties = {
@@ -261,7 +267,10 @@ export default function ContextPage() {
       }
 
       if (isOnboardingFlow) {
-        await completeOnboardingProfile(form);
+        markOnboardingCompleteCookie();
+        void completeOnboardingProfile(form).catch(() => {
+          // Middleware also accepts the completion cookie for users who finish this step.
+        });
         void saveScopedContext(targetScope, form, activeSessionId ?? undefined).catch(() => {
           // Local context plus the completed profile are enough to enter the app.
         });

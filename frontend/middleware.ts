@@ -19,6 +19,8 @@ const PROTECTED_PATHS = [
   "/settings",
 ];
 
+const ONBOARDING_COMPLETE_COOKIE = "specflow_onboarding_complete";
+
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
@@ -59,6 +61,8 @@ export async function middleware(request: NextRequest) {
   const isLoginPage = pathname === "/login";
   const isProductContextOnboardingStep =
     pathname === "/context" && request.nextUrl.searchParams.get("onboarding") === "1";
+  const hasOnboardingCompleteCookie =
+    request.cookies.get(ONBOARDING_COMPLETE_COOKIE)?.value === "1";
 
   // Unauthenticated → redirect to /login
   if (!user && isProtected) {
@@ -82,7 +86,7 @@ export async function middleware(request: NextRequest) {
         .select("onboarding_completed_at")
         .eq("user_id", user.id)
         .single();
-      if (!data || data.onboarding_completed_at === null) {
+      if ((!data || data.onboarding_completed_at === null) && !hasOnboardingCompleteCookie) {
         const url = request.nextUrl.clone();
         url.pathname = "/onboarding";
         return NextResponse.redirect(url);

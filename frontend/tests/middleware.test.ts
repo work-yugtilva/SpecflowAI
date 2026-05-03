@@ -59,4 +59,16 @@ describe("middleware onboarding gate", () => {
 
     expect(response.headers.get("location")).toBe("https://app.specflow.ai/onboarding");
   });
+
+  it("allows dashboard when the onboarding completion cookie is present", async () => {
+    const request = new NextRequest("https://app.specflow.ai/dashboard", {
+      headers: {
+        cookie: "specflow_onboarding_complete=1",
+      },
+    });
+
+    const response = await middleware(request);
+
+    expect(response.headers.get("location")).toBeNull();
+  });
 });
