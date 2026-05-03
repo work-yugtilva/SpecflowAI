@@ -18,8 +18,9 @@ class ProductContextAgent(BaseAgent):
 
     def build_prompt(self, task: str, context: dict = None, memory: dict = None) -> str:
         ctx = context or {}
+        mem = memory or {}
         product_context = ctx.get("product_context") or ctx.get("context", {})
-        ingest = ctx.get("ingest", [])
+        ingest = self._merged_research_context(ctx, mem)
 
         prompt_context = {
             "existing_product_context": product_context,

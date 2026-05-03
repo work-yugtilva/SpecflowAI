@@ -171,6 +171,7 @@ def validate_pipeline_input(input_data: dict) -> None:
     """
     context = input_data.get("context") or {}
     ingest = input_data.get("ingest")
+    research = input_data.get("research")
 
     context_fields = ("companyName", "productName", "productDescription")
     has_context = all(
@@ -178,8 +179,9 @@ def validate_pipeline_input(input_data: dict) -> None:
         for f in context_fields
     )
     has_ingest = isinstance(ingest, list) and len(ingest) > 0
+    has_research = isinstance(research, list) and len(research) > 0
 
-    if has_context or has_ingest:
+    if has_context or has_ingest or has_research:
         return
 
     # Neither source is present — report all missing fields
@@ -248,7 +250,7 @@ class Pipeline:
             SESSION_STATUS_FAILED,
         )
 
-        state = dict(input_data)
+        state = self._normalize_pipeline_input(input_data)
 
         _analytics_block = self._format_analytics_context(
             state.get("ingest") or [],
@@ -258,7 +260,7 @@ class Pipeline:
             state["analytics_context"] = _analytics_block
 
         # Gate: reject immediately if required context fields or ingest are missing
-        validate_pipeline_input(input_data)
+        validate_pipeline_input(state)
 
         memory_store = MemoryStore()
         memory_manager = MemoryManager(memory_store)
@@ -307,17 +309,17 @@ class Pipeline:
             # Log input event on very first call
             if last_completed is None and event_tracking_on:
                 await session_manager.append_event(
-                    session_id, "input", {"input_data": input_data}
+                    session_id, "input", {"input_data": state}
                 )
 
             # Global Project Memory: save new ingest once (first call), then load accumulated context
             if project_id:
                 try:
-                    if last_completed is None and input_data.get("ingest"):
+                    if last_completed is None and state.get("ingest"):
                         logger.info("[global-memory] Saving %d ingest items for project=%s",
-                                   len(input_data["ingest"]), project_id)
+                                   len(state["ingest"]), project_id)
                         await self.research_repo.save_global_ingest(
-                            project_id, input_data["ingest"]
+                            project_id, state["ingest"]
                         )
                     global_items = await self.research_repo.get_global_ingest(project_id)
                     if global_items:
@@ -449,7 +451,7 @@ class Pipeline:
             }
             try:
                 adk_result = await self.orchestrator.run(
-                    input_data,
+                    state,
                     session_id=session_id or "anon",
                     user_id=user_id,
                     completed_steps=completed_steps,
@@ -580,6 +582,26 @@ class Pipeline:
     # -------------------------------------------------------------------------
     # Private helpers
     # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _normalize_pipeline_input(input_data: dict) -> dict:
+        """
+        Normalize browser payloads into the runtime shape Python agents read.
+
+        The frontend sends manually entered/uploaded source evidence as `ingest`
+        and server-backed Research & Articles as `research`. Typed agents read
+        `ingest` as their research_context, so merge both lists once at the
+        pipeline boundary while preserving the original `research` key for
+        analytics and debugging.
+        """
+        state = dict(input_data or {})
+        ingest = state.get("ingest")
+        research = state.get("research")
+        ingest_items = list(ingest) if isinstance(ingest, list) else []
+        research_items = list(research) if isinstance(research, list) else []
+        state["ingest"] = [*ingest_items, *research_items]
+        state["research"] = research_items
+        return state
 
     @staticmethod
     def _extract_citation_metadata(content: Any) -> tuple[Any, dict]:

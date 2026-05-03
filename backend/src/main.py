@@ -570,6 +570,13 @@ PIPELINE_PORT = int(os.environ.get("PIPELINE_PORT", "8001"))
 IntegrationProvider = Literal["github", "jira", "linear", "notion", "confluence"]
 
 
+def _raise_pipeline_value_error(exc: ValueError) -> None:
+    msg = str(exc)
+    if msg.startswith("INCOMPLETE_CONTEXT:"):
+        raise HTTPException(status_code=422, detail=msg)
+    raise HTTPException(status_code=404, detail=msg)
+
+
 @app.get("/health")
 async def health(request: Request):
     """Liveness probe — no auth, no rate limit (Railway/K8s healthchecks)."""
@@ -663,8 +670,8 @@ async def run_pipeline(request: Request, req: RunRequest, auth: SupabaseUser = D
         await plan_svc.record_usage(auth.user_id, is_full_run=True)
         logger.info("[pipeline] Run complete | keys=%s", list(result.keys()))
         return {"success": True, "data": result}
-    except ValueError:
-        raise
+    except ValueError as e:
+        _raise_pipeline_value_error(e)
     except HTTPException:
         raise
     except Exception as e:
@@ -868,10 +875,7 @@ async def run_session(request: Request, session_id: str, req: SessionRunRequest,
             "session_state": current_state,
         }
     except ValueError as e:
-        msg = str(e)
-        if msg.startswith("INCOMPLETE_CONTEXT:"):
-            raise
-        raise HTTPException(status_code=404, detail=msg)
+        _raise_pipeline_value_error(e)
     except HTTPException:
         raise
     except Exception as e:
@@ -989,7 +993,8 @@ async def run_session_async(request: Request, session_id: str, req: SessionRunRe
                 await repo.update_status(job.job_id, "failed", error=e.detail)
             except ValueError as e:
                 msg = str(e)
-                await job.queue.put({"type": "error", "message": msg})
+                status_code = 422 if msg.startswith("INCOMPLETE_CONTEXT:") else 400
+                await job.queue.put({"type": "error", "message": msg, "status_code": status_code})
                 job.status = "failed"
                 await repo.update_status(job.job_id, "failed", error=msg)
             except Exception as e:
@@ -1011,10 +1016,7 @@ async def run_session_async(request: Request, session_id: str, req: SessionRunRe
     except HTTPException:
         raise
     except ValueError as e:
-        msg = str(e)
-        if msg.startswith("INCOMPLETE_CONTEXT:"):
-            raise
-        raise HTTPException(status_code=404, detail=msg)
+        _raise_pipeline_value_error(e)
     except Exception:
         logger.exception("run_session_async failed for session_id=%s", session_id)
         raise HTTPException(status_code=500, detail="Internal server error")

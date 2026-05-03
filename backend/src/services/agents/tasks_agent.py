@@ -33,6 +33,12 @@ class TasksAgent(BaseAgent):
             "prior_decompositions": decompositions,
         }
 
+        if ctx.get("rag_context"):
+            prompt_context["rag_context"] = ctx["rag_context"]
+
+        if ctx.get("analytics_context"):
+            prompt_context["analytics_context"] = ctx["analytics_context"]
+
         if ctx.get("previous_attempt_failure"):
             prompt_context["previous_attempt_failure"] = ctx["previous_attempt_failure"]
 

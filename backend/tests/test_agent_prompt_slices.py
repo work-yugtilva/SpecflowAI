@@ -89,6 +89,58 @@ def test_problems_agent_limits_context_to_product_and_research(agent_factory, fu
     assert "<prior_tasks>" not in prompt
 
 
+@pytest.mark.parametrize(
+    "agent_name",
+    ["product_context", "problems", "features", "decompose"],
+)
+def test_agents_include_server_research_entries_in_research_context(agent_factory, agent_name):
+    agent = agent_factory.create(agent_name)
+    context = {
+        "product_context": {
+            "companyName": "Acme",
+            "productName": "Widget",
+            "productDescription": "A planning workflow product.",
+        },
+        "research": [
+            {
+                "title": "Server research",
+                "content": "Users cannot find decision history.",
+            }
+        ],
+        "ingest": [],
+    }
+
+    prompt = agent.build_prompt("task", context=context)
+
+    assert "<research_context>" in prompt
+    assert "Server research" in prompt
+    assert "Users cannot find decision history." in prompt
+
+
+@pytest.mark.parametrize(
+    "agent_name",
+    ["problems", "features", "decompose", "tasks"],
+)
+def test_pipeline_steps_include_rag_context_when_available(agent_factory, full_context, agent_name):
+    agent = agent_factory.create(agent_name)
+    context = {
+        **full_context,
+        "rag_context": [
+            {
+                "id": "research-1",
+                "title": "RAG Interview",
+                "content": "RAG evidence says users lose context between tools.",
+            }
+        ],
+    }
+
+    prompt = agent.build_prompt("task", context=context)
+
+    assert "<rag_context>" in prompt
+    assert "RAG Interview" in prompt
+    assert "users lose context between tools" in prompt
+
+
 def test_features_agent_uses_clipped_problem_context(agent_factory, full_context):
     agent = agent_factory.create("features")
 

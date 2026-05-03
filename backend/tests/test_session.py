@@ -108,8 +108,10 @@ async def test_run_session_success(client):
 
     mock_pipeline = AsyncMock()
     mock_pipeline.run.return_value = {"problems": [{"title": "Slow search"}]}
+    mock_plan = AsyncMock()
 
     with patch("main.SessionManager", return_value=mock_sm), \
+         patch("main.PlanService", return_value=mock_plan), \
          patch("main.Pipeline", return_value=mock_pipeline):
         response = await client.post(
             "/session/sess-abc/run",
@@ -122,6 +124,8 @@ async def test_run_session_success(client):
     data = response.json()
     assert data["success"] is True
     assert "problems" in data["data"]
+    mock_plan.check_limit.assert_awaited_once_with("test-user-id", is_full_run=False)
+    mock_plan.record_usage.assert_awaited_once_with("test-user-id", is_full_run=False)
 
 
 @pytest.mark.asyncio
@@ -143,3 +147,70 @@ async def test_run_session_not_found_returns_404(client):
     with patch("main.SessionManager", return_value=mock_sm):
         response = await client.post("/session/bad-id/run", json={"input_data": {}})
     assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_run_session_incomplete_context_returns_422(client):
+    session = _mock_session()
+    mock_sm = AsyncMock()
+    mock_sm.load_session.return_value = session
+    mock_sm.get_current_state.return_value = {}
+
+    mock_pipeline = AsyncMock()
+    mock_pipeline.run.side_effect = ValueError(
+        "INCOMPLETE_CONTEXT:companyName,productName,productDescription,ingest"
+    )
+    mock_plan = AsyncMock()
+
+    with patch("main.SessionManager", return_value=mock_sm), \
+         patch("main.PlanService", return_value=mock_plan), \
+         patch("main.Pipeline", return_value=mock_pipeline):
+        response = await client.post(
+            "/session/sess-abc/run",
+            json={"input_data": {"context": {}, "research": [], "ingest": []}},
+        )
+
+    assert response.status_code == 422
+    assert "INCOMPLETE_CONTEXT" in response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_run_session_async_queues_without_real_plan_db(client):
+    import asyncio
+    from types import SimpleNamespace
+
+    session = _mock_session()
+    mock_sm = AsyncMock()
+    mock_sm.load_session.return_value = session
+    mock_sm.get_current_state.return_value = {"last_completed_step": "problems"}
+
+    mock_pipeline = AsyncMock()
+    mock_pipeline.run.return_value = {"problems": [{"title": "Slow search"}]}
+    mock_plan = AsyncMock()
+    mock_repo = AsyncMock()
+    job = SimpleNamespace(
+        job_id="job-1234",
+        session_id="sess-abc",
+        user_id="test-user-id",
+        status="pending",
+        queue=asyncio.Queue(),
+    )
+
+    with patch("main.SessionManager", return_value=mock_sm), \
+         patch("main.PlanService", return_value=mock_plan), \
+         patch("main.Pipeline", return_value=mock_pipeline), \
+         patch("main.JobRepository", return_value=mock_repo), \
+         patch("main.create_job", AsyncMock(return_value=job)), \
+         patch("main.get_supabase_client", return_value=object()):
+        response = await client.post(
+            "/session/sess-abc/run/async",
+            json={
+                "input_data": {"context": {}, "research": [], "ingest": []},
+                "step": "problems",
+            },
+        )
+        await asyncio.sleep(0)
+
+    assert response.status_code == 202
+    assert response.json() == {"job_id": "job-1234", "status": "pending"}
+    mock_plan.check_limit.assert_awaited_once_with("test-user-id", is_full_run=False)

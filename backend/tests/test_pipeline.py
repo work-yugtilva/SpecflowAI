@@ -6,17 +6,23 @@ from unittest.mock import AsyncMock, MagicMock, patch
 async def test_run_pipeline_success(client):
     mock_pipeline = AsyncMock()
     mock_pipeline.run.return_value = {"result": "ok"}
-    with patch("main.Pipeline", return_value=mock_pipeline):
+    mock_plan = AsyncMock()
+    with patch("main.Pipeline", return_value=mock_pipeline), \
+         patch("main.PlanService", return_value=mock_plan):
         response = await client.post("/run", json={"input_data": {"key": "val"}})
     assert response.status_code == 200
     assert response.json()["success"] is True
+    mock_plan.check_limit.assert_awaited_once_with("test-user-id", is_full_run=True)
+    mock_plan.record_usage.assert_awaited_once_with("test-user-id", is_full_run=True)
 
 
 @pytest.mark.asyncio
 async def test_run_pipeline_with_project_id(client):
     mock_pipeline = AsyncMock()
     mock_pipeline.run.return_value = {}
-    with patch("main.Pipeline", return_value=mock_pipeline):
+    mock_plan = AsyncMock()
+    with patch("main.Pipeline", return_value=mock_pipeline), \
+         patch("main.PlanService", return_value=mock_plan):
         response = await client.post(
             "/run", json={"input_data": {}, "project_id": "proj-xyz"}
         )
@@ -37,6 +43,20 @@ async def test_run_pipeline_error_returns_500(client):
     with patch("main.Pipeline", return_value=mock_pipeline):
         response = await client.post("/run", json={"input_data": {}})
     assert response.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_run_pipeline_incomplete_context_returns_422(client):
+    mock_pipeline = AsyncMock()
+    mock_pipeline.run.side_effect = ValueError(
+        "INCOMPLETE_CONTEXT:companyName,productName,productDescription,ingest"
+    )
+    mock_plan = AsyncMock()
+    with patch("main.Pipeline", return_value=mock_pipeline), \
+         patch("main.PlanService", return_value=mock_plan):
+        response = await client.post("/run", json={"input_data": {}})
+    assert response.status_code == 422
+    assert "INCOMPLETE_CONTEXT" in response.json()["detail"]
 
 
 def test_validate_pipeline_input_all_missing():
@@ -76,6 +96,21 @@ def test_validate_pipeline_input_happy_path():
             "productDescription": "A widget for users",
         },
         "ingest": [{"content": "some interview"}],
+    })
+
+
+def test_validate_pipeline_input_research_only():
+    from services.pipeline import validate_pipeline_input
+
+    validate_pipeline_input({
+        "context": {},
+        "research": [
+            {
+                "title": "Server research",
+                "content": "Users cannot find decision history.",
+            }
+        ],
+        "ingest": [],
     })
 
 
@@ -272,3 +307,40 @@ async def test_run_step_with_quality_retry_passes_feedback_once():
             "quality_issues": ["Task must cite tagged evidence."],
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_full_pipeline_passes_normalized_research_to_orchestrator():
+    from services.pipeline import Pipeline
+
+    pipeline = Pipeline.__new__(Pipeline)
+    pipeline.pipeline_config = {
+        "steps": [
+            {
+                "agent": "problems",
+                "task": "Find problems",
+                "output_key": "problems",
+            }
+        ],
+        "session": {},
+        "execution": {},
+    }
+    pipeline.orchestrator = AsyncMock()
+    pipeline.orchestrator.run.return_value = {"problems": None}
+
+    input_data = {
+        "context": {},
+        "research": [
+            {
+                "title": "Server research",
+                "content": "Users cannot find decision history.",
+            }
+        ],
+        "ingest": [],
+    }
+
+    await pipeline.run(input_data)
+
+    normalized_input = pipeline.orchestrator.run.await_args.args[0]
+    assert normalized_input["ingest"] == input_data["research"]
+    assert normalized_input["research"] == input_data["research"]

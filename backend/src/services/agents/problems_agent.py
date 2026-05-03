@@ -17,12 +17,15 @@ class ProblemsAgent(BaseAgent):
         product_context = self._unwrap(
             ctx.get("product_context") or ctx.get("context") or mem.get("product_context", {})
         )
-        ingest = self._unwrap(ctx.get("ingest") or mem.get("ingest", []))
+        ingest = self._merged_research_context(ctx, mem)
 
         prompt_context = {
             "product_context": product_context,
             "research_context": ingest,
         }
+
+        if ctx.get("rag_context"):
+            prompt_context["rag_context"] = ctx["rag_context"]
 
         if ctx.get("analytics_context"):
             prompt_context["analytics_context"] = ctx["analytics_context"]

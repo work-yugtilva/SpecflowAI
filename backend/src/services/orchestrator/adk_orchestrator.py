@@ -128,10 +128,15 @@ class ADKOrchestrator:
                 "product_context", input_data.get("context", {})
             ),
             "ingest": input_data.get("ingest", []),
+            "research": input_data.get("research", []),
             "_completed": {s: True for s in (completed_steps or set())},
             "_session_id": session_id,
             "_user_id": user_id,
         }
+        if input_data.get("analytics_context"):
+            initial_state["analytics_context"] = input_data["analytics_context"]
+        if input_data.get("rag_context"):
+            initial_state["rag_context"] = input_data["rag_context"]
         # Seed prior outputs so skipped steps' data is still available downstream
         if prior_state:
             initial_state.update(prior_state)

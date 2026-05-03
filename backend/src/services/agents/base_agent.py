@@ -171,6 +171,24 @@ class BaseAgent:
             return values
         return values[:limit]
 
+    def _unwrap_persisted(self, val: Any) -> Any:
+        if isinstance(val, dict) and list(val.keys()) == ["data"]:
+            return val["data"]
+        return val
+
+    def _merge_context_lists(self, primary: Any, secondary: Any) -> list:
+        merged = self._clip_list(self._unwrap_persisted(primary), None)
+        for item in self._clip_list(self._unwrap_persisted(secondary), None):
+            if item not in merged:
+                merged.append(item)
+        return merged
+
+    def _merged_research_context(self, ctx: dict, mem: dict | None = None) -> list:
+        mem = mem or {}
+        ingest = ctx.get("ingest") or mem.get("ingest", [])
+        research = ctx.get("research") or mem.get("research", [])
+        return self._merge_context_lists(ingest, research)
+
     # -------------------------
     # JSON PARSER
     # -------------------------
