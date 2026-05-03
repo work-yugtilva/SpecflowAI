@@ -8,14 +8,35 @@ Tests that Row Level Security policies correctly:
 """
 import os
 import pytest
+import pytest_asyncio
 import uuid
 from typing import Optional
 
-# Skip entire test module if using test mock URL
+def _is_fake_secret(value: str) -> bool:
+    normalized = value.strip().lower()
+    return (
+        not normalized
+        or normalized in {"stub", "mock", "test-stub", "test-service-key", "test-anon-key"}
+        or normalized.startswith("test-")
+    )
+
+
+def _has_real_supabase_config() -> bool:
+    url = os.environ.get("SUPABASE_URL", "").strip()
+    anon_key = os.environ.get("SUPABASE_ANON_KEY", "").strip()
+    service_role_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    return (
+        url.startswith("https://")
+        and url not in {"https://test.supabase.co", "https://stub.supabase.co"}
+        and "mock" not in url.lower()
+        and not _is_fake_secret(anon_key)
+        and not _is_fake_secret(service_role_key)
+    )
+
+
 pytestmark = pytest.mark.skipif(
-    os.environ.get("SUPABASE_URL", "").strip() == "https://test.supabase.co"
-    or "test" in os.environ.get("SUPABASE_URL", "").lower(),
-    reason="RLS tests require real Supabase instance, not mocked URL"
+    not _has_real_supabase_config(),
+    reason="RLS tests require real Supabase credentials, not stub/mock values",
 )
 
 
@@ -83,8 +104,9 @@ async def create_auth_user(config: dict, email: str, password: str = "Test@12345
 @pytest.mark.asyncio
 class TestRLSPolicies:
     """Integration tests for RLS policy enforcement on pipelines table."""
-    
-    async def setup_method(self):
+
+    @pytest_asyncio.fixture(autouse=True)
+    async def setup_rls_test(self):
         """Set up test fixtures: clean state, sign up two users."""
         from services.db.supabase_client import get_supabase_client, get_user_supabase_client
         
@@ -125,9 +147,9 @@ class TestRLSPolicies:
         self.user_b_client = get_user_supabase_client(self.user_b_jwt)
         
         self.pipeline_id = None
-    
-    async def teardown_method(self):
-        """Clean up: delete test data created during test."""
+
+        yield
+
         if self.pipeline_id:
             try:
                 self.admin_client.table("pipelines").delete().eq("id", self.pipeline_id).execute()

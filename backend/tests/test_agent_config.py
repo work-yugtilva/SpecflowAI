@@ -23,5 +23,5 @@ def test_quality_gate_config_keeps_top_level_binary_checks():
 
     cfg = ConfigManager.load_agent("quality_gate").model_dump()
 
-    assert len(cfg["binary_checks"]) == 3
+    assert len(cfg["binary_checks"]) == 5
     assert cfg["binary_checks"][0]["name"] == "evidence_cited"

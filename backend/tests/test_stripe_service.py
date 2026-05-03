@@ -168,6 +168,7 @@ async def test_handle_webhook_subscription_updated_syncs_plan_from_price():
         plan="team",
         stripe_customer_id="cus_123",
         stripe_subscription_id="sub_123",
+        payment_past_due=False,
     )
 
 
