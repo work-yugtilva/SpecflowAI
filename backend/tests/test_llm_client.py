@@ -76,6 +76,36 @@ async def test_anthropic_with_cache_sends_cache_control_block(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_anthropic_with_cache_omits_empty_system_prompt(monkeypatch):
+    from services.ai import llm_client
+
+    calls = {}
+
+    class FakeMessages:
+        async def create(self, **kwargs):
+            calls["kwargs"] = kwargs
+            return SimpleNamespace(content=[SimpleNamespace(text="cached anthropic text")])
+
+    class FakeAsyncAnthropic:
+        def __init__(self, api_key):
+            self.messages = FakeMessages()
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "anthropic-test-key")
+    monkeypatch.setattr(llm_client, "AsyncAnthropic", FakeAsyncAnthropic)
+
+    result = await llm_client.call_llm(
+        provider="anthropic",
+        model="claude-haiku-4-5-20251001",
+        system_prompt="   ",
+        user_message="user message",
+        use_cache=True,
+    )
+
+    assert result == "cached anthropic text"
+    assert "system" not in calls["kwargs"]
+
+
+@pytest.mark.asyncio
 async def test_google_combines_prompt_and_returns_text(monkeypatch):
     from services.ai import llm_client
 

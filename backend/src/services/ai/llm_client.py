@@ -22,7 +22,10 @@ def _approx_input_tokens(system_prompt: str, user_message: str) -> int:
     return len(f"{system_prompt}\n\n{user_message}".split())
 
 
-def _anthropic_system_prompt(system_prompt: str, use_cache: bool) -> str | list[dict[str, Any]]:
+def _anthropic_system_prompt(system_prompt: str, use_cache: bool) -> str | list[dict[str, Any]] | None:
+    if not system_prompt or not system_prompt.strip():
+        return None
+
     if not use_cache:
         return system_prompt
 
@@ -65,13 +68,17 @@ async def call_llm(
                 detail=f"Input too large: estimated {estimated_input_tokens} tokens exceeds limit. Reduce your research documents or context."
             )
         
-        message = await client.messages.create(
-            model=model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            system=_anthropic_system_prompt(system_prompt, use_cache),
-            messages=[{"role": "user", "content": user_message}],
-        )
+        kwargs: dict[str, Any] = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "messages": [{"role": "user", "content": user_message}],
+        }
+        anthropic_system = _anthropic_system_prompt(system_prompt, use_cache)
+        if anthropic_system is not None:
+            kwargs["system"] = anthropic_system
+
+        message = await client.messages.create(**kwargs)
         return message.content[0].text
 
     if provider == "google":
