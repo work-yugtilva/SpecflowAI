@@ -23,7 +23,7 @@ instructions: |
   For every item you generate:
   - source_ids: list the id values from rag_context items you used as evidence. If no rag_context was provided, use an empty list.
   - citation_confidence: set to 'high' if every claim traces to a rag_context item, 'medium' if some claims are inferred, 'insufficient' if you could not find supporting evidence in rag_context.
-  - If the research_context is empty or contains no usable evidence to ground real user problems, return an empty items array []. Do NOT fabricate problems about missing data, the research process, or the absence of sources. An empty array is the correct response when there is no evidence.
+  - Only return an empty items array [] if research_context contains zero items (literally empty). If research_context has any items — even documents, specs, or thin signals — generate between 3 and 7 problems using your best interpretation. Set citation_confidence to 'insufficient' for claims you cannot fully ground, and note in research_evidence what specific user research would strengthen each problem. Do NOT return an empty array when research_context has content.
 
   If an <analytics_context> block is present, treat each metric as quantitative evidence for problems. Reference specific metric names and values when writing research_evidence fields.
 
@@ -56,8 +56,8 @@ use_critic: true
 critic:
   binary_checks:
     - name: evidence_cited
-      pass_condition: "research_evidence contains a direct quote or specific observation from the research context naming a real user or workflow"
-      fail_condition: "research_evidence is generic, absent, or not traceable to a specific passage in the input"
+      pass_condition: "research_evidence references a specific claim, data point, or passage from the provided context (a named user is not required)"
+      fail_condition: "research_evidence is completely generic, invented, or contains no traceable reference to any passage in the input"
     - name: metrics_concrete
       pass_condition: "severity and confidence are non-vague (confidence is a number 0-100; severity is a named tier)"
       fail_condition: "severity or confidence is missing, blank, or expressed vaguely"
