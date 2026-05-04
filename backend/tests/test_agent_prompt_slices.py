@@ -89,6 +89,42 @@ def test_problems_agent_limits_context_to_product_and_research(agent_factory, fu
     assert "<prior_tasks>" not in prompt
 
 
+def test_problems_agent_clips_large_source_context_before_budget_trim(agent_factory):
+    from services.token.token_manager import allocate_budget, estimate_tokens
+
+    agent = agent_factory.create("problems")
+    evidence = [
+        {
+            "id": f"source-{idx}",
+            "title": f"Evidence {idx}",
+            "content": (
+                "Webhook endpoint failures are the top activation blocker. "
+                "Developers lose payment confirmations and fulfillment breaks. "
+            )
+            * 12,
+        }
+        for idx in range(1, 71)
+    ]
+
+    prompt = agent.build_prompt(
+        "Analyze research.",
+        context={
+            "product_context": {
+                "companyName": "Stripe",
+                "productName": "Stripe Payments",
+                "productDescription": "Payment processing for businesses.",
+            },
+            "ingest": evidence,
+            "research": [],
+        },
+    )
+
+    assert "Evidence 1" in prompt
+    assert "Webhook endpoint failures" in prompt
+    assert "Evidence 21" not in prompt
+    assert estimate_tokens(prompt) <= allocate_budget(agent.name, agent.config)
+
+
 @pytest.mark.parametrize(
     "agent_name",
     ["product_context", "problems", "features", "decompose"],

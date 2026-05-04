@@ -20,7 +20,7 @@ class ProductContextAgent(BaseAgent):
         ctx = context or {}
         mem = memory or {}
         product_context = ctx.get("product_context") or ctx.get("context", {})
-        ingest = self._merged_research_context(ctx, mem)
+        ingest = self._bounded_research_context(ctx, mem)
 
         prompt_context = {
             "existing_product_context": product_context,

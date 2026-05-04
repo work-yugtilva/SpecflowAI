@@ -189,6 +189,30 @@ class BaseAgent:
         research = ctx.get("research") or mem.get("research", [])
         return self._merge_context_lists(ingest, research)
 
+    def _bounded_research_context(
+        self,
+        ctx: dict,
+        mem: dict | None = None,
+        *,
+        limit: int = 20,
+        content_chars: int = 900,
+    ) -> list:
+        items = self._merged_research_context(ctx, mem)
+        bounded: list = []
+        for item in items[:limit]:
+            if isinstance(item, dict):
+                copy = dict(item)
+                for key in ("content", "summary", "pain_point"):
+                    value = copy.get(key)
+                    if isinstance(value, str) and len(value) > content_chars:
+                        copy[key] = value[:content_chars].rstrip() + "... [TRIMMED]"
+                bounded.append(copy)
+            elif isinstance(item, str) and len(item) > content_chars:
+                bounded.append(item[:content_chars].rstrip() + "... [TRIMMED]")
+            else:
+                bounded.append(item)
+        return bounded
+
     # -------------------------
     # JSON PARSER
     # -------------------------

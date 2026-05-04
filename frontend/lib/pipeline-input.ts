@@ -121,6 +121,31 @@ function stringValue(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function pipelineItemKey(item: unknown): string | null {
+  if (!item || typeof item !== "object") return null;
+  const record = item as Record<string, unknown>;
+  const id = stringValue(record.id);
+  if (id) return `id:${id}`;
+  const sourceId = stringValue(record.source_id);
+  const title = stringValue(record.title);
+  if (sourceId && title) return `source:${sourceId}:${title}`;
+  return null;
+}
+
+function dedupePipelineItems<T>(items: T[]): T[] {
+  const seen = new Set<string>();
+  const deduped: T[] = [];
+  for (const item of items) {
+    const key = pipelineItemKey(item);
+    if (key) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    deduped.push(item);
+  }
+  return deduped;
+}
+
 /**
  * Default input for standalone pipeline pages: saved context + research + ingest
  * from pending input when set (e.g. after “Run all” from Sessions).
@@ -164,7 +189,11 @@ export function buildPipelineInputFromStorage(
             (p.context as Record<string, unknown>) ??
             getContextObject(sessionId),
           research,
-          ingest: [...pendingIngest, ...researchAsIngest, ...sourceEvidence],
+          ingest: dedupePipelineItems([
+            ...pendingIngest,
+            ...researchAsIngest,
+            ...sourceEvidence,
+          ]),
           ...(sourceAnalyticsContext
             ? { analytics_context: sourceAnalyticsContext }
             : {}),
@@ -177,7 +206,7 @@ export function buildPipelineInputFromStorage(
       input = {
         context: getContextObject(sessionId),
         research,
-        ingest: [...researchAsIngest, ...sourceEvidence],
+        ingest: dedupePipelineItems([...researchAsIngest, ...sourceEvidence]),
         ...(sourceAnalyticsContext
           ? { analytics_context: sourceAnalyticsContext }
           : {}),

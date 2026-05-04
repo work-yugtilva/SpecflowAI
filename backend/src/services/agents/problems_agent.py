@@ -17,7 +17,7 @@ class ProblemsAgent(BaseAgent):
         product_context = self._unwrap(
             ctx.get("product_context") or ctx.get("context") or mem.get("product_context", {})
         )
-        ingest = self._merged_research_context(ctx, mem)
+        ingest = self._bounded_research_context(ctx, mem)
 
         prompt_context = {
             "product_context": product_context,

@@ -56,4 +56,28 @@ describe("buildPipelineInputFromStorage source evidence", () => {
     expect(input.analytics_context).toContain("METRIC: activation_rate");
     expect(input.analytics_context).toContain("Current: 0.38");
   });
+
+  it("does not duplicate source evidence already present in pending ingest", async () => {
+    localStorage.setItem(
+      "specflow_s_session-1__pending_input",
+      JSON.stringify({
+        context: { productName: "SpecFlow" },
+        ingest: [
+          {
+            id: "evidence-1",
+            source_id: "source-1",
+            source_title: "usage.csv",
+            type: "metric",
+            title: "Metric activation_rate",
+            content: "activation_rate averaged 0.38.",
+          },
+        ],
+      })
+    );
+
+    const input = await buildPipelineInputFromStorage("session-1");
+
+    expect(input.ingest).toHaveLength(1);
+    expect(input.ingest[0]).toMatchObject({ id: "evidence-1" });
+  });
 });
