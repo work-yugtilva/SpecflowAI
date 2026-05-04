@@ -128,6 +128,26 @@ test('txt parsing creates fallback evidence from short parsed text', async () =>
   assert.match(result.evidence[0].content, /Checkout support gaps/);
 });
 
+test('text parsing removes null bytes before database storage', async () => {
+  const file = makeFile({
+    originalname: 'nul-byte-note.txt',
+    mimetype: 'text/plain',
+    buffer: Buffer.from(
+      'Stripe Payments has a developer fi\u0000rst checkout flow, but failed local payment methods create manual review pain.'
+    ),
+  });
+
+  const result = await parseSourceFile(file);
+
+  assert.doesNotMatch(result.parsedText, /\u0000/);
+  assert.doesNotMatch(result.summary, /\u0000/);
+  assert.ok(result.evidence.length > 0);
+  for (const item of result.evidence) {
+    assert.doesNotMatch(item.title, /\u0000/);
+    assert.doesNotMatch(item.content, /\u0000/);
+  }
+});
+
 test('csv parsing creates metric evidence, observation evidence, and numeric metadata', async () => {
   const file = makeFile({
     originalname: 'usage.csv',

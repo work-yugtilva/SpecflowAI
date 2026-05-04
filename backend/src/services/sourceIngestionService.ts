@@ -602,11 +602,15 @@ function decodeUtf16Be(bytes: Buffer): string {
 }
 
 function normalizeWhitespace(text: string): string {
-  return text
+  return removePostgresInvalidText(text)
     .replace(/\r\n/g, '\n')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
+}
+
+function removePostgresInvalidText(text: string): string {
+  return text.replace(/\u0000/g, '');
 }
 
 function buildTextSummary(filename: string, text: string, evidenceCount: number): string {
