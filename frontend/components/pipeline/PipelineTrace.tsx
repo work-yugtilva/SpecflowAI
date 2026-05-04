@@ -31,6 +31,8 @@ interface RagContextItem {
 interface TraceQuality {
   score: number;
   passed: boolean;
+  critical_issues?: string[];
+  items?: Array<{ binary_checks?: Record<string, boolean> }>;
 }
 
 const OUTPUT_KEY_BY_STEP: Record<PipelineTraceStepKey, OutputKey> = {
@@ -75,7 +77,25 @@ function readQuality(value: unknown): TraceQuality | null {
   if (!isRecord(value)) return null;
   if (typeof value.score !== "number" || Number.isNaN(value.score)) return null;
   if (typeof value.passed !== "boolean") return null;
-  return { score: value.score, passed: value.passed };
+  return {
+    score: value.score,
+    passed: value.passed,
+    critical_issues: Array.isArray(value.critical_issues)
+      ? value.critical_issues.map(String)
+      : [],
+    items: Array.isArray(value.items)
+      ? value.items.filter(isRecord).map((item) => ({
+          binary_checks: isRecord(item.binary_checks)
+            ? Object.fromEntries(
+                Object.entries(item.binary_checks).map(([key, checkValue]) => [
+                  key,
+                  checkValue === true,
+                ])
+              )
+            : undefined,
+        }))
+      : [],
+  };
 }
 
 function qualityBadgeClass(quality: TraceQuality): string {
@@ -88,15 +108,68 @@ function qualityBadgeClass(quality: TraceQuality): string {
   return "border-transparent bg-secondary text-secondary-foreground";
 }
 
+function outputRows(value: unknown): Record<string, unknown>[] {
+  if (Array.isArray(value)) return value.filter(isRecord);
+  if (isRecord(value) && Array.isArray(value.data)) return value.data.filter(isRecord);
+  if (isRecord(value) && Array.isArray(value.items)) return value.items.filter(isRecord);
+  return [];
+}
+
+function readSourceIds(value: unknown): string[] {
+  const ids = new Set<string>();
+  for (const row of outputRows(value)) {
+    const sourceIds = row.source_ids;
+    if (!Array.isArray(sourceIds)) continue;
+    for (const id of sourceIds) {
+      const normalized = String(id).trim();
+      if (normalized) ids.add(normalized);
+    }
+  }
+  return [...ids];
+}
+
+function readEvidenceSourceTitles(value: unknown): RagContextItem[] {
+  const titles = new Set<string>();
+  for (const row of outputRows(value)) {
+    const evidence = row.research_evidence;
+    if (typeof evidence !== "string") continue;
+    for (const match of evidence.matchAll(/\[Source:\s*([^\]]+)\]/g)) {
+      const title = match[1]?.trim();
+      if (title) titles.add(title);
+    }
+  }
+  return [...titles].map((title) => ({ title }));
+}
+
+function countFailedQualityChecks(quality: TraceQuality | null): number {
+  if (!quality?.items) return 0;
+  let count = 0;
+  for (const item of quality.items) {
+    const checks = item.binary_checks ?? {};
+    count += Object.values(checks).filter((passed) => !passed).length;
+  }
+  return count;
+}
+
 export function PipelineTrace({ stepKey }: { stepKey: PipelineTraceStepKey }) {
   const [open, setOpen] = useState(false);
   const outputs = useSessionStore((state) => state.activeSessionDetail?.state?.state?.outputs);
   const outputRecord = isRecord(outputs) ? outputs : {};
   const outputKey = OUTPUT_KEY_BY_STEP[stepKey];
   const quality = readQuality(outputRecord[`${outputKey}_quality`]);
+  const citedSourceIds = readSourceIds(outputRecord[outputKey]);
+  const citedSourceTitles = readEvidenceSourceTitles(outputRecord[outputKey]);
   const ragContext = readRagContext(outputRecord.rag_context);
+  const evidenceSources = citedSourceTitles.length > 0 ? citedSourceTitles : ragContext;
+  const evidenceCount = citedSourceIds.length > 0 ? citedSourceIds.length : ragContext.length;
+  const evidenceLabel =
+    citedSourceIds.length > 0
+      ? `Grounded on ${evidenceCount} cited evidence item${evidenceCount === 1 ? "" : "s"}.`
+      : `Grounded on ${evidenceCount} source${evidenceCount === 1 ? "" : "s"} from your uploads.`;
   const dependencies = DEPENDENCIES_BY_STEP[stepKey];
   const prdRetried = outputRecord._prd_retry === true;
+  const failedQualityChecks = countFailedQualityChecks(quality);
+  const criticalIssues = quality?.critical_issues ?? [];
 
   return (
     <Collapsible open={open} onOpenChange={setOpen} className="mt-4">
@@ -114,12 +187,11 @@ export function PipelineTrace({ stepKey }: { stepKey: PipelineTraceStepKey }) {
             <div className="flex flex-col gap-2">
               <div className="font-semibold text-foreground">Evidence used</div>
               <div className="text-muted-foreground">
-                Grounded on {ragContext.length} source
-                {ragContext.length === 1 ? "" : "s"} from your uploads.
+                {evidenceLabel}
               </div>
-              {ragContext.length > 0 && (
+              {evidenceSources.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
-                  {ragContext.map((source, index) => (
+                  {evidenceSources.map((source, index) => (
                     <Badge key={`${source.title}-${index}`} variant="outline" className="max-w-full truncate">
                       {source.title}
                     </Badge>
@@ -150,12 +222,24 @@ export function PipelineTrace({ stepKey }: { stepKey: PipelineTraceStepKey }) {
                   <Badge variant={quality.passed ? "secondary" : "destructive"}>
                     {quality.passed ? "Passed" : "Failed"}
                   </Badge>
+                  {failedQualityChecks > 0 && (
+                    <Badge variant="outline">
+                      {failedQualityChecks} quality issue{failedQualityChecks === 1 ? "" : "s"}
+                    </Badge>
+                  )}
                   {prdRetried && (
                     <Badge variant="outline">Retry count: 1</Badge>
                   )}
                 </div>
               ) : (
                 <div className="text-muted-foreground">Quality gate unavailable</div>
+              )}
+              {criticalIssues.length > 0 && (
+                <ul className="list-disc space-y-1 pl-4 text-muted-foreground">
+                  {criticalIssues.slice(0, 3).map((issue, index) => (
+                    <li key={`${issue}-${index}`}>{issue}</li>
+                  ))}
+                </ul>
               )}
             </div>
 

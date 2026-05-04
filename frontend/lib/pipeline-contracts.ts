@@ -364,6 +364,21 @@ export function describeProblemsEmptyState(
 }
 
 function extractResearchEvidence(raw: unknown): ResearchEvidence[] {
+  if (typeof raw === "string") {
+    const text = raw.trim();
+    if (!text) return [];
+    const sourceMatch = text.match(/^\[Source:\s*([^\]]+)\]\s*([\s\S]*)$/);
+    if (sourceMatch) {
+      return [
+        {
+          title: sourceMatch[1].trim(),
+          content: sourceMatch[2].trim(),
+          source: "Uploaded source",
+        },
+      ].filter((item) => item.title !== "" || item.content !== "");
+    }
+    return [{ title: "Research evidence", content: text, source: "Source" }];
+  }
   if (!Array.isArray(raw)) return [];
   return (raw as unknown[])
     .filter(isPlainObject)
@@ -391,11 +406,15 @@ export function adaptProblems(
     const rootCause = isPlainObject(record.rootCause) ? record.rootCause : {};
     const confidence = attributes.confidence ?? record.confidence;
     const frequency = attributes.frequency ?? record.frequency;
+    const sourceIds = Array.isArray(record.source_ids)
+      ? record.source_ids.map(String)
+      : [];
     const sources = Array.isArray(record.sources)
       ? record.sources.map(String)
       : Array.isArray(record.evidence)
         ? record.evidence.map(String)
         : [];
+    const evidence = sourceIds.length > 0 ? sourceIds : sources;
 
     return {
       id: typeof record.id === "string" ? record.id : `p${index}`,
@@ -416,8 +435,8 @@ export function adaptProblems(
         : typeof record.cluster === "string" && record.cluster
           ? [record.cluster]
           : [],
-      signals: sources.length,
-      evidence: sources,
+      signals: evidence.length,
+      evidence,
       rootCause: {
         primary:
           (typeof rootCause.primary === "string" && rootCause.primary) ||
@@ -428,7 +447,7 @@ export function adaptProblems(
           (typeof rootCause.secondary === "string" && rootCause.secondary) ||
           (typeof record.secondary === "string" ? record.secondary : undefined),
       },
-      source_ids: Array.isArray(record.source_ids) ? record.source_ids.map(String) : undefined,
+      source_ids: sourceIds.length > 0 ? sourceIds : undefined,
       citation_confidence: typeof record.citation_confidence === "string" ? record.citation_confidence : undefined,
       researchEvidence: extractResearchEvidence(record.research_evidence),
     };

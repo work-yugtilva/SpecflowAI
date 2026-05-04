@@ -111,6 +111,35 @@ describe("PipelineTrace", () => {
     expect(screen.getByText("Grounded on 0 sources from your uploads.")).toBeInTheDocument();
   });
 
+  it("derives grounded source count from persisted step source_ids", () => {
+    setOutputs({
+      problems: [
+        {
+          title: "Webhook failures block activation",
+          source_ids: ["source-a", "source-b"],
+          research_evidence:
+            "[Source: stripe_product_usage_analysis.pdf] Webhook endpoint failures are the #1 support driver.",
+        },
+      ],
+      problems_quality: {
+        score: 67,
+        passed: true,
+        critical_issues: ["One item needs tighter metrics."],
+        items: [
+          { index: 0, binary_checks: { evidence_cited: true, metrics_concrete: false }, quality_issues: [] },
+        ],
+      },
+    });
+
+    render(<PipelineTrace stepKey="problems" />);
+    fireEvent.click(screen.getByRole("button", { name: /How was this generated/i }));
+
+    expect(screen.getByText("Grounded on 2 cited evidence items.")).toBeInTheDocument();
+    expect(screen.getByText("stripe_product_usage_analysis.pdf")).toBeInTheDocument();
+    expect(screen.getByText("1 quality issue")).toBeInTheDocument();
+    expect(screen.getByText("One item needs tighter metrics.")).toBeInTheDocument();
+  });
+
   it("shows failed quality gate state", () => {
     setOutputs({
       problems_quality: { score: 52, passed: false },
