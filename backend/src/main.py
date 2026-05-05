@@ -104,6 +104,7 @@ from services.security.rate_limiter import (
     AGENT_HANDOFF_LIMIT,
     GENERAL_API_LIMIT,
 )
+from services.security.pipeline_limits import pipeline_limits_disabled
 from sentry_sdk.integrations.asgi import SentryAsgiMiddleware
 
 
@@ -175,6 +176,26 @@ _handler.setFormatter(_JsonFormatter())
 logging.getLogger().addHandler(_handler)
 logging.getLogger().setLevel(logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+async def _check_pipeline_plan_limit(user_id: str, *, is_full_run: bool) -> PlanService | None:
+    if pipeline_limits_disabled():
+        return None
+    plan_svc = PlanService()
+    await plan_svc.check_limit(user_id, is_full_run=is_full_run)
+    return plan_svc
+
+
+async def _record_pipeline_plan_usage(
+    plan_svc: PlanService | None,
+    user_id: str,
+    *,
+    is_full_run: bool,
+) -> None:
+    if pipeline_limits_disabled():
+        return
+    svc = plan_svc or PlanService()
+    await svc.record_usage(user_id, is_full_run=is_full_run)
 
 
 # ---------------------------------------------------------------------------
@@ -663,11 +684,10 @@ async def remove_user_integration(
 async def run_pipeline(request: Request, req: RunRequest, auth: SupabaseUser = Depends(require_auth)):
     try:
         logger.info("[pipeline] Starting run | project_id=%s", req.project_id)
-        plan_svc = PlanService()
-        await plan_svc.check_limit(auth.user_id, is_full_run=True)
+        plan_svc = await _check_pipeline_plan_limit(auth.user_id, is_full_run=True)
         pipeline = Pipeline()
         result = await pipeline.run(req.input_data, req.project_id)
-        await plan_svc.record_usage(auth.user_id, is_full_run=True)
+        await _record_pipeline_plan_usage(plan_svc, auth.user_id, is_full_run=True)
         logger.info("[pipeline] Run complete | keys=%s", list(result.keys()))
         return {"success": True, "data": result}
     except ValueError as e:
@@ -839,9 +859,8 @@ async def run_session(request: Request, session_id: str, req: SessionRunRequest,
                     detail="Regeneration limit reached. Please edit the document manually.",
                 )
 
-        # Enforce plan-based run limits before spending API credit.
-        plan_svc = PlanService()
-        await plan_svc.check_limit(auth.user_id, is_full_run=(req.step is None))
+        # Enforce plan-based run limits before spending API credit when enabled.
+        plan_svc = await _check_pipeline_plan_limit(auth.user_id, is_full_run=(req.step is None))
 
         pipeline = Pipeline()
         result = await pipeline.run(
@@ -853,8 +872,8 @@ async def run_session(request: Request, session_id: str, req: SessionRunRequest,
             user_id=auth.user_id,
         )
 
-        # Record usage after a successful run.
-        await plan_svc.record_usage(auth.user_id, is_full_run=(req.step is None))
+        # Record usage after a successful run when limits are enabled.
+        await _record_pipeline_plan_usage(plan_svc, auth.user_id, is_full_run=(req.step is None))
 
         current_state = await sm.get_current_state(session_id)
 
@@ -913,9 +932,8 @@ async def run_session_async(request: Request, session_id: str, req: SessionRunRe
                     detail="Regeneration limit reached. Please edit the document manually.",
                 )
 
-        # Enforce plan-based run limits before queuing the background job.
-        plan_svc = PlanService()
-        await plan_svc.check_limit(auth.user_id, is_full_run=(req.step is None))
+        # Enforce plan-based run limits before queuing the background job when enabled.
+        plan_svc = await _check_pipeline_plan_limit(auth.user_id, is_full_run=(req.step is None))
 
         # Capture is_full_run for the closure below.
         _is_full_run = req.step is None
@@ -957,8 +975,12 @@ async def run_session_async(request: Request, session_id: str, req: SessionRunRe
                     user_id=auth.user_id,
                 )
 
-                # Record usage after a successful background run.
-                await plan_svc.record_usage(_user_id_for_plan, is_full_run=_is_full_run)
+                # Record usage after a successful background run when limits are enabled.
+                await _record_pipeline_plan_usage(
+                    plan_svc,
+                    _user_id_for_plan,
+                    is_full_run=_is_full_run,
+                )
 
                 current_state = await bg_sm.get_current_state(session_id)
 

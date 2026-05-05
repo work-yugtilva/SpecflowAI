@@ -12,6 +12,20 @@ async def test_run_pipeline_success(client):
         response = await client.post("/run", json={"input_data": {"key": "val"}})
     assert response.status_code == 200
     assert response.json()["success"] is True
+    mock_plan.check_limit.assert_not_awaited()
+    mock_plan.record_usage.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_run_pipeline_enforces_plan_when_limits_enabled(client, monkeypatch):
+    monkeypatch.setenv("DISABLE_PIPELINE_LIMITS", "false")
+    mock_pipeline = AsyncMock()
+    mock_pipeline.run.return_value = {"result": "ok"}
+    mock_plan = AsyncMock()
+    with patch("main.Pipeline", return_value=mock_pipeline), \
+         patch("main.PlanService", return_value=mock_plan):
+        response = await client.post("/run", json={"input_data": {"key": "val"}})
+    assert response.status_code == 200
     mock_plan.check_limit.assert_awaited_once_with("test-user-id", is_full_run=True)
     mock_plan.record_usage.assert_awaited_once_with("test-user-id", is_full_run=True)
 

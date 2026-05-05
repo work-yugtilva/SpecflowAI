@@ -124,6 +124,33 @@ async def test_run_session_success(client):
     data = response.json()
     assert data["success"] is True
     assert "problems" in data["data"]
+    mock_plan.check_limit.assert_not_awaited()
+    mock_plan.record_usage.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_run_session_enforces_plan_when_limits_enabled(client, monkeypatch):
+    monkeypatch.setenv("DISABLE_PIPELINE_LIMITS", "false")
+    session = _mock_session()
+    mock_sm = AsyncMock()
+    mock_sm.load_session.return_value = session
+    mock_sm.get_current_state.return_value = {"last_completed_step": "problems"}
+
+    mock_pipeline = AsyncMock()
+    mock_pipeline.run.return_value = {"problems": [{"title": "Slow search"}]}
+    mock_plan = AsyncMock()
+
+    with patch("main.SessionManager", return_value=mock_sm), \
+         patch("main.PlanService", return_value=mock_plan), \
+         patch("main.Pipeline", return_value=mock_pipeline):
+        response = await client.post(
+            "/session/sess-abc/run",
+            json={
+                "input_data": {"context": {}, "research": [], "ingest": []},
+                "step": "problems",
+            },
+        )
+    assert response.status_code == 200
     mock_plan.check_limit.assert_awaited_once_with("test-user-id", is_full_run=False)
     mock_plan.record_usage.assert_awaited_once_with("test-user-id", is_full_run=False)
 
@@ -213,4 +240,5 @@ async def test_run_session_async_queues_without_real_plan_db(client):
 
     assert response.status_code == 202
     assert response.json() == {"job_id": "job-1234", "status": "pending"}
-    mock_plan.check_limit.assert_awaited_once_with("test-user-id", is_full_run=False)
+    mock_plan.check_limit.assert_not_awaited()
+    mock_plan.record_usage.assert_not_awaited()
