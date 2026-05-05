@@ -96,6 +96,43 @@ async def test_execute_async_retry_still_uses_parse_error_prompt(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_execute_async_structured_google_uses_provider_transport(monkeypatch):
+    from services.agents import base_agent
+    from services.agents.base_agent import BaseAgent
+    from services.ai import client as ai_client
+
+    call = AsyncMock(return_value='{"reasoning": "ok", "items": [{"title": "Hosted checkout"}]}')
+    structured = AsyncMock(side_effect=AssertionError("should not call Anthropic structured transport"))
+    monkeypatch.setattr(base_agent, "call_llm", call)
+    monkeypatch.setattr(ai_client, "run_ai_structured_async", structured)
+
+    agent = BaseAgent(
+        "features",
+        {
+            "provider": "google",
+            "model": "gemini-2.5-flash",
+            "system_prompt": "structured system",
+            "token_control": {"retries": 0},
+            "output_schema": {
+                "type": "list",
+                "sections": {"reasoning": "string"},
+                "fields": {"title": "string"},
+            },
+        },
+    )
+
+    result = await agent.execute_async("generate features", context={"topic": "checkout"})
+
+    assert result == [{"title": "Hosted checkout"}]
+    structured.assert_not_awaited()
+    call.assert_awaited_once()
+    assert call.await_args.kwargs["provider"] == "google"
+    assert call.await_args.kwargs["model"] == "gemini-2.5-flash"
+    assert call.await_args.kwargs["system_prompt"] == "structured system"
+    assert "<response_contract>" in call.await_args.kwargs["user_message"]
+
+
+@pytest.mark.asyncio
 async def test_async_critic_check_uses_call_llm(monkeypatch):
     from services.agents import base_agent
     from services.agents.base_agent import BaseAgent

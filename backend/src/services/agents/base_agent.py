@@ -7,6 +7,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from json_repair import loads as repair_loads
+from pydantic import ValidationError
 from core.exceptions import JSONParsingError
 from services.ai.llm_client import call_llm
 from services.ai.client import run_ai
@@ -676,6 +677,69 @@ class BaseAgent:
 
         return result
 
+    def _normalize_structured_payload_for_schema(self, parsed: Any, output_schema: dict) -> Any:
+        if output_schema.get("type") == "list" and isinstance(parsed, list):
+            return {"items": parsed}
+        return parsed
+
+    def _build_structured_retry_prompt(self, prompt: str, exc: Exception, raw_response: str = "") -> str:
+        lines = [
+            "Your previous response could not be validated against the required JSON schema.",
+            f"Validation error: {exc}",
+        ]
+        if raw_response:
+            lines.append(f"Failing snippet: {raw_response[:200]!r}")
+        lines.extend([
+            "Return ONLY a valid JSON object matching the response contract, with no preamble or markdown fences.",
+            "Original task:",
+            prompt,
+        ])
+        return "\n\n".join(lines)
+
+    async def _call_structured_llm_async(
+        self,
+        prompt: str,
+        output_schema: dict,
+        response_model: type,
+        retries: int,
+    ) -> tuple[Any, Optional[str]]:
+        from services.agents.agent_schema_factory import extract_payload_and_reasoning
+
+        attempt_prompt = prompt
+        last_error: Exception | None = None
+        raw_response = ""
+
+        for attempt in range(retries + 1):
+            raw_response = await self._call_llm(
+                system_prompt=self.config.get("system_prompt", ""),
+                user_message=attempt_prompt,
+            )
+
+            try:
+                parsed_raw = self.parse_json(raw_response)
+                parsed_raw = self._normalize_structured_payload_for_schema(parsed_raw, output_schema)
+                structured = response_model.model_validate(parsed_raw)
+                return extract_payload_and_reasoning(structured, output_schema)
+            except (JSONParsingError, ValidationError, ValueError) as exc:
+                last_error = exc
+                if attempt < retries:
+                    logger.warning(
+                        "[structured_provider] agent=%s validation failed (attempt %d/%d): %s",
+                        self.name,
+                        attempt + 1,
+                        retries + 1,
+                        exc,
+                    )
+                    attempt_prompt = self._build_structured_retry_prompt(prompt, exc, raw_response)
+                else:
+                    logger.error(
+                        "[structured_provider] agent=%s validation failed after %d attempts",
+                        self.name,
+                        retries + 1,
+                    )
+
+        raise last_error or JSONParsingError("Structured response validation failed")
+
     # -------------------------
     # EXECUTE
     # -------------------------
@@ -726,15 +790,25 @@ class BaseAgent:
             from services.ai.client import run_ai_structured
 
             ResponseModel = build_response_model(output_schema, self.name)
-            structured = run_ai_structured(
-                prompt,
-                ResponseModel,
-                max_tokens=max_output_tokens,
-                model=self.config.get("model"),
-                temperature=self.config.get("temperature"),
-                max_retries=retries,
-            )
-            parsed, reasoning = extract_payload_and_reasoning(structured, output_schema)
+            if self.config.get("provider", "anthropic") == "anthropic":
+                structured = run_ai_structured(
+                    prompt,
+                    ResponseModel,
+                    max_tokens=max_output_tokens,
+                    model=self.config.get("model"),
+                    temperature=self.config.get("temperature"),
+                    max_retries=retries,
+                )
+                parsed, reasoning = extract_payload_and_reasoning(structured, output_schema)
+            else:
+                parsed, reasoning = asyncio.run(
+                    self._call_structured_llm_async(
+                        prompt,
+                        output_schema,
+                        ResponseModel,
+                        retries,
+                    )
+                )
             if reasoning:
                 logger.info("[execute] agent=%s reasoning_len=%d", self.name, len(reasoning))
             logger.info(
@@ -864,15 +938,23 @@ class BaseAgent:
             from services.ai.client import run_ai_structured_async
 
             ResponseModel = build_response_model(output_schema, self.name)
-            structured = await run_ai_structured_async(
-                prompt,
-                ResponseModel,
-                max_tokens=max_output_tokens,
-                model=self.config.get("model"),
-                temperature=self.config.get("temperature"),
-                max_retries=retries,
-            )
-            parsed, reasoning = extract_payload_and_reasoning(structured, output_schema)
+            if self.config.get("provider", "anthropic") == "anthropic":
+                structured = await run_ai_structured_async(
+                    prompt,
+                    ResponseModel,
+                    max_tokens=max_output_tokens,
+                    model=self.config.get("model"),
+                    temperature=self.config.get("temperature"),
+                    max_retries=retries,
+                )
+                parsed, reasoning = extract_payload_and_reasoning(structured, output_schema)
+            else:
+                parsed, reasoning = await self._call_structured_llm_async(
+                    prompt,
+                    output_schema,
+                    ResponseModel,
+                    retries,
+                )
             if reasoning:
                 logger.info("[execute_async] agent=%s reasoning_len=%d", self.name, len(reasoning))
             logger.info(
