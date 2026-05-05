@@ -28,10 +28,8 @@ import {
 } from "@/lib/pipeline-session";
 import {
   buildPipelineInputFromStorage,
-  getSourceEvidencePayload,
   getContextObject,
   LS_CONTEXT,
-  NO_SOURCE_EVIDENCE_ERROR,
   setAutorunFlag,
 } from "@/lib/pipeline-input";
 import { useActiveSession } from "@/lib/active-session-context";
@@ -743,8 +741,10 @@ export default function SessionsPage() {
 
   // Build inputData for the pipeline (research + uploaded sources come from server-side APIs)
   const buildInputData = useCallback(
-    async (sessionId: string): Promise<Record<string, unknown>> => {
-      return (await buildPipelineInputFromStorage(sessionId)) as unknown as Record<string, unknown>;
+    async (sessionId: string, requireEvidence: boolean): Promise<Record<string, unknown>> => {
+      return (await buildPipelineInputFromStorage(sessionId, {
+        requireEvidence,
+      })) as unknown as Record<string, unknown>;
     },
     []
   );
@@ -758,12 +758,10 @@ export default function SessionsPage() {
       setIsRunning(true);
 
       try {
-        const sourceEvidence = await getSourceEvidencePayload(selectedId);
-        if (sourceEvidence.length === 0) {
-          setRunError(NO_SOURCE_EVIDENCE_ERROR);
-          return;
-        }
-        const inputData = await buildInputData(selectedId);
+        const inputData = await buildInputData(
+          selectedId,
+          !step || step === "problems"
+        );
 
         // Full run: save input for pipeline pages and navigate immediately
         if (!step) {

@@ -156,9 +156,11 @@ function dedupePipelineItems<T>(items: T[]): T[] {
  * from pending input when set (e.g. after “Run all” from Sessions).
  */
 export function buildPipelineInputFromStorage(
-  sessionId?: string | null
+  sessionId?: string | null,
+  options: { requireEvidence?: boolean } = {}
 ): Promise<PipelineInput> {
   const build = async (): Promise<PipelineInput> => {
+    const requireEvidence = options.requireEvidence ?? true;
     const research = await getResearchPayload(sessionId);
     const sourceEvidence = await getSourceEvidencePayload(sessionId);
     // Map research entries into ingest format so pipeline agents can read them.
@@ -217,7 +219,11 @@ export function buildPipelineInputFromStorage(
           : {}),
       };
     }
-    if (input.ingest.length === 0 && input.research.length === 0) {
+    if (
+      requireEvidence &&
+      input.ingest.length === 0 &&
+      input.research.length === 0
+    ) {
       throw new Error(
         "No sources or research found for this session. Upload documents or add research entries in the Sources page before running the pipeline."
       );

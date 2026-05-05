@@ -19,9 +19,7 @@ import type { SessionDetail, AgentHandoff } from "@/lib/api/session";
 import {
   buildPipelineInputFromStorage,
   clearAutorunFlag,
-  getSourceEvidencePayload,
   isAutorunPending,
-  NO_SOURCE_EVIDENCE_ERROR,
 } from "@/lib/pipeline-input";
 import { useActiveSession } from "@/lib/active-session-context";
 import { computeStepStatuses } from "@/lib/pipeline-session";
@@ -710,13 +708,9 @@ export default function TasksPage() {
     setLinearPayloadMeta(null);
     setShowLinearConfirm(false);
     try {
-      const sourceEvidence = await getSourceEvidencePayload(activeSessionId ?? undefined);
-      if (sourceEvidence.length === 0) {
-        setTaskError(NO_SOURCE_EVIDENCE_ERROR);
-        return;
-      }
       const inputData: PipelineInput = await buildPipelineInputFromStorage(
-        activeSessionId ?? undefined
+        activeSessionId ?? undefined,
+        { requireEvidence: false }
       );
       const result = await runPipelineStepOrFull(
         "tasks",

@@ -115,4 +115,21 @@ describe("buildPipelineInputFromStorage source evidence", () => {
     expect(listSourceEvidenceMock).toHaveBeenCalledTimes(1);
     expect(listSourceEvidenceMock).toHaveBeenCalledWith("global");
   });
+
+  it("allows downstream steps to build from session memory without fresh evidence", async () => {
+    fetchResearchEntriesMock.mockResolvedValue([]);
+    listSourceEvidenceMock.mockResolvedValue([]);
+    localStorage.setItem(
+      "specflow_s_session-1__context",
+      JSON.stringify({ productName: "SpecFlow" })
+    );
+
+    const input = await buildPipelineInputFromStorage("session-1", {
+      requireEvidence: false,
+    });
+
+    expect(input.context).toMatchObject({ productName: "SpecFlow" });
+    expect(input.research).toEqual([]);
+    expect(input.ingest).toEqual([]);
+  });
 });
