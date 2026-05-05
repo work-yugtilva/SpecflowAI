@@ -122,5 +122,8 @@ test('POST /api/sources/upload creates a source file and extracted evidence', as
   assert.equal(response.body.data[0].evidenceCount, 2);
   assert.equal(fakeClient.sourceFiles[0].user_id, '11111111-1111-1111-1111-111111111111');
   assert.equal(fakeClient.sourceFiles[0].scope_key, 'session:22222222-2222-2222-2222-222222222222');
+  assert.equal(fakeClient.sourceFiles[0].session_id, '22222222-2222-2222-2222-222222222222');
   assert.equal(fakeClient.sourceEvidence.length, 2);
+  assert.equal(fakeClient.sourceEvidence[0].session_id, '22222222-2222-2222-2222-222222222222');
+  assert.equal(fakeClient.sourceEvidence[1].session_id, '22222222-2222-2222-2222-222222222222');
 });

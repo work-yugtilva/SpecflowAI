@@ -42,6 +42,7 @@ const fetchResearchEntriesMock = vi.fn();
 const createResearchEntryMock = vi.fn();
 const updateResearchEntryMock = vi.fn();
 const deleteResearchEntryMock = vi.fn();
+const getActiveSessionIdMock = vi.fn();
 
 vi.mock("next/link", () => ({
   default: ({
@@ -77,11 +78,16 @@ vi.mock("@/lib/api/research", () => ({
   deleteResearchEntry: (...args: unknown[]) => deleteResearchEntryMock(...args),
 }));
 
+vi.mock("@/lib/pipeline-input", () => ({
+  getActiveSessionId: () => getActiveSessionIdMock(),
+}));
+
 const { default: SourcesPage } = await import("./page");
 
 beforeEach(() => {
   activeSessionId = "session-1";
   vi.clearAllMocks();
+  getActiveSessionIdMock.mockImplementation(() => activeSessionId);
   listSourcesMock.mockResolvedValue([sourceRow]);
   getSourceMock.mockResolvedValue({
     source: { ...sourceRow, parsedText: "Rows: 3\nColumns: activation_rate" },
@@ -123,8 +129,25 @@ describe("SourcesPage", () => {
     expect(screen.getByRole("heading", { name: /research & articles/i })).toBeTruthy();
     expect(screen.getByLabelText(/upload source files/i)).toBeTruthy();
     expect(screen.getByRole("button", { name: /choose files/i })).toBeTruthy();
+    expect(screen.getByText(/uploading to session:/i)).toBeTruthy();
+    expect(screen.getByText("session-")).toBeTruthy();
     await waitFor(() => expect(listSourcesMock).toHaveBeenCalledWith("session", "session-1"));
     await waitFor(() => expect(fetchResearchEntriesMock).toHaveBeenCalledWith("session", "session-1"));
+  });
+
+  it("uploads session-scoped files with the latest active session id", async () => {
+    render(<SourcesPage />);
+
+    const file = new File(["activation_rate,users\n0.38,10"], "usage.csv", {
+      type: "text/csv",
+    });
+    fireEvent.change(screen.getByLabelText(/upload source files/i), {
+      target: { files: [file] },
+    });
+
+    await waitFor(() => {
+      expect(uploadSourceFilesMock).toHaveBeenCalledWith([file], "session", "session-1");
+    });
   });
 
   it("renders source list and detail evidence", async () => {
@@ -141,6 +164,7 @@ describe("SourcesPage", () => {
     render(<SourcesPage />);
 
     expect(screen.getByRole("button", { name: "Session" })).toHaveProperty("disabled", true);
+    expect(screen.getByText(/no active session/i)).toBeTruthy();
     await waitFor(() => expect(listSourcesMock).toHaveBeenCalledWith("global", undefined));
   });
 

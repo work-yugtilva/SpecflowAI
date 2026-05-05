@@ -11,7 +11,7 @@ vi.mock("@/lib/api/sources", () => ({
   listSourceEvidence: (...args: unknown[]) => listSourceEvidenceMock(...args),
 }));
 
-const { buildPipelineInputFromStorage } = await import("./pipeline-input");
+const { buildPipelineInputFromStorage, getSourceEvidencePayload } = await import("./pipeline-input");
 
 describe("buildPipelineInputFromStorage source evidence", () => {
   beforeEach(() => {
@@ -47,6 +47,7 @@ describe("buildPipelineInputFromStorage source evidence", () => {
 
     expect(fetchResearchEntriesMock).toHaveBeenCalledWith("session", "session-1");
     expect(listSourceEvidenceMock).toHaveBeenCalledWith("session", "session-1");
+    expect(listSourceEvidenceMock).not.toHaveBeenCalledWith("global");
     expect(input.ingest).toHaveLength(2);
     expect(input.ingest[1]).toMatchObject({
       id: "evidence-1",
@@ -79,5 +80,39 @@ describe("buildPipelineInputFromStorage source evidence", () => {
 
     expect(input.ingest).toHaveLength(1);
     expect(input.ingest[0]).toMatchObject({ id: "evidence-1" });
+  });
+
+  it("falls back to global source evidence when session evidence is empty", async () => {
+    listSourceEvidenceMock.mockImplementation((scope: string) => {
+      if (scope === "session") return Promise.resolve([]);
+      return Promise.resolve([
+        {
+          id: "global-evidence-1",
+          source_id: "global-source-1",
+          source_title: "global-notes.txt",
+          type: "observation",
+          title: "Uploaded source: global-notes.txt",
+          content: "Global source evidence should still ground session runs.",
+          metadata: {},
+        },
+      ]);
+    });
+
+    const input = await buildPipelineInputFromStorage("session-1");
+
+    expect(listSourceEvidenceMock).toHaveBeenCalledWith("session", "session-1");
+    expect(listSourceEvidenceMock).toHaveBeenCalledWith("global");
+    expect(input.ingest).toHaveLength(1);
+    expect(input.ingest[0]).toMatchObject({
+      id: "global-evidence-1",
+      source_id: "global-source-1",
+    });
+  });
+
+  it("uses global source evidence directly when no session id is present", async () => {
+    await getSourceEvidencePayload(null);
+
+    expect(listSourceEvidenceMock).toHaveBeenCalledTimes(1);
+    expect(listSourceEvidenceMock).toHaveBeenCalledWith("global");
   });
 });

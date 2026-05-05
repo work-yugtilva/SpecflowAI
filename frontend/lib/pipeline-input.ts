@@ -1,3 +1,4 @@
+// FIX: source scoping fallback added — May 2026
 // Building PipelineInput from local context storage + server-backed research + optional pending ingest
 
 import type { PipelineInput } from "@/lib/pipeline-types";
@@ -19,6 +20,8 @@ export const LS_ACTIVE_SESSION = "specflow_active_session_id";
 export const LS_CONTEXT = "specflow_context";
 export const LS_PENDING = "specflow_pending_input";
 export const LS_AUTORUN_GLOBAL = "specflow_autorun";
+export const NO_SOURCE_EVIDENCE_ERROR =
+  "No uploaded sources found for this session. Go to Sources and upload a document first, then re-run.";
 
 /** Dispatched on same tab after active session id changes (localStorage updated). */
 export const ACTIVE_SESSION_CHANGE_EVENT = "specflow:active-session";
@@ -82,10 +85,12 @@ export async function getSourceEvidencePayload(
 ): Promise<PipelineSourceEvidence[]> {
   if (typeof window === "undefined") return [];
   try {
-    return await listSourceEvidence(
-      sessionId ? "session" : "global",
-      sessionId ?? undefined
-    );
+    if (sessionId) {
+      const sessionEvidence = await listSourceEvidence("session", sessionId);
+      if (sessionEvidence.length > 0) return sessionEvidence;
+      return await listSourceEvidence("global");
+    }
+    return await listSourceEvidence("global");
   } catch {
     return [];
   }

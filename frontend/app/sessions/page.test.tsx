@@ -13,7 +13,10 @@ const fetchResearchEntriesMock = vi.fn();
 const listSourcesMock = vi.fn();
 const listSourceEvidenceMock = vi.fn();
 const buildPipelineInputFromStorageMock = vi.fn();
+const getSourceEvidencePayloadMock = vi.fn();
 const runSessionMock = vi.fn();
+const NO_SOURCE_EVIDENCE_ERROR =
+  "No uploaded sources found for this session. Go to Sources and upload a document first, then re-run.";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: pushMock }),
@@ -64,6 +67,8 @@ vi.mock("@/lib/pipeline-input", async () => {
   return {
     ...actual,
     buildPipelineInputFromStorage: (...args: unknown[]) => buildPipelineInputFromStorageMock(...args),
+    getSourceEvidencePayload: (...args: unknown[]) => getSourceEvidencePayloadMock(...args),
+    NO_SOURCE_EVIDENCE_ERROR,
   };
 });
 
@@ -135,6 +140,7 @@ beforeEach(() => {
   fetchResearchEntriesMock.mockResolvedValue([{ id: "research-1" }]);
   listSourcesMock.mockResolvedValue([{ id: "source-1" }]);
   listSourceEvidenceMock.mockResolvedValue([{ id: "evidence-1" }]);
+  getSourceEvidencePayloadMock.mockResolvedValue([{ id: "evidence-1" }]);
   buildPipelineInputFromStorageMock.mockResolvedValue({ context: {}, ingest: {} });
   runSessionMock.mockResolvedValue(undefined);
   global.fetch = vi.fn().mockResolvedValue({
@@ -230,5 +236,37 @@ describe("SessionsPage button async states", () => {
     fireEvent.click(screen.getByRole("button", { name: /continue: run features only/i }));
 
     expect(await screen.findByText(/input build failed/i)).toBeTruthy();
+  });
+
+  it("blocks full pipeline runs when no uploaded source evidence is available", async () => {
+    const originalLocation = window.location;
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: { ...originalLocation, href: "" },
+    });
+    getSourceEvidencePayloadMock.mockResolvedValueOnce([]);
+    seedSessions();
+    await selectSeededSession();
+
+    fireEvent.click(screen.getByRole("button", { name: /run full pipeline/i }));
+
+    expect(await screen.findByText(NO_SOURCE_EVIDENCE_ERROR)).toBeTruthy();
+    expect(getSourceEvidencePayloadMock).toHaveBeenCalledWith("session-123456789");
+    expect(buildPipelineInputFromStorageMock).not.toHaveBeenCalled();
+    expect(runSessionMock).not.toHaveBeenCalled();
+    expect(window.location.href).toBe("");
+  });
+
+  it("blocks single-step runs when no uploaded source evidence is available", async () => {
+    getSourceEvidencePayloadMock.mockResolvedValueOnce([]);
+    seedSessions();
+    await selectSeededSession();
+
+    fireEvent.click(screen.getByRole("button", { name: /continue: run features only/i }));
+
+    expect(await screen.findByText(NO_SOURCE_EVIDENCE_ERROR)).toBeTruthy();
+    expect(getSourceEvidencePayloadMock).toHaveBeenCalledWith("session-123456789");
+    expect(buildPipelineInputFromStorageMock).not.toHaveBeenCalled();
+    expect(runSessionMock).not.toHaveBeenCalled();
   });
 });

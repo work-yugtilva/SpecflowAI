@@ -1,6 +1,7 @@
+// FIX: source scoping fallback added — May 2026
 "use client";
 
-import { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
 import { PipelineStepper } from "@/components/pipeline/PipelineStepper";
@@ -12,7 +13,9 @@ import type { SessionDetail } from "@/lib/api/session";
 import {
   buildPipelineInputFromStorage,
   clearAutorunFlag,
+  getSourceEvidencePayload,
   isAutorunPending,
+  NO_SOURCE_EVIDENCE_ERROR,
 } from "@/lib/pipeline-input";
 import { useActiveSession } from "@/lib/active-session-context";
 import { computeStepStatuses } from "@/lib/pipeline-session";
@@ -175,6 +178,11 @@ export default function FeaturesPage() {
     setFeatures([]);
     const isAutorun = isAutorunPending(activeSessionId ?? undefined);
     try {
+      const sourceEvidence = await getSourceEvidencePayload(activeSessionId ?? undefined);
+      if (sourceEvidence.length === 0) {
+        setError(NO_SOURCE_EVIDENCE_ERROR);
+        return;
+      }
       const inputData: PipelineInput = await buildPipelineInputFromStorage(
         activeSessionId ?? undefined
       );
@@ -300,6 +308,22 @@ export default function FeaturesPage() {
             )}
           </button>
         </header>
+
+        {error && features.length > 0 && (
+          <div
+            role="alert"
+            style={{
+              background: "rgba(239,68,68,0.07)",
+              borderBottom: "1px solid rgba(239,68,68,0.15)",
+              padding: "6px 20px",
+              fontSize: 12.5,
+              color: "#EF4444",
+              flexShrink: 0,
+            }}
+          >
+            {error}
+          </div>
+        )}
 
         {/* Content */}
         {features.length === 0 ? (

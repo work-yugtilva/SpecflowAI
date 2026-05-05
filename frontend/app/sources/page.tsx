@@ -1,9 +1,11 @@
+// FIX: source scoping fallback added — May 2026
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Sidebar } from "@/components/ui/sidebar";
 import { useActiveSession } from "@/lib/active-session-context";
+import { getActiveSessionId } from "@/lib/pipeline-input";
 import {
   createResearchEntry,
   deleteResearchEntry,
@@ -348,7 +350,10 @@ export default function SourcesPage() {
   async function handleFiles(fileList: FileList | File[]) {
     const files = Array.from(fileList);
     if (files.length === 0) return;
-    if (!canUpload) {
+    const latestActiveSessionId = getActiveSessionId() ?? activeSessionId;
+    const uploadSessionId =
+      scope === "session" ? latestActiveSessionId ?? undefined : undefined;
+    if (scope === "session" && !uploadSessionId) {
       setError("Select an active session before uploading session-scoped sources.");
       setSourceMessage(null);
       return;
@@ -364,7 +369,7 @@ export default function SourcesPage() {
     setError(null);
     setSourceMessage(null);
     try {
-      const uploaded = await uploadSourceFiles(files, scope, sessionId);
+      const uploaded = await uploadSourceFiles(files, scope, uploadSessionId);
       await loadSources();
       setSelectedId(uploaded[0]?.source.id ?? null);
       const failedUploads = uploaded.filter(({ source }) => source.status === "failed");
@@ -655,6 +660,22 @@ export default function SourcesPage() {
               <div style={{ color: "#6B6B6B", fontSize: 13, marginBottom: 14 }}>
                 TXT, PDF, DOCX, and CSV files up to 10MB.
               </div>
+              {scope === "session" && activeSessionId ? (
+                <div className="text-xs text-muted-foreground mb-2">
+                  Uploading to session:{" "}
+                  <span className="font-mono font-medium">
+                    {activeSessionId.slice(0, 8)}
+                  </span>
+                </div>
+              ) : scope === "global" && activeSessionId ? (
+                <div className="text-xs text-muted-foreground mb-2">
+                  Uploading globally — sources will be available as fallback.
+                </div>
+              ) : (
+                <div className="text-xs text-amber-600 mb-2">
+                  No active session — sources will be stored globally.
+                </div>
+              )}
               <button
                 type="button"
                 disabled={!canUpload || uploading}
