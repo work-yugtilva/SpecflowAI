@@ -1789,7 +1789,6 @@ export default function TasksPage() {
                 </p>
 
                 <div className="mt-5">
-                  <SectionLabel>Evidence Trace</SectionLabel>
                   <EvidencePanel evidence={selectedTask.researchEvidence ?? []} />
                 </div>
 

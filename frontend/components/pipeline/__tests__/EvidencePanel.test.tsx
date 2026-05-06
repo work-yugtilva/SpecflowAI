@@ -24,26 +24,21 @@ const baseEvidence: ResearchEvidence[] = [
 ];
 
 describe("EvidencePanel", () => {
-  it("renders the exact warning when evidence is empty", () => {
+  it("renders the Sources empty state when evidence is empty", () => {
     render(<EvidencePanel evidence={[]} />);
 
-    expect(
-      screen.getByText("No sources linked — rerun with uploaded documents for grounded output.")
-    ).toBeInTheDocument();
+    expect(screen.getByText("No sources cited.")).toBeInTheDocument();
+    expect(screen.queryByText("Evidence Trace")).not.toBeInTheDocument();
   });
 
-  it("renders numbered citations with source pills, titles, and blockquotes", () => {
+  it("renders source cards with titles and normalized type badges", () => {
     render(<EvidencePanel evidence={baseEvidence} />);
 
-    expect(screen.getByText("1")).toBeInTheDocument();
-    expect(screen.getByText("2")).toBeInTheDocument();
-    expect(screen.getByText("3")).toBeInTheDocument();
-    expect(screen.getByText("interview")).toBeInTheDocument();
-    expect(screen.getByText("Analytics")).toBeInTheDocument();
-    expect(screen.getByText("Market Insight")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Sources" })).toBeInTheDocument();
     expect(screen.getByText("Interview with onboarding lead")).toBeInTheDocument();
     expect(screen.getByText("Activation dashboard")).toBeInTheDocument();
     expect(screen.getByText("Market benchmark")).toBeInTheDocument();
+    expect(screen.getAllByText("INTEGRATION")).toHaveLength(3);
     expect(
       screen.getByText("New users cannot tell which workflow step owns the next action.")
     ).toBeInTheDocument();
@@ -68,18 +63,27 @@ describe("EvidencePanel", () => {
     expect(screen.queryByText(longContent)).not.toBeInTheDocument();
     expect(screen.getByText(`${longContent.slice(0, 120)}...`)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "show more" }));
+    fireEvent.click(screen.getByRole("button", { name: "Show full excerpt ↓" }));
     expect(screen.getByText(longContent)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "show less" }));
+    fireEvent.click(screen.getByRole("button", { name: "Hide ↑" }));
     expect(screen.getByText(`${longContent.slice(0, 120)}...`)).toBeInTheDocument();
   });
 
-  it("normalizes interview, analytics, and market insight source types", () => {
-    render(<EvidencePanel evidence={baseEvidence} />);
+  it("does not leak raw vector chunk ids from source labels", () => {
+    render(
+      <EvidencePanel
+        evidence={[
+          {
+            title: "Activation ticket export",
+            content: "Webhook setup is confusing for newly activated teams.",
+            source: "af82975b",
+          },
+        ]}
+      />
+    );
 
-    expect(screen.getByText("interview")).toHaveClass("bg-emerald-50");
-    expect(screen.getByText("Analytics")).toHaveClass("bg-violet-50");
-    expect(screen.getByText("Market Insight")).toHaveClass("bg-amber-50");
+    expect(screen.getByText("Activation ticket export")).toBeInTheDocument();
+    expect(screen.queryByText("af82975b")).not.toBeInTheDocument();
   });
 });

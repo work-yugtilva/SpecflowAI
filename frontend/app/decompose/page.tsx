@@ -598,7 +598,6 @@ export default function DecomposePage() {
                       </p>
 
                       <div className="mt-4">
-                        <SectionLabel>Evidence Trace</SectionLabel>
                         <EvidencePanel evidence={comp.researchEvidence ?? []} />
                       </div>
 
@@ -694,7 +693,6 @@ export default function DecomposePage() {
                     </div>
 
                     <div className="mb-4">
-                      <SectionLabel>Evidence Trace</SectionLabel>
                       <EvidencePanel evidence={entity.researchEvidence ?? []} />
                     </div>
 
@@ -892,7 +890,6 @@ export default function DecomposePage() {
                         </p>
 
                         <div className="mt-4">
-                          <SectionLabel>Evidence Trace</SectionLabel>
                           <EvidencePanel evidence={step.researchEvidence ?? []} />
                         </div>
 

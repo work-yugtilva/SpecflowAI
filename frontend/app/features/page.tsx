@@ -674,7 +674,6 @@ export default function FeaturesPage() {
                   </div>
 
                   <div className="mb-5 border-t border-stone-200 pt-[18px]">
-                    <SectionLabel>Evidence Trace</SectionLabel>
                     <EvidencePanel evidence={selectedFeature.researchEvidence ?? []} />
                   </div>
 

@@ -608,7 +608,6 @@ export default function ProblemsPage() {
                   </p>
 
                   <div className="mb-6">
-                    <SectionLabel>Evidence Trace</SectionLabel>
                     <EvidencePanel evidence={selectedProblem.researchEvidence ?? []} />
                   </div>
 
