@@ -253,5 +253,5 @@ def test_tasks_yaml_uses_decompositions_key():
     with open(path) as f:
         config = yaml.safe_load(f)
     keys = config["memory"]["read"]["keys"]
-    assert "decompositions" in keys, "tasks.yaml must use 'decompositions' not 'decompose'"
-    assert "decompose" not in keys
+    assert "decompose" in keys, "tasks.yaml must use 'decompose' not 'decompositions'"
+    assert "decompositions" not in keys

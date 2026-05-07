@@ -107,3 +107,7 @@ critic:
       fail_condition: "the problem is written as a feature request ('We should build X',
         'The system needs Y') or is a generic technical concern with no connection to
         a specific user situation"
+
+output_bounds:
+  min_items: 3
+  max_items: 8

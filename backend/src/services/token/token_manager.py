@@ -1,20 +1,32 @@
 # services/token/token_manager.py
 
+import functools
 import json
 from typing import Any, Dict, Union
 
+try:
+    import tiktoken
+    @functools.lru_cache(maxsize=4)
+    def _get_encoder(model: str = "cl100k_base"):
+        return tiktoken.get_encoding(model)
+    _TIKTOKEN_AVAILABLE = True
+except ImportError:
+    _TIKTOKEN_AVAILABLE = False
+
 
 def estimate_tokens(text: Any) -> int:
-    """
-    Estimate tokens based on string length.
-    Roughly 4 characters = 1 token.
-    """
     if not isinstance(text, str):
         try:
-            text = json.dumps(text)
+            text = json.dumps(text, ensure_ascii=False)
         except Exception:
             text = str(text)
-    return max(1, len(text) // 4)
+    if _TIKTOKEN_AVAILABLE:
+        try:
+            return max(1, len(_get_encoder().encode(text)))
+        except Exception:
+            pass
+    # fallback: JSON is denser than prose — use //3 not //4
+    return max(1, len(text) // 3)
 
 
 def allocate_budget(agent_name: str, config: Dict[str, Any]) -> int:

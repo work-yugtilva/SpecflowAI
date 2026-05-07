@@ -68,7 +68,11 @@ memory:
     keys:
       problems: 4
       features: 6
-      decompositions: 8
+      decompose: 8
   write:
     key: tasks
     mode: overwrite
+
+output_bounds:
+  min_items: 5
+  max_items: 20

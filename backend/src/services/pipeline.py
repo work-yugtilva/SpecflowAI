@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+import time
 from pathlib import Path
 from typing import Any, Callable, Coroutine, Optional
 
@@ -191,6 +192,17 @@ def validate_pipeline_input(input_data: dict) -> None:
     ]
     missing.append("ingest")
     raise ValueError(f"INCOMPLETE_CONTEXT:{','.join(missing)}")
+
+_QUALITY_GATE_AGENT = None
+
+
+def _get_quality_gate_agent():
+    global _QUALITY_GATE_AGENT
+    if _QUALITY_GATE_AGENT is None:
+        from services.agents.quality_gate_agent import QualityGateAgent
+        _qg_config = ConfigManager.load_agent("quality_gate").model_dump()
+        _QUALITY_GATE_AGENT = QualityGateAgent("quality_gate", _qg_config)
+    return _QUALITY_GATE_AGENT
 
 
 class Pipeline:
@@ -418,7 +430,7 @@ class Pipeline:
                 completed_steps.add(single_agent_name)
 
                 if session_id and session_manager and persistence_on:
-                    _quality_keys = [f"{key}_quality" for key in ("problems", "features", "decompositions", "tasks")]
+                    _quality_keys = [f"{key}_quality" for key in ("problems", "features", "decompose", "tasks")]
                     snapshot = {
                         "last_completed_step": single_agent_name,
                         "outputs": {
@@ -549,7 +561,7 @@ class Pipeline:
 
                 # Session snapshot
                 if session_id and session_manager and persistence_on:
-                    _quality_keys = [f"{key}_quality" for key in ("problems", "features", "decompositions", "tasks")]
+                    _quality_keys = [f"{key}_quality" for key in ("problems", "features", "decompose", "tasks")]
                     snapshot = {
                         "last_completed_step": agent_name,
                         "outputs": {
@@ -729,6 +741,24 @@ class Pipeline:
             )
             data = _validation["flagged"]
 
+        # Enforce output count bounds from agent config
+        bounds = agent.config.get("output_bounds") or {}
+        min_items = bounds.get("min_items")
+        max_items = bounds.get("max_items")
+        if isinstance(data, list):
+            if max_items and len(data) > max_items:
+                logger.warning(
+                    "[bounds] %s returned %d items, truncating to max %d",
+                    agent_name, len(data), max_items,
+                )
+                data = data[:max_items]
+            if min_items and len(data) < min_items:
+                logger.warning(
+                    "[bounds] %s returned only %d items (min %d) — proceeding with what we have",
+                    agent_name, len(data), min_items,
+                )
+                # Log but don't fail — quality gate will score low and trigger retry
+
         return self._strip_reasoning_field(data)
 
     async def _run_quality_gate_async(
@@ -739,13 +769,10 @@ class Pipeline:
         session_id: str = None,
     ) -> Optional[dict]:
         """Async version of _run_quality_gate — uses evaluate_async to avoid blocking the event loop."""
-        if out_key not in ("problems", "features", "decompositions", "tasks"):
+        if out_key not in ("problems", "features", "decompose", "tasks"):
             return None
 
-        from services.agents.quality_gate_agent import QualityGateAgent
-
-        _qg_config = ConfigManager.load_agent("quality_gate").model_dump()
-        _qg_agent = QualityGateAgent("quality_gate", _qg_config)
+        _qg_agent = _get_quality_gate_agent()
         _qg_agent.session_id = session_id
         _research_ctx = {
             "ingest": state.get("ingest", []),
@@ -768,11 +795,21 @@ class Pipeline:
         context = dict(base_context or {})
 
         while True:
+            _step_start = time.monotonic()
             result = await agent.execute_async(
                 step_task,
                 context,
                 memory=memory_slice,
                 session=session,
+            )
+            _step_duration_ms = int((time.monotonic() - _step_start) * 1000)
+            logger.info(
+                json.dumps({
+                    "event": "step_timing",
+                    "step": out_key,
+                    "attempt": attempt,
+                    "duration_ms": _step_duration_ms,
+                })
             )
             data = self._finalize_agent_output(agent.name, out_key, result, agent)
 
@@ -794,11 +831,15 @@ class Pipeline:
             except Exception as qg_err:
                 logger.warning("[pipeline] quality_gate failed for %s: %s", out_key, qg_err)
 
+            max_retries = getattr(agent, "max_retries", 0)
+            if max_retries == 0:
+                # No retry configured — always return immediately
+                return data, qg_result
+
             should_retry = (
                 qg_result is not None
                 and not qg_result.get("passed", False)
-                and attempt == 1
-                and getattr(agent, "max_retries", 0) > 0
+                and attempt <= max_retries
             )
             if not should_retry:
                 return data, qg_result
@@ -813,8 +854,10 @@ class Pipeline:
             context = {**dict(base_context or {}), "previous_attempt_failure": feedback}
             attempt += 1
             logger.info(
-                "[pipeline] retrying step=%s once with quality feedback score=%s",
+                "[pipeline] retrying step=%s attempt=%d/%d score=%s",
                 out_key,
+                attempt,
+                max_retries + 1,
                 qg_result.get("score"),
             )
 

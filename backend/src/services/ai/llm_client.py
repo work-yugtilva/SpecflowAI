@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import os
 from typing import Any
@@ -79,6 +80,16 @@ async def call_llm(
             kwargs["system"] = anthropic_system
 
         message = await client.messages.create(**kwargs)
+        if hasattr(message, "usage") and message.usage:
+            logger.debug(
+                json.dumps({
+                    "event": "llm_usage",
+                    "provider": provider,
+                    "model": model,
+                    "input_tokens": getattr(message.usage, "input_tokens", None),
+                    "output_tokens": getattr(message.usage, "output_tokens", None),
+                })
+            )
         return message.content[0].text
 
     if provider == "google":
@@ -92,6 +103,16 @@ async def call_llm(
             prompt,
             generation_config={"temperature": temperature},
         )
+        if hasattr(response, "usage_metadata") and response.usage_metadata:
+            logger.debug(
+                json.dumps({
+                    "event": "llm_usage",
+                    "provider": provider,
+                    "model": model,
+                    "input_tokens": getattr(response.usage_metadata, "prompt_token_count", None),
+                    "output_tokens": getattr(response.usage_metadata, "candidates_token_count", None),
+                })
+            )
         return response.text
 
     if provider == "openai":

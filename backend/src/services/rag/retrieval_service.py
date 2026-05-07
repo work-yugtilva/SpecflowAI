@@ -34,7 +34,7 @@ class RetrievalService:
         user_id: str = None,
         session_id: str = None,
         top_k: int = 8,
-        threshold: float = 0.3,
+        threshold: float = 0.5,
     ) -> list[dict]:
         """Find the top-k research entries most similar to query.
 
@@ -87,34 +87,61 @@ class RetrievalService:
         user_id: str = None,
         session_id: str = None,
     ) -> list[dict]:
-        """Build a step-specific query and return relevant research entries.
-
-        step_name must be one of: problems, features, decompose, tasks.
-        Falls back to a generic context stringify for unknown steps.
-        """
         ctx = context or {}
+
+        def _item_text(item: dict, fields: list[str]) -> str:
+            parts = []
+            for f in fields:
+                val = item.get(f)
+                if isinstance(val, str) and val.strip():
+                    parts.append(val.strip())
+                elif isinstance(val, list):
+                    parts.extend(str(v) for v in val if v)
+            return " ".join(parts)
 
         if step_name == "problems":
             pc = _unwrap(ctx.get("product_context") or {})
             parts = [
                 pc.get("product_description", ""),
                 pc.get("goals", ""),
+                pc.get("target_users", ""),
             ]
             query = " ".join(p for p in parts if p)
 
         elif step_name == "features":
             problems = _unwrap(ctx.get("problems") or [])
-            query = _titles(problems)
+            query = " ".join(
+                _item_text(p, ["title", "description", "research_evidence"])
+                for p in problems[:5]
+                if isinstance(p, dict)
+            )
 
         elif step_name == "decompose":
             features = _unwrap(ctx.get("features") or [])
-            query = _titles(features)
+            query = " ".join(
+                _item_text(f, ["title", "description", "acceptance_criteria"])
+                for f in features[:5]
+                if isinstance(f, dict)
+            )
 
         elif step_name == "tasks":
-            decompositions = _unwrap(ctx.get("decompositions") or [])
-            query = _titles(decompositions)
+            decomps = _unwrap(ctx.get("decompose") or ctx.get("decompositions") or [])
+            query = " ".join(
+                _item_text(d, ["title", "description", "user_problem_it_solves"])
+                for d in decomps[:5]
+                if isinstance(d, dict)
+            )
 
         else:
             query = str(ctx)[:500]
 
-        return await self.retrieve(query, user_id=user_id, session_id=session_id)
+        query = query.strip()[:1000]  # cap at 1000 chars before embedding
+        if not query:
+            return []
+
+        return await self.retrieve(
+            query,
+            user_id=user_id,
+            session_id=session_id,
+            threshold=0.5,  # raised from 0.3 — reduces noise
+        )
