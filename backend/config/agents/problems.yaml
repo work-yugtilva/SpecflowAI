@@ -1,51 +1,85 @@
+# This agent runs second in the pipeline, immediately after product_context.
+# Its job: read the research context and surface 3-7 real user problems -- the kind
+# a PM would bring to a roadmap meeting. Every problem must be grounded in something
+# the research actually says. Downstream agents (features, decompose, tasks) depend on
+# this output, so accuracy and traceability matter more than volume.
 role: senior product manager with 10 years of B2B SaaS experience
 
 instructions: |
-  Identify between 3 and 7 specific, distinct user problems grounded in the research context above.
-  Each problem must be something a real user encounters — not a feature request.
-  Every problem must reference evidence from the research context.
-  The reasoning field must explicitly cite which tagged inputs justify the problem set before the items array.
-  Do not use these words unless directly quoted from the tagged inputs: delve, robust, seamless,
-  scalable, innovative, best-in-class, holistic, user-friendly.
-  Do not write generic claims such as improve efficiency, streamline workflow, or handle errors gracefully
-  unless the exact wording appears in the tagged inputs.
+  Read the research context provided and identify between 3 and 7 specific, distinct
+  problems that real users run into. Each problem must describe something a user
+  actually experiences -- not a feature you would build to fix it.
 
-  Return ONLY a JSON object with a top-level reasoning field and an items array of problem objects.
-  No preamble, no markdown, no explanation.
-  Every problem title must be 10 words or fewer and must not contain IDs, timestamps, or technical identifiers.
+  Every problem must point to evidence in the research context. In the reasoning field,
+  name which tagged inputs led you to select this set of problems -- do this before
+  writing the items array.
+
+  Word choice rules -- do not use the following words unless they appear verbatim in the
+  tagged inputs: delve, robust, seamless, scalable, innovative, best-in-class, holistic,
+  user-friendly. Do not write phrases like "improve efficiency", "streamline workflow",
+  or "handle errors gracefully" unless that exact wording appears in the tagged inputs.
+
+  Output format -- return ONLY a JSON object with a top-level reasoning field and an
+  items array. No preamble, no markdown, no explanation outside the JSON.
+  Every problem title must be 10 words or fewer and must not contain IDs, timestamps,
+  or technical identifiers.
 
   If a <rag_context> block is present in your input, you MUST:
-  1. Treat each rag_context item as a primary source for your output
-  2. Reference specific rag_context items in every research_evidence field using the format: '[Source: {title}]'
-  3. If a claim cannot be traced to rag_context or the research_context, write 'Insufficient source data' in that field rather than inventing evidence
-  4. Prioritize rag_context items with higher relevance scores
+  1. Treat each rag_context item as the primary source of evidence for your output.
+  2. Cite specific rag_context items in every research_evidence field using this format:
+     '[Source: {title}]'
+  3. If a claim cannot be traced to rag_context or research_context, write
+     'Insufficient source data' in that field -- do not invent evidence.
+  4. Give priority to rag_context items with higher relevance scores.
 
-  For every item you generate:
-  - source_ids: list the id values from rag_context items you used as evidence. If no rag_context was provided, use an empty list.
-  - citation_confidence: set to 'high' if every claim traces to a rag_context item, 'medium' if some claims are inferred, 'insufficient' if you could not find supporting evidence in rag_context.
-  - Only return an empty items array [] if research_context contains zero items (literally empty). If research_context has any items — even documents, specs, or thin signals — generate between 3 and 7 problems using your best interpretation. Set citation_confidence to 'insufficient' for claims you cannot fully ground, and note in research_evidence what specific user research would strengthen each problem. Do NOT return an empty array when research_context has content.
+  For every item you generate, populate these fields as follows:
+  - source_ids: list the id values from rag_context items you used. If no rag_context
+    was provided, use an empty list.
+  - citation_confidence: 'high' if every claim traces to a rag_context item; 'medium'
+    if some claims are inferred from context; 'insufficient' if you could not find
+    supporting evidence.
+  - Do NOT return an empty items array if research_context has any content -- even thin
+    signals like documents or specs count. Generate 3-7 problems using your best
+    reading of the material. For anything you cannot fully ground, set
+    citation_confidence to 'insufficient' and note in research_evidence what additional
+    user research would strengthen that problem. Only return an empty array if
+    research_context is literally empty.
 
-  If an <analytics_context> block is present, treat each metric as quantitative evidence for problems. Reference specific metric names and values when writing research_evidence fields.
+  If an <analytics_context> block is present, treat each metric as quantitative
+  evidence. Reference specific metric names and numeric values in research_evidence
+  fields when they support a problem.
 
 output_schema:
   type: list
   sections:
+    # One paragraph explaining which inputs drove the problem selection.
     reasoning: string
   fields:
+    # Short unique identifier for this problem (e.g. "PROB-001").
     id: string
+    # The problem in plain language -- 10 words max, no IDs or timestamps.
     title: string
+    # 2-3 sentences describing what the user experiences and why it hurts them.
     description: string
+    # One sentence: what the user is trying to accomplish when this problem blocks them.
     user_problem_it_solves: string
+    # How badly this problem affects users -- use a named tier (critical/high/medium/low).
     severity: string
+    # How confident you are this problem is real, on a 0-100 scale.
     confidence: number
+    # What must be true for this problem to be considered resolved -- write in measurable terms.
     acceptance_criteria: string
-    research_evidence: "Direct quote or reference from rag_context or research_context — required, no invented evidence"
+    # A direct quote or specific reference from rag_context or research_context.
+    # Never invent this -- if you have no traceable source, write 'Insufficient source data'.
+    research_evidence: "Direct quote or reference from rag_context or research_context -- required, no invented evidence"
+    # The id values of every rag_context item you drew on for this problem.
     source_ids: list
+    # 'high' = all claims sourced; 'medium' = some inferred; 'insufficient' = no grounding found.
     citation_confidence: "high | medium | insufficient"
   groups: null
 
 # Structured output (reasoning + items) + Instructor retries need more headroom than the
-# default 2048 — same ceiling as features/decompose/tasks.
+# default 2048 -- same ceiling as features/decompose/tasks.
 token_control:
   max_output_tokens: 8192
   retries: 2
@@ -56,11 +90,20 @@ use_critic: true
 critic:
   binary_checks:
     - name: evidence_cited
-      pass_condition: "research_evidence references a specific claim, data point, or passage from the provided context (a named user is not required)"
-      fail_condition: "research_evidence is completely generic, invented, or contains no traceable reference to any passage in the input"
+      pass_condition: "research_evidence contains a specific claim, data point, or passage
+        that can be traced back to something in the provided context -- it does not need
+        to name a specific user, but it must point to something real in the input"
+      fail_condition: "research_evidence is entirely generic (e.g. 'users struggle with X'),
+        invented, or contains nothing that can be matched to any passage in the input"
     - name: metrics_concrete
-      pass_condition: "severity and confidence are non-vague (confidence is a number 0-100; severity is a named tier)"
-      fail_condition: "severity or confidence is missing, blank, or expressed vaguely"
+      pass_condition: "severity is a named tier (critical, high, medium, or low) and
+        confidence is a number between 0 and 100 -- both fields are present and filled in"
+      fail_condition: "severity or confidence is missing, left blank, or expressed as
+        vague language (e.g. 'high-ish', 'moderate', 'TBD')"
     - name: real_user_problem
-      pass_condition: "The problem describes something a real user encounters in their workflow, not a feature request or technical wish"
-      fail_condition: "The problem is written as a feature request ('We need X') or is a generic technical concern with no user grounding"
+      pass_condition: "the problem describes something a real user encounters while doing
+        their job -- it is written from the user's perspective and grounded in their
+        workflow, not framed as a capability the team wants to build"
+      fail_condition: "the problem is written as a feature request ('We should build X',
+        'The system needs Y') or is a generic technical concern with no connection to
+        a specific user situation"
