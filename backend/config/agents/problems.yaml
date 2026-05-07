@@ -64,3 +64,7 @@ critic:
     - name: real_user_problem
       pass_condition: "The problem describes something a real user encounters in their workflow, not a feature request or technical wish"
       fail_condition: "The problem is written as a feature request ('We need X') or is a generic technical concern with no user grounding"
+
+output_bounds:
+  min_items: 3
+  max_items: 8

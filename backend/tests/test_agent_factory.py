@@ -17,7 +17,7 @@ def test_agent_factory_merges_google_feature_routing():
 
     assert agent.config["provider"] == "google"
     assert agent.config["model"] == "gemini-2.5-flash"
-    assert agent.config["use_cache"] is True
+    assert agent.config["use_cache"] is False
     assert agent.config["use_batch"] is False
 
 
@@ -29,7 +29,7 @@ def test_agent_factory_merges_quality_gate_batch_routing():
     assert agent.config["provider"] == "anthropic"
     assert agent.config["model"] == "claude-haiku-4-5-20251001"
     assert agent.config["use_cache"] is False
-    assert agent.config["use_batch"] is True
+    assert agent.config["use_batch"] is False
 
 
 def test_agent_factory_defaults_when_agent_missing_from_routing():
