@@ -13,25 +13,6 @@ export interface QualityGateResult {
   items?: QualityGateItemResult[];
 }
 
-export interface LinearMutation {
-  operation: string;
-  mutation: string;
-  variables: Record<string, unknown>;
-}
-
-export interface LinearPayload {
-  project: LinearMutation;
-  labels: LinearMutation[];
-  issues: LinearMutation[];
-  metadata: {
-    total_issues: number;
-    total_labels: number;
-    layers: string[];
-    generated_at: string;
-    warning: string;
-  };
-}
-
 export interface PipelineOutputs {
   [key: string]: unknown;
   product_context?: Record<string, unknown>;
@@ -47,7 +28,6 @@ export interface PipelineOutputs {
   tasks?: unknown;
   tasks_quality?: QualityGateResult;
   prd?: unknown;
-  linear_payload?: LinearPayload;
 }
 
 export interface ResearchEvidence {

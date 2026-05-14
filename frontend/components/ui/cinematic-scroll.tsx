@@ -442,7 +442,7 @@ export default function CinematicScroll() {
           <div className="cin-card" id="card-tr" ref={cardTRRef} aria-label="Works with">
             <span className="cin-card-icon">🔗</span>
             <div className="cin-card-label">Works with</div>
-            <div className="cin-card-value">Linear · Cursor · Claude</div>
+            <div className="cin-card-value">Jira · Cursor · Claude</div>
           </div>
           <div className="cin-card" id="card-br" ref={cardBRRef} aria-label="Signal source">
             <span className="cin-card-icon">✦</span>
@@ -460,7 +460,7 @@ export default function CinematicScroll() {
           <div id="cin-cta-layer">
             <p id="cin-eyebrow" ref={eyebrowRef}>Used by 200+ product teams at seed to Series B</p>
             <button id="cin-cta-btn" ref={ctaBtnRef}>Get started free →</button>
-            <p id="cin-sub5" ref={sub5Ref}>No credit card · 2-minute setup · Works with Linear, Jira &amp; Notion</p>
+            <p id="cin-sub5" ref={sub5Ref}>No credit card · 2-minute setup · Works with Jira, Notion &amp; more</p>
           </div>
 
           {/* Act 6: Pipeline */}
@@ -513,7 +513,7 @@ export default function CinematicScroll() {
                 </svg>
               </div>
               <span className="pipe-title">Push to Team</span>
-              <span className="pipe-body">One click to Linear, Jira, or Cursor — no copy-paste</span>
+              <span className="pipe-body">One click to Jira, Notion, or Cursor — no copy-paste</span>
             </div>
           </div>
 
@@ -545,7 +545,7 @@ export default function CinematicScroll() {
             <button id="cin-final-btn-primary">Start your first brief →</button>
             <button id="cin-final-btn-secondary">Book a 15-min demo</button>
           </div>
-          <p id="cin-final-sub" ref={finalSubRef}>No credit card · 2-minute setup · Works with Linear, Jira &amp; Notion</p>
+          <p id="cin-final-sub" ref={finalSubRef}>No credit card · 2-minute setup · Works with Jira, Notion &amp; more</p>
 
           {/* Act 9: Live Demo */}
           <p id="cin-demo-label" ref={demoLabelRef}>A session in progress</p>
@@ -714,7 +714,7 @@ export default function CinematicScroll() {
             </div>
             <div id="cin-typing-output" ref={typingOutputRef} />
             <div className="demo-typing-btns">
-              <button className="demo-typing-btn-primary">Push to Linear →</button>
+              <button className="demo-typing-btn-primary">Push to Jira →</button>
               <button className="demo-typing-btn-ghost">Export PRD</button>
             </div>
           </div>
@@ -782,7 +782,7 @@ export default function CinematicScroll() {
           <div id="cin-compare-vs" ref={compareVsRef}>vs</div>
           <div id="cin-compare-cta" ref={compareCtaRef}>
             <button id="cin-compare-cta-btn">Start your first brief →</button>
-            <p>No credit card · 2-minute setup · Works with Linear, Jira &amp; Notion</p>
+            <p>No credit card · 2-minute setup · Works with Jira, Notion &amp; more</p>
           </div>
         </div>
       </div>

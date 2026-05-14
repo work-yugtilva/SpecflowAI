@@ -453,7 +453,7 @@ export default function DashboardPage() {
       ),
     },
     {
-      label: "Ship to Linear",
+      label: "Track tasks",
       route: "/tasks",
       color: "#F59E0B",
       icon: (

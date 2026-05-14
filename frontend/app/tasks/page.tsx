@@ -29,7 +29,6 @@ import { OrphanedPipelineModal } from "@/components/ui/orphaned-pipeline-modal";
 import { ConversationPanel } from "@/components/ui/conversation-panel";
 import { adaptTasks } from "@/lib/pipeline-contracts";
 import type {
-  LinearPayload,
   TaskStatus,
   TaskStepViewModel as TaskStep,
   TaskType,
@@ -51,16 +50,6 @@ const TextShimmer = dynamic(
   () => import("@/components/ui/text-shimmer").then((m) => m.TextShimmer)
 );
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface LinearPayloadMeta {
-  session_id: string;
-  session_name: string;
-  task_count: number;
-  generated_at: string; // ISO string from linear_payload.metadata.generated_at
-}
-
-// ─── Constants ────────────────────────────────────────────────────────────────
 
 const GROUPS: TaskType[] = ["Frontend", "Backend", "API", "Infrastructure"];
 
@@ -573,13 +562,6 @@ export default function TasksPage() {
   const [prdGenerating, setPrdGenerating] = useState(false);
   const [prdStatus, setPrdStatus] = useState<"success" | "error" | null>(null);
   const [prdError, setPrdError] = useState<string | null>(null);
-  const [linearPayload, setLinearPayload] = useState<LinearPayload | null>(null);
-  const [linearPushing, setLinearPushing] = useState(false);
-  const [linearPushStatus, setLinearPushStatus] = useState<"success" | "error" | null>(null);
-  const [linearPushError, setLinearPushError] = useState<string | null>(null);
-  const [linearNotConnected, setLinearNotConnected] = useState(false);
-  const [linearPayloadMeta, setLinearPayloadMeta] = useState<LinearPayloadMeta | null>(null);
-  const [showLinearConfirm, setShowLinearConfirm] = useState(false);
   const [handoff, setHandoff] = useState<AgentHandoff | null>(null);
   const [handoffGenerating, setHandoffGenerating] = useState(false);
   const [handoffStatus, setHandoffStatus] = useState<"success" | "error" | null>(null);
@@ -602,10 +584,6 @@ export default function TasksPage() {
     setStepsMap({});
     setFromSession(false);
     setSessionDetail(null);
-    setLinearPayload(null);
-    setLinearPayloadMeta(null);
-    setShowLinearConfirm(false);
-    setLinearNotConnected(false);
     setHandoff(null);
     setActiveSessionDetail(null);
     if (!activeSessionId) return;
@@ -625,16 +603,6 @@ export default function TasksPage() {
           const adapted = adaptTasks(out);
           setTasks(adapted);
           if (adapted.length > 0) setSelectedId(adapted[0].id);
-        }
-        const lp = out?.linear_payload as LinearPayload | undefined;
-        if (lp) {
-          setLinearPayload(lp);
-          setLinearPayloadMeta({
-            session_id: activeSessionId,
-            session_name: d.session?.session_name ?? activeSessionId ?? "Unknown session",
-            task_count: lp.metadata.total_issues,
-            generated_at: lp.metadata.generated_at,
-          });
         }
         // Load existing handoff (404 = never generated, not an error)
         getHandoff(activeSessionId)
@@ -658,10 +626,6 @@ export default function TasksPage() {
     setStepsMap,
     setFromSession,
     setSessionDetail,
-    setLinearPayload,
-    setLinearPayloadMeta,
-    setShowLinearConfirm,
-    setLinearNotConnected,
     setHandoff,
     setQualityScore,
     setActiveSessionDetail,
@@ -704,9 +668,6 @@ export default function TasksPage() {
     setStepsMap({});
     setFromSession(false);
     const isAutorun = isAutorunPending(activeSessionId ?? undefined);
-    setLinearPayload(null);
-    setLinearPayloadMeta(null);
-    setShowLinearConfirm(false);
     try {
       const inputData: PipelineInput = await buildPipelineInputFromStorage(
         activeSessionId ?? undefined,
@@ -749,9 +710,6 @@ export default function TasksPage() {
     setStatusMap,
     setStepsMap,
     setFromSession,
-    setLinearPayload,
-    setLinearPayloadMeta,
-    setShowLinearConfirm,
     setQualityScore,
     setTasks,
     setSessionDetail,
@@ -790,43 +748,6 @@ export default function TasksPage() {
     const t = setTimeout(() => setPrdStatus(null), 5000);
     return () => clearTimeout(t);
   }, [prdStatus, setPrdStatus]);
-
-  async function handlePushToLinear() {
-    if (!linearPayload || linearPushing) return;
-    setLinearPushing(true);
-    setLinearPushStatus(null);
-    setLinearPushError(null);
-    setLinearNotConnected(false);
-    try {
-      const res = await fetch("/api/linear/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ linear_payload: linearPayload }),
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({})) as { code?: string; error?: string };
-        if (res.status === 401 && body.code === "linear_not_connected") {
-          setLinearNotConnected(true);
-          return;
-        }
-        setLinearPushError(body.error ?? res.statusText ?? "Push failed");
-        setLinearPushStatus("error");
-        return;
-      }
-      setLinearPushStatus("success");
-    } catch (err) {
-      setLinearPushError(err instanceof Error ? err.message : "Connection failed");
-      setLinearPushStatus("error");
-    } finally {
-      setLinearPushing(false);
-    }
-  }
-
-  useEffect(() => {
-    if (linearPushStatus === null) return;
-    const t = setTimeout(() => setLinearPushStatus(null), 5000);
-    return () => clearTimeout(t);
-  }, [linearPushStatus, setLinearPushStatus]);
 
   async function handleGenerateHandoff() {
     if (!activeSessionId || handoffGenerating) return;
@@ -968,121 +889,6 @@ export default function TasksPage() {
 
           {/* Actions */}
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            {linearPushStatus === "success" && (
-              <span style={{ fontSize: 11.5, fontWeight: 600, padding: "2px 10px", borderRadius: 20, background: "rgba(34,197,94,0.12)", color: "#15803D" }}>
-                Pushed to Linear ✓
-              </span>
-            )}
-            {linearNotConnected && (
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11.5, fontWeight: 500, color: "#6B6B6B" }}>
-                Linear not connected —{" "}
-                <a
-                  href="/settings/integrations"
-                  style={{ color: "#E8561B", fontWeight: 600, textDecoration: "none" }}
-                >
-                  Connect in Settings ↗
-                </a>
-              </span>
-            )}
-            {linearPushStatus === "error" && (
-              <span
-                title={linearPushError ?? undefined}
-                style={{ fontSize: 11.5, fontWeight: 600, padding: "2px 10px", borderRadius: 20, background: "rgba(239,68,68,0.12)", color: "#DC2626", cursor: "help", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-              >
-                {linearPushError ? `Linear error: ${linearPushError}` : "Push failed — try again"}
-              </span>
-            )}
-            {/* Push to Linear — two-step confirm flow */}
-            {!showLinearConfirm ? (
-              <button
-                onClick={() => setShowLinearConfirm(true)}
-                disabled={!linearPayload || !activeSessionId}
-                title={
-                  !activeSessionId
-                    ? "Select a session first"
-                    : !linearPayload
-                    ? "Run the full pipeline to generate the Linear payload first"
-                    : "Review payload before pushing"
-                }
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 5,
-                  padding: "0.4rem 0.875rem",
-                  borderRadius: 8,
-                  fontSize: "0.8125rem",
-                  fontWeight: 500,
-                  background: !linearPayload || !activeSessionId ? "#F8F4EF" : "#FFFFFF",
-                  border: "1.5px solid #E4DDD4",
-                  color: !linearPayload || !activeSessionId ? "#9E9E9E" : "#0D0D0D",
-                  cursor: !linearPayload || !activeSessionId ? "not-allowed" : "pointer",
-                  fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
-                  opacity: !linearPayload || !activeSessionId ? 0.6 : 1,
-                  transition: "background 150ms ease, border-color 150ms ease",
-                }}
-              >
-                <svg width="11" height="11" viewBox="0 0 11 11" fill="none" style={{ opacity: !linearPayload ? 0.4 : 0.7 }}>
-                  <polygon points="5.5,1 10,9.5 1,9.5" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" fill="none" />
-                </svg>
-                Push to Linear
-              </button>
-            ) : (
-              <div style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "5px 10px",
-                borderRadius: 8,
-                border: "1.5px solid #E4DDD4",
-                background: "#FDFCFB",
-                fontSize: "0.75rem",
-                fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
-              }}>
-                <span style={{ color: "#6B6B6B", whiteSpace: "nowrap" }}>
-                  <strong style={{ color: "#0D0D0D" }}>{linearPayloadMeta?.task_count ?? 0} tasks</strong>
-                  {" · "}
-                  {linearPayloadMeta?.session_name}
-                  {" · "}
-                  {linearPayloadMeta?.generated_at
-                    ? new Date(linearPayloadMeta.generated_at).toLocaleString()
-                    : "unknown time"}
-                </span>
-                <button
-                  onClick={async () => { await handlePushToLinear(); setShowLinearConfirm(false); }}
-                  disabled={linearPushing}
-                  style={{
-                    padding: "2px 10px",
-                    borderRadius: 6,
-                    fontSize: "0.75rem",
-                    fontWeight: 600,
-                    background: "#E8561B",
-                    color: "#FFFFFF",
-                    border: "none",
-                    cursor: linearPushing ? "not-allowed" : "pointer",
-                    opacity: linearPushing ? 0.6 : 1,
-                    fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
-                  }}
-                >
-                  {linearPushing ? "Pushing…" : "Confirm Push"}
-                </button>
-                <button
-                  onClick={() => setShowLinearConfirm(false)}
-                  style={{
-                    padding: "2px 8px",
-                    borderRadius: 6,
-                    fontSize: "0.75rem",
-                    fontWeight: 500,
-                    background: "transparent",
-                    color: "#6B6B6B",
-                    border: "1px solid #E4DDD4",
-                    cursor: "pointer",
-                    fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
-                  }}
-                >
-                  Cancel
-                </button>
-              </div>
-            )}
             {/* Handoff status chips */}
             {handoffStatus === "success" && (
               <span style={{ fontSize: 11.5, fontWeight: 600, padding: "2px 10px", borderRadius: 20, background: "rgba(34,197,94,0.12)", color: "#15803D" }}>

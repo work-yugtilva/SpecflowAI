@@ -4,10 +4,10 @@ import { Marquee } from "@/components/ui/marquee";
 
 const COMPANIES = [
   {
-    name: "Linear",
+    name: "Vercel",
     icon: (
       <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16">
-        <path d="M3.5 4.5L12 2l8.5 2.5v15L12 22l-8.5-2.5V4.5z" />
+        <path d="M24 22.525H0l12-21.05 12 21.05z" />
       </svg>
     ),
   },

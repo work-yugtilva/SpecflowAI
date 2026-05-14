@@ -109,7 +109,7 @@ export default function HowItWorks() {
               <p className={styles.hiwNumber}>03</p>
               <h3 className={styles.hiwTitle}>Ship it to your stack</h3>
               <p className={styles.hiwBody}>
-                One click sends the full brief to Linear, Jira, Notion, or directly to your
+                One click sends the full brief to Jira, Notion, or directly to your
                 coding agent. No copy-paste. No reformatting. Your whole team works from a single
                 source of truth.
               </p>
@@ -117,7 +117,7 @@ export default function HowItWorks() {
             <div aria-hidden="true" className={styles.hiwCard}>
               <div className={styles.hiwCardLabel}>Send brief to</div>
               <div className={styles.destGrid}>
-                {["Linear", "Notion", "Jira", "Cursor"].map((item) => (
+                {["GitHub", "Notion", "Jira", "Cursor"].map((item) => (
                   <div className={styles.destChip} key={item}>
                     <CheckCircle2 color="var(--orange)" size={14} />
                     <span>{item}</span>
@@ -126,7 +126,7 @@ export default function HowItWorks() {
               </div>
               <div className={styles.successRow}>
                 <CheckCircle2 size={14} />
-                <span>Brief pushed to Linear · 3 tasks created</span>
+                <span>Brief pushed to Jira · 3 tasks created</span>
               </div>
             </div>
           </div>

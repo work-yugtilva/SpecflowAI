@@ -588,7 +588,7 @@ class BillingPortalRequest(BaseModel):
 
 PIPELINE_PORT = int(os.environ.get("PIPELINE_PORT", "8001"))
 
-IntegrationProvider = Literal["github", "jira", "linear", "notion", "confluence"]
+IntegrationProvider = Literal["github", "jira", "notion", "confluence"]
 
 
 def _raise_pipeline_value_error(exc: ValueError) -> None:

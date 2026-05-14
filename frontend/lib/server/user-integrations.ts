@@ -3,7 +3,7 @@ import "server-only";
 import { getRequiredAuthHeader } from "@/lib/supabase/get-auth-header";
 import { getPipelineServerBaseUrl } from "@/lib/server/pipeline-server";
 
-export type IntegrationProvider = "linear" | "slack";
+export type IntegrationProvider = "slack";
 
 type IntegrationWorkspaceInfo = Record<string, unknown>;
 

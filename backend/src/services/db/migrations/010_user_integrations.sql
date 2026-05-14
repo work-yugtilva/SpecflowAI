@@ -28,4 +28,4 @@ CREATE POLICY "Users manage their own integrations"
   WITH CHECK (user_id = auth.uid()::TEXT);
 
 COMMENT ON TABLE user_integrations IS
-  'OAuth tokens for third-party integrations (e.g. Linear). One row per user per provider.';
+  'OAuth tokens for third-party integrations. One row per user per provider.';

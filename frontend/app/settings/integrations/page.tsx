@@ -1,7 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { getUserIntegrationWorkspaceInfo } from "@/lib/server/user-integrations";
 import { Sidebar } from "@/components/ui/sidebar";
-import LinearIntegrationCard from "./_components/LinearIntegrationCard";
 import SlackIntegrationCard from "./_components/SlackIntegrationCard";
 
 export default async function IntegrationsPage() {
@@ -10,21 +9,11 @@ export default async function IntegrationsPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  let linearConnected = false;
-  let linearWorkspaceInfo: Record<string, unknown> = {};
   let slackConnected = false;
   let slackWorkspaceInfo: Record<string, unknown> = {};
 
   if (user) {
-    const [linearInfo, slackInfo] = await Promise.all([
-      getUserIntegrationWorkspaceInfo(user.id, "linear"),
-      getUserIntegrationWorkspaceInfo(user.id, "slack"),
-    ]);
-
-    if (linearInfo) {
-      linearConnected = true;
-      linearWorkspaceInfo = linearInfo;
-    }
+    const slackInfo = await getUserIntegrationWorkspaceInfo(user.id, "slack");
 
     if (slackInfo) {
       slackConnected = true;
@@ -112,26 +101,6 @@ export default async function IntegrationsPage() {
             <SlackIntegrationCard
               connected={slackConnected}
               workspaceInfo={slackWorkspaceInfo}
-            />
-
-            {/* Project Management section */}
-            <div
-              style={{
-                fontSize: 11,
-                fontWeight: 600,
-                letterSpacing: "0.06em",
-                textTransform: "uppercase",
-                color: "#9E9E9E",
-                marginBottom: 10,
-                marginTop: 28,
-              }}
-            >
-              Project Management
-            </div>
-
-            <LinearIntegrationCard
-              connected={linearConnected}
-              workspaceInfo={linearWorkspaceInfo}
             />
           </div>
         </div>

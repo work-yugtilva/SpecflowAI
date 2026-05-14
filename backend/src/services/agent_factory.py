@@ -14,7 +14,6 @@ from services.agents.features_agent import FeaturesAgent
 from services.agents.decompose_agent import DecomposeAgent
 from services.agents.tasks_agent import TasksAgent
 from services.agents.prd_agent import PRDAgent
-from services.agents.linear_sync_agent import LinearSyncAgent
 from .agents.agent_handoff_agent import AgentHandoffAgent
 from services.agents.query_agent import QueryAgent
 
@@ -32,7 +31,6 @@ AGENT_MAP: dict[str, type[BaseAgent]] = {
     "decompose": DecomposeAgent,
     "tasks":    TasksAgent,
     "prd":      PRDAgent,
-    "linear_sync": LinearSyncAgent,
     "agent_handoff": AgentHandoffAgent,
     "query":         QueryAgent,
 }

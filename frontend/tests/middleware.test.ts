@@ -26,7 +26,22 @@ vi.mock("@/lib/supabase/env", () => ({
   resolveSupabaseUrl: () => "https://example.supabase.co",
 }));
 
-const { middleware } = await import("../middleware");
+const { isPublicMarketingPath, middleware } = await import("../middleware");
+
+describe("isPublicMarketingPath", () => {
+  it("treats landing and marketing sections as public", () => {
+    expect(isPublicMarketingPath("/")).toBe(true);
+    expect(isPublicMarketingPath("/pricing")).toBe(true);
+    expect(isPublicMarketingPath("/pricing/team")).toBe(true);
+    expect(isPublicMarketingPath("/opportunities")).toBe(true);
+  });
+
+  it("does not treat app or auth routes as public marketing", () => {
+    expect(isPublicMarketingPath("/dashboard")).toBe(false);
+    expect(isPublicMarketingPath("/login")).toBe(false);
+    expect(isPublicMarketingPath("/api/health")).toBe(false);
+  });
+});
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -70,5 +85,21 @@ describe("middleware onboarding gate", () => {
     const response = await middleware(request);
 
     expect(response.headers.get("location")).toBeNull();
+  });
+
+  it("does not call Supabase for the public landing page", async () => {
+    const request = new NextRequest("https://app.specflow.ai/");
+
+    await middleware(request);
+
+    expect(getUserMock).not.toHaveBeenCalled();
+  });
+
+  it("does not call Supabase for /pricing", async () => {
+    const request = new NextRequest("https://app.specflow.ai/pricing");
+
+    await middleware(request);
+
+    expect(getUserMock).not.toHaveBeenCalled();
   });
 });

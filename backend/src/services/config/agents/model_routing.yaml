@@ -40,12 +40,6 @@ prd:
   use_cache: false
   use_batch: false
 
-linear_sync:
-  provider: anthropic
-  model: claude-haiku-4-5-20251001
-  use_cache: false
-  use_batch: false
-
 query:
   provider: google
   model: gemini-2.5-flash

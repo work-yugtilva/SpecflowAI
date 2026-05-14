@@ -85,7 +85,7 @@ const features: FeatureItem[] = [
     iconBg: "#8a5f36",
     replaces: "copy-paste into another tool",
     title: "Push to execution",
-    desc: "Send prioritized work to Linear or Jira so engineering sees the same scope you approved—no re-typing, no drift between spec and board.",
+    desc: "Send prioritized work to Jira or your tracker so engineering sees the same scope you approved—no re-typing, no drift between spec and board.",
   },
 ];
 

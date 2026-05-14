@@ -33,7 +33,7 @@ const plans = [
       "All 5 pipeline steps",
       "Session management",
       "PRD generation",
-      "Linear sync",
+      "Export tasks & handoff",
     ],
     cta: "Get started free",
     ctaHref: "/login",

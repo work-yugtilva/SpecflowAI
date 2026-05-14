@@ -17,11 +17,26 @@ const PROTECTED_PATHS = [
   "/onboarding",
   "/sessions",
   "/settings",
+  "/prd",
 ];
 
 const ONBOARDING_COMPLETE_COOKIE = "specflow_onboarding_complete";
 
+/** Marketing and other routes that never need session refresh or auth redirects. */
+export function isPublicMarketingPath(pathname: string): boolean {
+  if (pathname === "/") return true;
+  if (pathname.startsWith("/pricing")) return true;
+  if (pathname.startsWith("/opportunities")) return true;
+  return false;
+}
+
 export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  if (isPublicMarketingPath(pathname)) {
+    return NextResponse.next();
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -54,8 +69,6 @@ export async function middleware(request: NextRequest) {
     // e.g. dev defaults but no `supabase start` — treat as signed out
     user = null;
   }
-
-  const { pathname } = request.nextUrl;
 
   const isProtected = PROTECTED_PATHS.some((p) => pathname.startsWith(p));
   const isLoginPage = pathname === "/login";
@@ -99,8 +112,22 @@ export async function middleware(request: NextRequest) {
   return supabaseResponse;
 }
 
+// Must be a static array (Next.js analyzes it at build time; no variables/spread).
+// Keep path prefixes aligned with PROTECTED_PATHS plus /login and /api.
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/login",
+    "/api/:path*",
+    "/dashboard/:path*",
+    "/problems/:path*",
+    "/features/:path*",
+    "/decompose/:path*",
+    "/tasks/:path*",
+    "/context/:path*",
+    "/sources/:path*",
+    "/onboarding/:path*",
+    "/sessions/:path*",
+    "/settings/:path*",
+    "/prd/:path*",
   ],
 };

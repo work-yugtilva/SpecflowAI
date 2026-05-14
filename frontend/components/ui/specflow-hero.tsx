@@ -120,7 +120,7 @@ export default function SpecFlowHero() {
               className="text-base md:text-lg mb-6 max-w-lg mx-auto"
               style={{ color: "rgba(13,13,13,0.7)", fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif" }}
             >
-              Feed SpecFlow your research — interviews, tickets, Slack threads. Get back a stakeholder-ready spec with rationale, UI changes, and tasks. One click to Linear, Jira, or your coding agent.
+              Feed SpecFlow your research — interviews, tickets, Slack threads. Get back a stakeholder-ready spec with rationale, UI changes, and tasks. Push to Jira, export a handoff, or open in your coding agent.
             </p>
           </FadeIn>
           <FadeIn delay={1200} duration={1000} className="w-full">

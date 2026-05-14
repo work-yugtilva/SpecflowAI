@@ -2,6 +2,38 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 🔴 CRITICAL PRIORITIES — ALWAYS FOLLOW FIRST
+
+### 1. Always Invoke `/using-superpowers` Skill Before Starting Any Operations
+
+**Every session and task:** Before writing, reading, or making ANY changes to code, invoke the `/using-superpowers` skill first. This ensures you discover and follow all relevant skills and workflows for the task at hand.
+
+- Do not skip this even for "simple" tasks
+- Skills override default behavior and provide critical task guidance
+- If a skill exists, it takes priority
+
+### 2. Always Use code-review-graph MCP Before Exploring or Writing Code
+
+**Before file reads, grep, or code changes:** Invoke code-review-graph MCP tools to explore the codebase structure, understand relationships, and plan changes.
+
+**Key tools to use FIRST:**
+- `semantic_search_nodes` — Find functions/classes by meaning
+- `query_graph` — Trace callers, callees, imports, tests, dependencies
+- `detect_changes` — Analyze code change impact (for code review)
+- `get_review_context` — Get efficient source snippets for review
+- `get_impact_radius` — Understand blast radius of changes
+- `get_affected_flows` — Find impacted execution paths
+- `get_architecture_overview` — Understand high-level structure
+
+**Why:** The graph is faster, cheaper (fewer tokens), and provides structural context (callers, dependents, test coverage) that file scanning cannot. Fall back to Grep/Glob/Read only when the graph doesn't cover what you need.
+
+**Workflow:**
+1. Task received → Invoke `/using-superpowers`
+2. Need to explore code → Use code-review-graph MCP FIRST
+3. Need file content → Use Grep/Glob/Read as fallback
+4. Need to understand impact → Use `get_impact_radius` or `get_affected_flows`
+5. Need code review → Use `detect_changes` + `get_review_context`
+
 ## SpecFlow v2 — AI Product Management Platform
 
 **Stack:** Next.js 14 · FastAPI · Express (TypeScript) · Supabase · Anthropic SDK
@@ -13,7 +45,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Supabase — PostgreSQL database, real-time subscriptions, auth
 
 **Pipeline Flow:**
-`product_context` → `problems` → `features` → `decompose` → `tasks` → `linear_sync` → `PRD`
+`product_context` → `problems` → `features` → `decompose` → `tasks` → `PRD`
 
 **Key Directories:**
 - `backend/config/agents/` — Agent YAML configurations (system prompts, model settings, temperature)
@@ -21,7 +53,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `backend/src/pipeline/` — Pipeline stage implementations, orchestration logic
 - `frontend/components/` — React component hierarchy, UI primitives in `ui/`, pages in `app/`
 - `backend/src/memory/` — Memory store integration with Supabase vector tables
-- `backend/src/integrations/` — Anthropic SDK, Linear API, Google ADK integrations
+- `backend/src/integrations/` — Anthropic SDK, Google ADK integrations
 
 **Memory Architecture:** Each pipeline stage stores context in Supabase vector tables keyed by stage name. Memory retrieval uses semantic similarity via pgvector. Agents read input context from memory, process, write output before passing to next stage.
 
@@ -56,7 +88,7 @@ GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 
 ## Database
 
-- **Supabase Tables:** `agents`, `memory_vectors`, `tasks`, `linear_issues`
+- **Supabase Tables:** `agents`, `memory_vectors`, `tasks`
 - **Migrations:** `backend/src/services/db/migrations/` managed via Supabase CLI
 - **Vector Search:** Uses `pgvector` extension for semantic similarity queries
 - **Schema:** Memory vectors stored as embeddings; agent results linked via `stage_key`
@@ -164,7 +196,6 @@ GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 
 - **Anthropic Model:** Check `backend/config/agents/` YAML for current model versions
 - **Supabase URL:** In `.env`; also visible in Supabase dashboard
-- **Linear Integration:** Requires `LINEAR_API_KEY` in `.env` for task syncing
 - **Pipeline Stage Output:** Each stage writes to Supabase with key `{stage_name}_output`
 - **Frontend Build:** Production build requires all environment variables at build time
 
@@ -176,13 +207,3 @@ GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account.json
 4. Install Python deps: `cd backend && pip install -r requirements.txt`
 5. Start services: `npm run dev` (or individually on separate terminals)
 6. Verify: frontend at 3000, Express at 3001, FastAPI at 8001
-
-## graphify
-
-This project has a graphify knowledge graph at graphify-out/.
-
-Rules:
-- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
-- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
-- For cross-module "how does X relate to Y" questions, prefer `graphify query "<question>"`, `graphify path "<A>" "<B>"`, or `graphify explain "<concept>"` over grep — these traverse the graph's EXTRACTED + INFERRED edges instead of scanning files
-- After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)

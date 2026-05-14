@@ -6,7 +6,7 @@ import { useEffect } from "react";
 import styles from "./landing.module.css";
 
 const headline = ["From 4 days", "to 12 minutes."];
-const companies = ["Stripe", "Notion", "Vercel", "Linear", "Retool", "Loom"];
+const companies = ["Stripe", "Notion", "Vercel", "Retool", "Loom", "Slack"];
 const stats = [
   { label: "product teams", value: "200+" },
   { label: "briefs generated", value: "2,400+" },
@@ -80,8 +80,8 @@ export default function Hero() {
 
           <p className={`${styles.heroSubtitle} fade-in`}>
             Feed SpecFlow your research — interviews, tickets, Slack threads. Get back a
-            stakeholder-ready spec with rationale, UI changes, and tasks. One click to Linear,
-            Jira, or your coding agent.
+            stakeholder-ready spec with rationale, UI changes, and tasks. Push to Jira,
+            export a handoff, or open in your coding agent—in one flow.
           </p>
 
           <div className={`${styles.heroActions} fade-in`}>

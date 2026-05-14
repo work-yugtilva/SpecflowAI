@@ -10,7 +10,6 @@ import type { SessionDetail } from "@/lib/api/session";
 import { iterateSseJsonLines } from "@/lib/sse-parse";
 import { useActiveSession } from "@/lib/active-session-context";
 import { computeStepStatuses } from "@/lib/pipeline-session";
-import type { LinearPayload } from "@/lib/pipeline-contracts";
 import {
   fetchFeedback,
   createFeedback,
@@ -1087,11 +1086,6 @@ function PrdPage() {
   const [fromSession, setFromSession] = useState(false);
   const [sessionDetail, setSessionDetail] = useState<SessionDetail | null>(null);
   const [showConfirmRegenerate, setShowConfirmRegenerate] = useState(false);
-  const [linearPayload, setLinearPayload] = useState<LinearPayload | null>(null);
-  const [linearPushing, setLinearPushing] = useState(false);
-  const [linearPushStatus, setLinearPushStatus] = useState<"success" | "error" | null>(null);
-  const [linearPushError, setLinearPushError] = useState<string | null>(null);
-  const [linearNotConnected, setLinearNotConnected] = useState(false);
   const urlView = searchParams.get("view");
   const [viewMode, setViewMode] = useState<"full" | "engineering" | "executive">(
     urlView === "engineering" || urlView === "executive" ? urlView : "full"
@@ -1140,10 +1134,6 @@ function PrdPage() {
     setError(null);
     setFromSession(false);
     setSessionDetail(null);
-    setLinearPayload(null);
-    setLinearPushStatus(null);
-    setLinearPushError(null);
-    setLinearNotConnected(false);
     setFeedback([]);
     setFeedbackLoadError(null);
     setActiveSessionDetail(null);
@@ -1169,14 +1159,12 @@ function PrdPage() {
         if (!cancelled) setFeedbackLoading(false);
       });
 
-    // Load session detail for stepper + linear_payload
+    // Load session detail for stepper
     getSession(activeSessionId)
       .then((d) => {
         if (!cancelled) {
           setSessionDetail(d);
           setActiveSessionDetail(d);
-          const lp = d?.state?.state?.outputs?.linear_payload as LinearPayload | undefined;
-          if (lp) setLinearPayload(lp);
         }
       })
       .catch(() => {
@@ -1405,39 +1393,6 @@ function PrdPage() {
     }
   }
 
-  // ── Push to Linear ──
-  async function handlePushToLinear() {
-    if (!linearPayload || linearPushing) return;
-    setLinearPushing(true);
-    setLinearPushStatus(null);
-    setLinearPushError(null);
-    setLinearNotConnected(false);
-    try {
-      const res = await fetch("/api/linear/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ linear_payload: linearPayload }),
-      });
-      if (!res.ok) {
-        const body = await res.json();
-        if (res.status === 401 && body.code === "linear_not_connected") {
-          setLinearNotConnected(true);
-          return;
-        }
-        setLinearPushError(body.error ?? res.statusText);
-        setLinearPushStatus("error");
-        return;
-      }
-      setLinearPushStatus("success");
-    } catch (err) {
-      setLinearPushError(err instanceof Error ? err.message : "Connection failed");
-      setLinearPushStatus("error");
-    } finally {
-      setLinearPushing(false);
-    }
-  }
-
-  // ── Citation count helper ──
   function getSectionCitationCount(sectionKey: string, prdData: PrdData, cits: Record<string, string[]> | null): number {
     if (cits === null) return 0;
     if (sectionKey !== "features") return 0;
@@ -1782,46 +1737,6 @@ function PrdPage() {
                     </span>
                   )}
                 </button>
-                {/* Push to Linear */}
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
-                  <button
-                    onClick={handlePushToLinear}
-                    disabled={linearPushing || !linearPayload}
-                    style={{
-                      display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5,
-                      width: "6.5rem", padding: "0.4rem 0.5rem", borderRadius: 8, fontSize: "0.8125rem", fontWeight: 500,
-                      background: linearPushStatus === "success" ? "rgba(232,86,27,0.08)" : "#0D0D0D",
-                      border: linearPushStatus === "success" ? "1.5px solid rgba(232,86,27,0.3)" : "1.5px solid #0D0D0D",
-                      color: linearPushStatus === "success" ? "#E8561B" : "#FFFFFF",
-                      cursor: (linearPushing || !linearPayload) ? "not-allowed" : "pointer",
-                      opacity: (linearPushing || !linearPayload) ? 0.6 : 1,
-                      fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
-                      overflow: "hidden",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    {linearPushing ? (
-                      <span style={{ width: 10, height: 10, borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.3)", borderTopColor: "#fff", display: "inline-block", animation: "spin 0.7s linear infinite" }} />
-                    ) : (
-                      <svg width="11" height="11" viewBox="0 0 11 11" fill="none">
-                        <circle cx="5.5" cy="5.5" r="4.5" stroke="currentColor" strokeWidth="1.2"/>
-                        <path d="M3.5 5.5h4M5.5 3.5l2 2-2 2" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
-                      </svg>
-                    )}
-                    {linearPushStatus === "success" ? "Pushed ✓" : "→ Linear"}
-                  </button>
-                  {linearPushStatus === "error" && linearPushError && (
-                    <span style={{ fontSize: 11, color: "#DC2626" }}>{linearPushError}</span>
-                  )}
-                  {linearNotConnected && (
-                    <span style={{ fontSize: 11, color: "#6B6B6B" }}>
-                      Not connected —{" "}
-                      <a href="/settings/integrations" style={{ color: "#E8561B", fontWeight: 600, textDecoration: "none" }}>
-                        Connect ↗
-                      </a>
-                    </span>
-                  )}
-                </div>
                 <button
                   onClick={() => setShowConfirmRegenerate(true)}
                   disabled={generating || regenLimitReached}

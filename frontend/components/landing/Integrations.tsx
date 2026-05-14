@@ -2,7 +2,6 @@ import React from "react";
 import styles from "./landing.module.css";
 
 const integrations = [
-  { alt: "Linear logo", name: "Linear", slug: "linear" },
   { alt: "Jira logo", name: "Jira", slug: "jira" },
   { alt: "Notion logo", name: "Notion", slug: "notion" },
   { alt: "Slack logo", name: "Slack", slug: "slack" },

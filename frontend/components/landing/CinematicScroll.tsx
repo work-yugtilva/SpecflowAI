@@ -37,7 +37,7 @@ const overviewCards = [
     id: "landing-card-tr",
     icon: <Link2 size={18} />,
     label: "Works with",
-    value: "Linear · Cursor · Claude",
+    value: "Jira · Cursor · Claude",
   },
   {
     id: "landing-card-br",
@@ -70,7 +70,7 @@ const pipelineCards = [
     title: "Feature Brief",
   },
   {
-    body: "One click to Linear, Jira, or Cursor — no copy-paste",
+    body: "One click to Jira, Notion, or Cursor — no copy-paste",
     icon: <Send color="#e4611a" size={32} />,
     id: "landing-pipe-card-4",
     step: "04",
@@ -733,7 +733,7 @@ export default function CinematicScroll() {
             <Link href="/signup" id="landing-cin-cta-btn">
               Get started free →
             </Link>
-            <p id="landing-cin-sub5">No credit card · 2-minute setup · Works with Linear, Jira &amp; Notion</p>
+            <p id="landing-cin-sub5">No credit card · 2-minute setup · Works with Jira, Notion &amp; more</p>
           </div>
 
           <p id="landing-cin-act6-label">From signal to shipped</p>
@@ -781,7 +781,7 @@ export default function CinematicScroll() {
               Watch a demo
             </button>
           </div>
-          <p id="landing-cin-final-sub">No credit card · 2-minute setup · Works with Linear, Jira &amp; Notion</p>
+          <p id="landing-cin-final-sub">No credit card · 2-minute setup · Works with Jira, Notion &amp; more</p>
 
           <p id="landing-cin-demo-label">A session in progress</p>
           <div id="landing-cin-demo-chrome">
@@ -961,7 +961,7 @@ export default function CinematicScroll() {
             </div>
             <div id="landing-cin-typing-output" />
             <div className={styles.demoTypingBtns}>
-              <span className={styles.demoTypingPrimary}>Push to Linear →</span>
+              <span className={styles.demoTypingPrimary}>Push to Jira →</span>
               <span className={styles.demoTypingGhost}>Export PRD</span>
             </div>
           </div>
@@ -991,7 +991,7 @@ export default function CinematicScroll() {
             <Link href="/signup" id="landing-cin-compare-cta-btn">
               Get started free →
             </Link>
-            <p>No credit card · 2-minute setup · Works with Linear, Jira &amp; Notion</p>
+            <p>No credit card · 2-minute setup · Works with Jira, Notion &amp; more</p>
           </div>
         </div>
       </div>
