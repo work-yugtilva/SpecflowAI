@@ -32,10 +32,51 @@ export function isPublicMarketingPath(pathname: string): boolean {
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+  const host = request.headers.get("host") ?? "";
+  const debugIngest =
+    host.startsWith("127.0.0.1") || host.startsWith("localhost");
+
+  function agentLog(
+    hypothesisId: string,
+    location: string,
+    message: string,
+    data: Record<string, unknown>
+  ) {
+    if (!debugIngest) return;
+    // #region agent log
+    fetch("http://127.0.0.1:7803/ingest/b2185561-6703-44ba-834e-40688a4a7518", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Debug-Session-Id": "6db58c",
+      },
+      body: JSON.stringify({
+        sessionId: "6db58c",
+        hypothesisId,
+        location,
+        message,
+        data,
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+  }
+
+  agentLog("H2", "middleware.ts:entry", "middleware invoked", {
+    pathname,
+    url: request.nextUrl.toString(),
+  });
 
   if (isPublicMarketingPath(pathname)) {
+    agentLog("H4", "middleware.ts:publicShortCircuit", "public marketing path — skip Supabase", {
+      pathname,
+    });
     return NextResponse.next();
   }
+
+  agentLog("H5", "middleware.ts:authPath", "entering Supabase session refresh path", {
+    pathname,
+  });
 
   let supabaseResponse = NextResponse.next({ request });
 
@@ -62,6 +103,11 @@ export async function middleware(request: NextRequest) {
 
   // Refresh session — required for SSR auth to work
   let user = null;
+  const getUserStarted = Date.now();
+  agentLog("H3", "middleware.ts:beforeGetUser", "about to call auth.getUser", {
+    pathname,
+    getUserStarted,
+  });
   try {
     const { data } = await supabase.auth.getUser();
     user = data.user;
@@ -69,6 +115,11 @@ export async function middleware(request: NextRequest) {
     // e.g. dev defaults but no `supabase start` — treat as signed out
     user = null;
   }
+  agentLog("H3", "middleware.ts:afterGetUser", "auth.getUser finished", {
+    pathname,
+    ms: Date.now() - getUserStarted,
+    hasUser: Boolean(user),
+  });
 
   const isProtected = PROTECTED_PATHS.some((p) => pathname.startsWith(p));
   const isLoginPage = pathname === "/login";
