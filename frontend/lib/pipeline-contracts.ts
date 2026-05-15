@@ -328,7 +328,7 @@ export function describeProblemsEmptyState(
     return `The model did not return valid JSON (${String(problems.error)}).${tail}`;
   }
   if (Array.isArray(problems) && problems.length === 0) {
-    return "The model returned an empty list. Add more context and research for this session, then try again.";
+    return "No problems detected from your sources. Try uploading more detailed interview transcripts or usage data.";
   }
   if (problems === undefined || problems === null) {
     return "No problems output was found in the API response. Confirm NEXT_PUBLIC_PIPELINE_URL matches the workflow API and check its logs.";

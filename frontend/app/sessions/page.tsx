@@ -185,6 +185,7 @@ const STATUS_STYLE: Record<string, { bg: string; color: string; border: string; 
   completed: { bg: "#F0FDF4", color: "#15803D", border: "#BBF7D0", dot: "#22C55E" },
   failed:    { bg: "#FEF2F2", color: "#B91C1C", border: "#FECACA", dot: "#EF4444" },
   partial:   { bg: "#FFFBEB", color: "#92400E", border: "#FDE68A", dot: "#F59E0B" },
+  STOPPED:   { bg: "#FFFBEB", color: "#92400E", border: "#FDE68A", dot: "#F59E0B" },
 };
 
 function StatusBadge({ status }: { status: string }) {

@@ -128,4 +128,23 @@ describe("ProblemsPage source evidence guard", () => {
     expect(runPipelineStepOrFullMock).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.getByRole("button", { name: /retry/i })).toBeTruthy());
   });
+
+  it("shows the no-problems empty state when the pipeline returns an empty list", async () => {
+    render(<ProblemsPage />);
+
+    const runButtons = await screen.findAllByRole("button", { name: /run problems/i });
+    fireEvent.click(runButtons[0]);
+
+    expect(
+      await screen.findByText(
+        "No problems detected from your sources. Try uploading more detailed interview transcripts or usage data."
+      )
+    ).toBeTruthy();
+    expect(screen.queryByText(/insufficient source data/i)).toBeNull();
+    expect(runPipelineStepOrFullMock).toHaveBeenCalledWith(
+      "problems",
+      { context: {}, ingest: [] },
+      "session-1"
+    );
+  });
 });

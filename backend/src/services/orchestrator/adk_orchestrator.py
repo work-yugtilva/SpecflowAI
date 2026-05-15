@@ -15,6 +15,7 @@ from google.adk.agents import BaseAgent as GoogleBaseAgent, SequentialAgent
 from google.adk.events import Event, EventActions
 from google.adk.runners import InMemoryRunner
 from google.genai.types import Content, Part
+from services.pipeline_stop import stopped_after_no_problems
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,31 @@ class _SpecFlowStep(GoogleBaseAgent):
             yield Event(
                 author=self.name,
                 content=Content(parts=[Part(text="skipped")]),
+            )
+            return
+
+        if state.get("_pipeline_stop"):
+            logger.info("[ADK] skipping %s because pipeline is stopped", self._agent_name)
+            yield Event(
+                author=self.name,
+                content=Content(parts=[Part(text="stopped")]),
+            )
+            return
+
+        if self._agent_name == "features" and state.get("problems") == []:
+            stop_status = stopped_after_no_problems()
+            logger.info(
+                "[ADK] stopping pipeline before features because problems output is empty"
+            )
+            yield Event(
+                author=self.name,
+                content=Content(parts=[Part(text=json.dumps(stop_status))]),
+                actions=EventActions(
+                    state_delta={
+                        "_pipeline_stop": stop_status,
+                        "pipeline_status": stop_status,
+                    }
+                ),
             )
             return
 
@@ -172,7 +198,11 @@ class ADKOrchestrator:
             user_id=session_id,
             session_id=session_id,
         )
-        return {
+        result = {
             out_key: final_session.state.get(out_key)
             for out_key in self._step_output_keys.values()
         }
+        pipeline_status = final_session.state.get("pipeline_status")
+        if pipeline_status is not None:
+            result["pipeline_status"] = pipeline_status
+        return result

@@ -28,8 +28,8 @@ instructions: |
   1. Treat each rag_context item as the primary source of evidence for your output.
   2. Cite specific rag_context items in every research_evidence field using this format:
      '[Source: {title}]'
-  3. If a claim cannot be traced to rag_context or research_context, write
-     'Insufficient source data' in that field -- do not invent evidence.
+  3. If a claim cannot be traced to rag_context or research_context, do not
+     include that problem -- do not invent evidence.
   4. Give priority to rag_context items with higher relevance scores.
 
   For every item you generate, populate these fields as follows:
@@ -38,12 +38,11 @@ instructions: |
   - citation_confidence: 'high' if every claim traces to a rag_context item; 'medium'
     if some claims are inferred from context; 'insufficient' if you could not find
     supporting evidence.
-  - Do NOT return an empty items array if research_context has any content -- even thin
-    signals like documents or specs count. Generate 3-7 problems using your best
-    reading of the material. For anything you cannot fully ground, set
-    citation_confidence to 'insufficient' and note in research_evidence what additional
-    user research would strengthen that problem. Only return an empty array if
-    research_context is literally empty.
+
+  If the provided source evidence is empty or contains no meaningful signal,
+  return an empty array: []. Do NOT fabricate problems. Do NOT generate
+  placeholder or meta-problems. An empty array is a valid and correct response
+  when there is no evidence to work from.
 
   If an <analytics_context> block is present, treat each metric as quantitative
   evidence. Reference specific metric names and numeric values in research_evidence
@@ -70,7 +69,7 @@ output_schema:
     # What must be true for this problem to be considered resolved -- write in measurable terms.
     acceptance_criteria: string
     # A direct quote or specific reference from rag_context or research_context.
-    # Never invent this -- if you have no traceable source, write 'Insufficient source data'.
+    # Never invent this -- if you have no traceable source, do not return the item.
     research_evidence: "Direct quote or reference from rag_context or research_context -- required, no invented evidence"
     # The id values of every rag_context item you drew on for this problem.
     source_ids: list
@@ -109,5 +108,5 @@ critic:
         a specific user situation"
 
 output_bounds:
-  min_items: 3
+  min_items: 0
   max_items: 8

@@ -11,6 +11,26 @@ class ProblemsAgent(BaseAgent):
             return val["data"]
         return val
 
+    def _has_meaningful_source_signal(self, context: dict = None, memory: dict = None) -> bool:
+        ctx = context or {}
+        if isinstance(ctx.get("analytics_context"), str) and ctx["analytics_context"].strip():
+            return True
+
+        items = [
+            *self._bounded_research_context(ctx, memory or {}),
+            *self._clip_list(self._unwrap(ctx.get("rag_context")), None),
+        ]
+        for item in items:
+            if isinstance(item, str) and item.strip():
+                return True
+            if not isinstance(item, dict):
+                continue
+            for key in ("content", "summary", "pain_point", "text", "title", "notes"):
+                value = item.get(key)
+                if isinstance(value, str) and value.strip():
+                    return True
+        return False
+
     def build_prompt(self, task: str, context: dict = None, memory: dict = None) -> str:
         ctx = context or {}
         mem = memory or {}
@@ -34,3 +54,43 @@ class ProblemsAgent(BaseAgent):
             prompt_context["previous_attempt_failure"] = ctx["previous_attempt_failure"]
 
         return super().build_prompt(task, context=prompt_context, memory=None)
+
+    async def execute_async(
+        self,
+        task: str,
+        context: dict = None,
+        memory: dict = None,
+        session: dict = None,
+    ):
+        if not self._has_meaningful_source_signal(context, memory):
+            return []
+
+        problems = await super().execute_async(
+            task,
+            context=context,
+            memory=memory,
+            session=session,
+        )
+        if not problems or len(problems) == 0:
+            return []
+        return problems
+
+    def execute(
+        self,
+        task: str,
+        context: dict = None,
+        memory: dict = None,
+        session: dict = None,
+    ):
+        if not self._has_meaningful_source_signal(context, memory):
+            return []
+
+        problems = super().execute(
+            task,
+            context=context,
+            memory=memory,
+            session=session,
+        )
+        if not problems or len(problems) == 0:
+            return []
+        return problems

@@ -1,4 +1,5 @@
 import pytest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 
@@ -324,6 +325,35 @@ async def test_run_step_with_quality_retry_passes_feedback_once():
 
 
 @pytest.mark.asyncio
+async def test_run_step_with_quality_retry_accepts_empty_problems_without_retry():
+    from services.pipeline import Pipeline
+
+    pipeline = Pipeline.__new__(Pipeline)
+    pipeline._finalize_agent_output = MagicMock(return_value=[])
+    pipeline._run_quality_gate_async = AsyncMock()
+
+    agent = MagicMock()
+    agent.name = "problems"
+    agent.max_retries = 2
+    agent.execute_async = AsyncMock(return_value=[])
+
+    output, qg_result = await pipeline._run_step_with_quality_retry(
+        agent=agent,
+        step_task="Find problems",
+        base_context={"ingest": []},
+        memory_slice={},
+        session=None,
+        out_key="problems",
+        state={},
+    )
+
+    assert output == []
+    assert qg_result is None
+    agent.execute_async.assert_awaited_once()
+    pipeline._run_quality_gate_async.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_full_pipeline_passes_normalized_research_to_orchestrator():
     from services.pipeline import Pipeline
 
@@ -358,3 +388,69 @@ async def test_full_pipeline_passes_normalized_research_to_orchestrator():
     normalized_input = pipeline.orchestrator.run.await_args.args[0]
     assert normalized_input["ingest"] == input_data["research"]
     assert normalized_input["research"] == input_data["research"]
+
+
+@pytest.mark.asyncio
+async def test_full_pipeline_stops_cleanly_when_problems_empty():
+    from services.pipeline import Pipeline
+
+    stopped = {
+        "status": "STOPPED",
+        "reason": "NO_PROBLEMS_DETECTED",
+        "message": "No problems were detected from your sources. Add more detailed source documents and re-run.",
+    }
+    pipeline = Pipeline.__new__(Pipeline)
+    pipeline.pipeline_config = {
+        "steps": [
+            {"agent": "problems", "task": "Find problems", "output_key": "problems"},
+            {"agent": "features", "task": "Find features", "output_key": "features"},
+        ],
+        "session": {"persistence": True, "event_tracking": True},
+        "execution": {"resumable": True},
+    }
+    pipeline.orchestrator = AsyncMock()
+    pipeline.orchestrator.run.return_value = {
+        "problems": [],
+        "features": None,
+        "pipeline_status": stopped,
+    }
+    pipeline.memory_repo = AsyncMock()
+    pipeline.memory_repo.get_by_session.return_value = []
+    pipeline.research_repo = AsyncMock()
+    pipeline._persist_step_memory = AsyncMock()
+    pipeline._run_quality_gate_async = AsyncMock(return_value=None)
+
+    session_manager = AsyncMock()
+    session_manager.get_current_state.return_value = {}
+
+    with patch(
+        "services.pipeline.AgentFactory.create",
+        return_value=SimpleNamespace(
+            name="problems",
+            config={"output_schema": {}, "max_retries": 0},
+            max_retries=0,
+        ),
+    ):
+        result = await pipeline.run(
+            {
+                "context": {
+                    "companyName": "Acme",
+                    "productName": "Widget",
+                    "productDescription": "A widget for users",
+                },
+                "ingest": [],
+                "research": [],
+            },
+            session_id="session-1",
+            session_manager=session_manager,
+            user_id="user-1",
+        )
+
+    assert result["problems"] == []
+    assert result["pipeline_status"] == stopped
+    assert "features" not in result
+    session_manager.update_status.assert_awaited_once_with("session-1", "STOPPED")
+    snapshot = session_manager.update_state.await_args.args[1]
+    assert snapshot["last_completed_step"] == "problems"
+    assert snapshot["pipeline_status"] == stopped
+    assert snapshot["outputs"] == {"problems": []}

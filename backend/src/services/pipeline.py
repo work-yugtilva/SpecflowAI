@@ -18,6 +18,7 @@ from services.memory.memory_store import MemoryStore
 from services.memory.memory_manager import MemoryManager
 from services.memory.memory_repository import MemoryRepository
 from services.memory.memory_schemas import MemoryEntry
+from services.pipeline_stop import stopped_after_no_problems
 
 logger = logging.getLogger("specflow.pipeline")
 
@@ -260,6 +261,7 @@ class Pipeline:
         from services.db.models.session import (
             SESSION_STATUS_COMPLETED,
             SESSION_STATUS_FAILED,
+            SESSION_STATUS_STOPPED,
         )
 
         state = self._normalize_pipeline_input(input_data)
@@ -418,6 +420,28 @@ class Pipeline:
 
                 output = self._strip_insufficient_items(output)
                 state[single_out_key] = output
+
+                if single_agent_name == "problems" and output == []:
+                    if session_id and session_manager and persistence_on:
+                        await self._persist_step_memory(project_id or "", single_agent_name, single_out_key, output, session_id=session_id, user_id=user_id)
+                    elif project_id:
+                        await self._persist_step_memory(project_id, single_agent_name, single_out_key, output)
+
+                    if progress_callback:
+                        await progress_callback({"type": "step_complete", "step": single_out_key})
+
+                    steps_run_this_call.append(single_agent_name)
+                    completed_steps.add(single_agent_name)
+                    await self._mark_no_problems_stopped(
+                        state=state,
+                        session_id=session_id,
+                        session_manager=session_manager,
+                        persistence_on=persistence_on,
+                        event_tracking_on=event_tracking_on,
+                        status_value=SESSION_STATUS_STOPPED,
+                    )
+                    return state
+
                 if session_id and session_manager and persistence_on:
                     await self._persist_step_memory(project_id or "", single_agent_name, single_out_key, output, session_id=session_id, user_id=user_id)
                 elif project_id:
@@ -493,6 +517,34 @@ class Pipeline:
                 logger.info("[dispatch] step=%s agent_class=%s", agent_name, type(agent).__name__)
                 data = self._finalize_agent_output(agent_name, out_key, raw, agent)
                 state[out_key] = self._strip_reasoning_field(data)
+
+                if agent_name == "problems" and state[out_key] == []:
+                    agent_memory_config = None
+                    if hasattr(agent, "config") and isinstance(agent.config, dict):
+                        memory_raw = agent.config.get("memory")
+                        if memory_raw:
+                            from services.memory.memory_schemas import MemoryConfig
+                            agent_memory_config = MemoryConfig(**memory_raw)
+                    await memory_manager.write_from_agent(agent_memory_config, agent_name, state[out_key])
+
+                    data = self._strip_insufficient_items(state[out_key])
+                    state[out_key] = data
+                    if session_id and session_manager and persistence_on:
+                        await self._persist_step_memory(project_id or "", agent_name, out_key, data, session_id=session_id, user_id=user_id)
+                    elif project_id:
+                        await self._persist_step_memory(project_id, agent_name, out_key, data)
+
+                    steps_run_this_call.append(agent_name)
+                    completed_steps.add(agent_name)
+                    await self._mark_no_problems_stopped(
+                        state=state,
+                        session_id=session_id,
+                        session_manager=session_manager,
+                        persistence_on=persistence_on,
+                        event_tracking_on=event_tracking_on,
+                        status_value=SESSION_STATUS_STOPPED,
+                    )
+                    return state
 
                 qg_result = None
                 try:
@@ -594,6 +646,46 @@ class Pipeline:
     # -------------------------------------------------------------------------
     # Private helpers
     # -------------------------------------------------------------------------
+
+    async def _mark_no_problems_stopped(
+        self,
+        *,
+        state: dict,
+        session_id: str = None,
+        session_manager=None,
+        persistence_on: bool = True,
+        event_tracking_on: bool = True,
+        status_value: str = "STOPPED",
+    ) -> dict:
+        stop_status = state.get("pipeline_status")
+        if not isinstance(stop_status, dict):
+            stop_status = stopped_after_no_problems()
+            state["pipeline_status"] = stop_status
+
+        if session_id and session_manager:
+            if persistence_on:
+                snapshot = {
+                    "last_completed_step": "problems",
+                    "pipeline_status": stop_status,
+                    "outputs": {"problems": state.get("problems", [])},
+                }
+                await session_manager.update_state(session_id, snapshot, "problems")
+            await session_manager.update_status(session_id, status_value)
+            if event_tracking_on:
+                await session_manager.append_event(
+                    session_id,
+                    "agent_step",
+                    {
+                        "agent": "problems",
+                        "output_key": "problems",
+                        "status": "stopped",
+                        "reason": stop_status["reason"],
+                        "message": stop_status["message"],
+                        "data_keys": [],
+                    },
+                )
+
+        return stop_status
 
     @staticmethod
     def _normalize_pipeline_input(input_data: dict) -> dict:
@@ -812,6 +904,8 @@ class Pipeline:
                 })
             )
             data = self._finalize_agent_output(agent.name, out_key, result, agent)
+            if out_key == "problems" and data == []:
+                return data, None
 
             qg_result = None
             try:

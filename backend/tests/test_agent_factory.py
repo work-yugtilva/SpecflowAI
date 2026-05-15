@@ -2,6 +2,8 @@ import logging
 import os
 import sys
 
+import pytest
+
 os.environ.setdefault("SUPABASE_URL", "https://test.supabase.co")
 os.environ.setdefault("NEXT_PUBLIC_SUPABASE_URL", "https://test.supabase.co")
 os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "test-service-key")
@@ -53,3 +55,52 @@ def test_agent_factory_logs_resolved_provider_and_model(caplog):
 
     assert "provider=google" in caplog.text
     assert "model=gemini-2.5-flash" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_problems_agent_returns_empty_without_calling_model_for_empty_evidence():
+    from unittest.mock import AsyncMock, patch
+
+    from services.agents.problems_agent import ProblemsAgent
+    from services.config.config_manager import ConfigManager
+
+    agent = ProblemsAgent("problems", ConfigManager.load_agent("problems").model_dump())
+
+    async def fake_structured_response(_prompt, response_model, **_kwargs):
+        return response_model(
+            reasoning="No usable evidence, but fabricating a placeholder anyway.",
+            items=[
+                {
+                    "id": "PROB-001",
+                    "title": "Insufficient source data",
+                    "description": "The session lacks enough source material to identify real user problems.",
+                    "user_problem_it_solves": "Users need to know more evidence is required.",
+                    "severity": "low",
+                    "confidence": 0,
+                    "acceptance_criteria": "Upload source material.",
+                    "research_evidence": "Insufficient source data",
+                    "source_ids": [],
+                    "citation_confidence": "insufficient",
+                }
+            ],
+        )
+
+    with patch(
+        "services.ai.client.run_ai_structured_async",
+        new=AsyncMock(side_effect=fake_structured_response),
+    ) as run_ai:
+        result = await agent.execute_async(
+            "Find problems",
+            context={
+                "product_context": {
+                    "companyName": "Acme",
+                    "productName": "Widget",
+                    "productDescription": "A widget for users",
+                },
+                "ingest": [],
+                "research": [],
+            },
+        )
+
+    assert result == []
+    run_ai.assert_not_awaited()
