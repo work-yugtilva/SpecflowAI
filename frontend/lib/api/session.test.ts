@@ -114,6 +114,22 @@ describe("startSessionRunAsync", () => {
 
     await expect(startSessionRunAsync("sess-1", {})).rejects.toThrow("Service overloaded");
   });
+
+  it("preserves NO_EVIDENCE code from 422 responses", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockFetchNonOk(422, {
+        code: "NO_EVIDENCE",
+        message: "Upload at least one source document before running the pipeline.",
+      })
+    );
+
+    await expect(startSessionRunAsync("sess-1", {}, "problems")).rejects.toMatchObject({
+      code: "NO_EVIDENCE",
+      status: 422,
+      message: "NO_EVIDENCE: Upload at least one source document before running the pipeline.",
+    });
+  });
 });
 
 // ─── runSession ──────────────────────────────────────────────────────────────

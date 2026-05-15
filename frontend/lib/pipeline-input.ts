@@ -15,13 +15,24 @@ import {
   writeScopedRaw,
   type SessionScopedSuffix,
 } from "@/lib/session-scoped-storage";
+import {
+  NO_EVIDENCE_ERROR_MESSAGE,
+  NoEvidenceError,
+} from "@/lib/pipeline-evidence";
 
 export const LS_ACTIVE_SESSION = "specflow_active_session_id";
 export const LS_CONTEXT = "specflow_context";
 export const LS_PENDING = "specflow_pending_input";
 export const LS_AUTORUN_GLOBAL = "specflow_autorun";
+export {
+  NO_EVIDENCE_BANNER_MESSAGE,
+  NO_EVIDENCE_CODE,
+  NO_EVIDENCE_ERROR_MESSAGE,
+  NO_EVIDENCE_HTTP_MESSAGE,
+  isNoEvidenceError,
+} from "@/lib/pipeline-evidence";
 export const NO_SOURCE_EVIDENCE_ERROR =
-  "No uploaded sources found for this session. Go to Sources and upload a document first, then re-run.";
+  NO_EVIDENCE_ERROR_MESSAGE;
 
 /** Dispatched on same tab after active session id changes (localStorage updated). */
 export const ACTIVE_SESSION_CHANGE_EVENT = "specflow:active-session";
@@ -219,14 +230,13 @@ export function buildPipelineInputFromStorage(
           : {}),
       };
     }
-    if (
-      requireEvidence &&
-      input.ingest.length === 0 &&
-      input.research.length === 0
-    ) {
-      throw new Error(
-        "No sources or research found for this session. Upload documents or add research entries in the Sources page before running the pipeline."
-      );
+    const ingest = Array.isArray(input.ingest) ? input.ingest : [];
+    const researchEvidence = Array.isArray(input.research) ? input.research : [];
+    const totalEvidence =
+      (ingest?.length ?? 0) + (researchEvidence?.length ?? 0);
+
+    if (requireEvidence && totalEvidence === 0) {
+      throw new NoEvidenceError();
     }
     return input;
   };

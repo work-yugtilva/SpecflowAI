@@ -132,4 +132,13 @@ describe("buildPipelineInputFromStorage source evidence", () => {
     expect(input.research).toEqual([]);
     expect(input.ingest).toEqual([]);
   });
+
+  it("throws NO_EVIDENCE before returning an input when research and ingest are empty", async () => {
+    fetchResearchEntriesMock.mockResolvedValue([]);
+    listSourceEvidenceMock.mockResolvedValue([]);
+
+    await expect(buildPipelineInputFromStorage("session-1")).rejects.toThrow(
+      "NO_EVIDENCE: Cannot run pipeline — no sources or research entries found for this session."
+    );
+  });
 });

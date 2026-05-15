@@ -14,8 +14,8 @@ const listSourcesMock = vi.fn();
 const listSourceEvidenceMock = vi.fn();
 const buildPipelineInputFromStorageMock = vi.fn();
 const runSessionMock = vi.fn();
-const NO_SOURCE_EVIDENCE_ERROR =
-  "No uploaded sources found for this session. Go to Sources and upload a document first, then re-run.";
+const NO_EVIDENCE_ERROR =
+  "NO_EVIDENCE: Cannot run pipeline — no sources or research entries found for this session. Upload at least one document or add research entries before running.";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: pushMock }),
@@ -66,7 +66,7 @@ vi.mock("@/lib/pipeline-input", async () => {
   return {
     ...actual,
     buildPipelineInputFromStorage: (...args: unknown[]) => buildPipelineInputFromStorageMock(...args),
-    NO_SOURCE_EVIDENCE_ERROR,
+    NO_EVIDENCE_ERROR_MESSAGE: NO_EVIDENCE_ERROR,
   };
 });
 
@@ -240,14 +240,14 @@ describe("SessionsPage button async states", () => {
     expect(await screen.findByText(/input build failed/i)).toBeTruthy();
   });
 
-  it("blocks full pipeline runs when required evidence is unavailable", async () => {
+  it("blocks full pipeline runs with an inline warning link when evidence is unavailable", async () => {
     const originalLocation = window.location;
     Object.defineProperty(window, "location", {
       configurable: true,
       value: { ...originalLocation, href: "" },
     });
     buildPipelineInputFromStorageMock.mockRejectedValueOnce(
-      new Error(NO_SOURCE_EVIDENCE_ERROR)
+      new Error(NO_EVIDENCE_ERROR)
     );
     seedSessions();
     await selectSeededSession();
@@ -255,8 +255,11 @@ describe("SessionsPage button async states", () => {
     fireEvent.click(screen.getByRole("button", { name: /run full pipeline/i }));
 
     expect(
-      await screen.findByText(/no uploaded sources found for this session/i)
+      await screen.findByText("No sources found. Upload a document or add research before running.")
     ).toBeTruthy();
+    expect(screen.getByRole("link", { name: /go to sources/i }).getAttribute("href")).toBe(
+      "/sources"
+    );
     expect(buildPipelineInputFromStorageMock).toHaveBeenCalledWith(
       "session-123456789",
       { requireEvidence: true }
@@ -282,6 +285,8 @@ describe("SessionsPage button async states", () => {
       { context: {}, ingest: {} },
       "features"
     );
-    expect(screen.queryByText(NO_SOURCE_EVIDENCE_ERROR)).toBeNull();
+    expect(
+      screen.queryByText("No sources found. Upload a document or add research before running.")
+    ).toBeNull();
   });
 });

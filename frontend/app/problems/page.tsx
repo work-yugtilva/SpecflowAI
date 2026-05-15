@@ -12,9 +12,9 @@ import type { SessionDetail } from "@/lib/api/session";
 import {
   buildPipelineInputFromStorage,
   clearAutorunFlag,
-  getSourceEvidencePayload,
   isAutorunPending,
-  NO_SOURCE_EVIDENCE_ERROR,
+  isNoEvidenceError,
+  NO_EVIDENCE_BANNER_MESSAGE,
 } from "@/lib/pipeline-input";
 import { useActiveSession } from "@/lib/active-session-context";
 import { computeStepStatuses } from "@/lib/pipeline-session";
@@ -161,11 +161,6 @@ export default function ProblemsPage() {
     setProblems([]);
     const isAutorun = isAutorunPending(activeSessionId ?? undefined);
     try {
-      const sourceEvidence = await getSourceEvidencePayload(activeSessionId ?? undefined);
-      if (sourceEvidence.length === 0) {
-        setError(NO_SOURCE_EVIDENCE_ERROR);
-        return;
-      }
       const inputData: PipelineInput = await buildPipelineInputFromStorage(
         activeSessionId ?? undefined
       );
@@ -198,7 +193,11 @@ export default function ProblemsPage() {
         }
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      setError(
+        isNoEvidenceError(err)
+          ? NO_EVIDENCE_BANNER_MESSAGE
+          : err instanceof Error ? err.message : "Something went wrong"
+      );
     } finally {
       if (isAutorun) clearAutorunFlag(activeSessionId ?? undefined);
       setGenerating(false);
@@ -372,6 +371,17 @@ export default function ProblemsPage() {
                   {error ? (
                     <p style={{ fontSize: 13.5, color: "#6B6B6B", lineHeight: 1.6 }}>
                       {error}
+                      {error === NO_EVIDENCE_BANNER_MESSAGE ? (
+                        <>
+                          {" "}
+                          <a
+                            href="/sources"
+                            style={{ color: "#E8561B", textDecoration: "underline", fontWeight: 500 }}
+                          >
+                            Go to Sources
+                          </a>
+                        </>
+                      ) : null}
                     </p>
                   ) : (
                     <p style={{ fontSize: 13.5, color: "#6B6B6B", lineHeight: 1.6 }}>

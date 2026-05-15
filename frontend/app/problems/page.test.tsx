@@ -4,11 +4,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getSessionMock = vi.fn();
 const buildPipelineInputFromStorageMock = vi.fn();
-const getSourceEvidencePayloadMock = vi.fn();
 const runPipelineStepOrFullMock = vi.fn();
 const setActiveSessionDetailMock = vi.fn();
-const NO_SOURCE_EVIDENCE_ERROR =
-  "No uploaded sources found for this session. Go to Sources and upload a document first, then re-run.";
+const NO_EVIDENCE_ERROR =
+  "NO_EVIDENCE: Cannot run pipeline — no sources or research entries found for this session. Upload at least one document or add research entries before running.";
+const NO_EVIDENCE_BANNER_MESSAGE =
+  "No sources found. Upload a document or add research before running.";
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn() }),
@@ -66,9 +67,10 @@ vi.mock("@/lib/api/session", () => ({
 vi.mock("@/lib/pipeline-input", () => ({
   buildPipelineInputFromStorage: (...args: unknown[]) => buildPipelineInputFromStorageMock(...args),
   clearAutorunFlag: vi.fn(),
-  getSourceEvidencePayload: (...args: unknown[]) => getSourceEvidencePayloadMock(...args),
+  isNoEvidenceError: (error: unknown) =>
+    error instanceof Error && error.message.includes("NO_EVIDENCE"),
   isAutorunPending: () => false,
-  NO_SOURCE_EVIDENCE_ERROR,
+  NO_EVIDENCE_BANNER_MESSAGE,
 }));
 
 vi.mock("@/lib/run-pipeline-client", () => ({
@@ -100,7 +102,6 @@ beforeEach(() => {
     state: { state: { outputs: {}, regeneration_counts: {} } },
     events: [],
   });
-  getSourceEvidencePayloadMock.mockResolvedValue([]);
   buildPipelineInputFromStorageMock.mockResolvedValue({ context: {}, ingest: [] });
   runPipelineStepOrFullMock.mockResolvedValue({
     data: { problems: [] },
@@ -110,15 +111,20 @@ beforeEach(() => {
 });
 
 describe("ProblemsPage source evidence guard", () => {
-  it("blocks the run before building input when no uploaded source evidence exists", async () => {
+  it("blocks the run with an inline source link when no evidence exists", async () => {
+    buildPipelineInputFromStorageMock.mockRejectedValueOnce(
+      new Error(NO_EVIDENCE_ERROR)
+    );
     render(<ProblemsPage />);
 
     const runButtons = await screen.findAllByRole("button", { name: /run problems/i });
     fireEvent.click(runButtons[0]);
 
-    expect(await screen.findByText(NO_SOURCE_EVIDENCE_ERROR)).toBeTruthy();
-    expect(getSourceEvidencePayloadMock).toHaveBeenCalledWith("session-1");
-    expect(buildPipelineInputFromStorageMock).not.toHaveBeenCalled();
+    expect(await screen.findByText(NO_EVIDENCE_BANNER_MESSAGE)).toBeTruthy();
+    expect(screen.getByRole("link", { name: /go to sources/i }).getAttribute("href")).toBe(
+      "/sources"
+    );
+    expect(buildPipelineInputFromStorageMock).toHaveBeenCalledWith("session-1");
     expect(runPipelineStepOrFullMock).not.toHaveBeenCalled();
     await waitFor(() => expect(screen.getByRole("button", { name: /retry/i })).toBeTruthy());
   });

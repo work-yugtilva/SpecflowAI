@@ -29,7 +29,9 @@ import {
 import {
   buildPipelineInputFromStorage,
   getContextObject,
+  isNoEvidenceError,
   LS_CONTEXT,
+  NO_EVIDENCE_BANNER_MESSAGE,
   setAutorunFlag,
 } from "@/lib/pipeline-input";
 import { useActiveSession } from "@/lib/active-session-context";
@@ -398,6 +400,7 @@ export default function SessionsPage() {
   const [isRunning, setIsRunning] = useState(false);
   const [isLoadingDetail, setIsLoadingDetail] = useState(false);
   const [runError, setRunError] = useState<string | null>(null);
+  const [showNoEvidenceWarning, setShowNoEvidenceWarning] = useState(false);
   const [contextPreview, setContextPreview] = useState<{
     context: MergedContextPayload;
     memory_keys: string[];
@@ -552,6 +555,7 @@ export default function SessionsPage() {
       setSelectedId(id);
       selectSession(id);
       setRunError(null);
+      setShowNoEvidenceWarning(false);
       setSessionHandoff(null);
       setHandoffGenerateError(null);
       setHandoffGenerateOk(false);
@@ -755,6 +759,7 @@ export default function SessionsPage() {
       if (!selectedId || isRunning) return;
       posthog.capture("pipeline_run_started");
       setRunError(null);
+      setShowNoEvidenceWarning(false);
       setIsRunning(true);
 
       try {
@@ -787,7 +792,12 @@ export default function SessionsPage() {
           setBackendOffline(true);
         }
         await loadDetail(selectedId);
-        setRunError(String(e));
+        if (isNoEvidenceError(e)) {
+          setShowNoEvidenceWarning(true);
+          setRunError(null);
+        } else {
+          setRunError(String(e));
+        }
       } finally {
         setIsRunning(false);
       }
@@ -1866,6 +1876,39 @@ export default function SessionsPage() {
                             </button>
                           ) : null
                         ))}
+                      </div>
+                    )}
+
+                    {showNoEvidenceWarning && (
+                      <div
+                        role="alert"
+                        style={{
+                          marginTop: 12,
+                          padding: "10px 14px",
+                          background: "#FFF7ED",
+                          border: "1px solid #FED7AA",
+                          borderRadius: 8,
+                          fontSize: 12.5,
+                          color: "#9A3412",
+                          lineHeight: 1.5,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 12,
+                        }}
+                      >
+                        <span>{NO_EVIDENCE_BANNER_MESSAGE}</span>
+                        <Link
+                          href="/sources"
+                          style={{
+                            color: "#C2410C",
+                            fontWeight: 600,
+                            textDecoration: "underline",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          Go to Sources
+                        </Link>
                       </div>
                     )}
 

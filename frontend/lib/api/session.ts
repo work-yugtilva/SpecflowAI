@@ -2,6 +2,7 @@
 
 import type { PipelineOutputs } from "@/lib/pipeline-contracts";
 import { iterateSseJsonLines } from "@/lib/sse-parse";
+import { NO_EVIDENCE_CODE } from "@/lib/pipeline-evidence";
 
 const API_BASE = "/api/sessions";
 
@@ -14,12 +15,20 @@ const SESSION_FETCH_DEFAULTS: RequestInit = {
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let text = res.statusText;
+    let code: string | undefined;
     try {
       const body = await res.json();
       // FastAPI uses `detail` for HTTPException; custom errors use `error`
-      text = body.error ?? body.detail ?? text;
+      code = typeof body.code === "string" ? body.code : undefined;
+      text = body.error ?? body.detail ?? body.message ?? text;
     } catch {}
-    throw new Error(text);
+    const error = new Error(code === NO_EVIDENCE_CODE ? `${code}: ${text}` : text) as Error & {
+      code?: string;
+      status?: number;
+    };
+    error.code = code;
+    error.status = res.status;
+    throw error;
   }
   return res.json() as Promise<T>;
 }
