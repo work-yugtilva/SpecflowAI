@@ -27,14 +27,18 @@ export interface ResearchEntryRecord {
   type: ResearchType;
   title: string;
   content: string;
+  summary?: string;
   user: string;
   pain: string;
   context: string;
   tags: string[];
   scope?: ResearchScope;
   sessionId?: string | null;
+  session_id?: string | null;
   createdAt?: string;
+  created_at?: string;
   updatedAt?: string;
+  updated_at?: string;
   metricName?: string;
   metricValue?: number;
   metricBaseline?: number;
@@ -88,8 +92,60 @@ interface PaginatedResponse<T> extends ApiResponse<T[]> {
   totalPages: number;
 }
 
+function normalizeResearchEntry(
+  entry: Partial<ResearchEntryRecord> & Record<string, unknown>
+): ResearchEntryRecord {
+  const content = typeof entry.content === "string" ? entry.content : "";
+  const sessionId =
+    typeof entry.sessionId === "string"
+      ? entry.sessionId
+      : typeof entry.session_id === "string"
+      ? entry.session_id
+      : null;
+  const createdAt =
+    typeof entry.createdAt === "string"
+      ? entry.createdAt
+      : typeof entry.created_at === "string"
+      ? entry.created_at
+      : undefined;
+  const updatedAt =
+    typeof entry.updatedAt === "string"
+      ? entry.updatedAt
+      : typeof entry.updated_at === "string"
+      ? entry.updated_at
+      : undefined;
+
+  return {
+    id: String(entry.id ?? ""),
+    type: (entry.type ?? "Interview") as ResearchType,
+    title: typeof entry.title === "string" ? entry.title : "",
+    content,
+    summary: typeof entry.summary === "string" ? entry.summary : content,
+    user: typeof entry.user === "string" ? entry.user : "",
+    pain: typeof entry.pain === "string" ? entry.pain : "",
+    context: typeof entry.context === "string" ? entry.context : "",
+    tags: Array.isArray(entry.tags) ? entry.tags.map(String) : [],
+    scope: entry.scope === "global" || entry.scope === "session" ? entry.scope : undefined,
+    sessionId,
+    session_id: sessionId,
+    createdAt,
+    created_at: createdAt,
+    updatedAt,
+    updated_at: updatedAt,
+    metricName: typeof entry.metricName === "string" ? entry.metricName : undefined,
+    metricValue: typeof entry.metricValue === "number" ? entry.metricValue : undefined,
+    metricBaseline: typeof entry.metricBaseline === "number" ? entry.metricBaseline : undefined,
+    metricUnit: typeof entry.metricUnit === "string" ? entry.metricUnit : undefined,
+    timePeriod: typeof entry.timePeriod === "string" ? entry.timePeriod : undefined,
+    dataSource: typeof entry.dataSource === "string" ? entry.dataSource : undefined,
+  };
+}
+
 function scopeQuery(scope: ResearchScope, sessionId?: string): string {
-  const params = new URLSearchParams({ scope });
+  const params = new URLSearchParams();
+  if (scope === "global" || !sessionId) {
+    params.set("scope", scope);
+  }
   if (scope === "session" && sessionId) {
     params.set("sessionId", sessionId);
   }
@@ -125,7 +181,7 @@ export async function fetchResearchEntries(
   if (!payload.success) {
     throw new Error(payload.error ?? "Research API request failed");
   }
-  return payload.data ?? [];
+  return (payload.data ?? []).map((entry) => normalizeResearchEntry(entry as Partial<ResearchEntryRecord> & Record<string, unknown>));
 }
 
 export async function createResearchEntry(
@@ -141,7 +197,9 @@ export async function createResearchEntry(
       body: JSON.stringify(entry),
     })
   );
-  const created = await handleResponse<ResearchEntryRecord>(res);
+  const created = normalizeResearchEntry(
+    (await handleResponse<ResearchEntryRecord>(res)) as Partial<ResearchEntryRecord> & Record<string, unknown>
+  );
 
   // Fire-and-forget: generate embedding in the background — never block the UI
   // For Analytics entries, enrich the embedded content with structured metric fields
@@ -189,7 +247,9 @@ export async function updateResearchEntry(
       body: JSON.stringify(entry),
     })
   );
-  return handleResponse<ResearchEntryRecord>(res);
+  return normalizeResearchEntry(
+    (await handleResponse<ResearchEntryRecord>(res)) as Partial<ResearchEntryRecord> & Record<string, unknown>
+  );
 }
 
 export async function deleteResearchEntry(entryId: string): Promise<void> {

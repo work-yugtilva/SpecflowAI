@@ -195,9 +195,6 @@ describe("SourcesPage", () => {
 
   it("refreshes research from the server and confirms after saving a new entry", async () => {
     const created = { ...researchRow, id: "research-2", title: "New interview" };
-    fetchResearchEntriesMock
-      .mockResolvedValueOnce([researchRow])
-      .mockResolvedValueOnce([created, researchRow]);
     createResearchEntryMock.mockResolvedValue(created);
 
     render(<SourcesPage />);
@@ -212,9 +209,95 @@ describe("SourcesPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /add entry/i }));
 
     await waitFor(() => expect(createResearchEntryMock).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(fetchResearchEntriesMock).toHaveBeenCalledTimes(2));
     expect(await screen.findByText(/research entry saved/i)).toBeTruthy();
     await waitFor(() => expect(screen.getAllByText("New interview").length).toBeGreaterThan(0));
+  });
+
+  it("shows a stable research load error instead of falling back silently", async () => {
+    fetchResearchEntriesMock.mockRejectedValueOnce(new Error("network down"));
+
+    render(<SourcesPage />);
+
+    expect(
+      await screen.findByText("Failed to load research entries. Check your connection.")
+    ).toBeTruthy();
+    expect(screen.queryByText("Cursor for Product Managers")).toBeNull();
+  });
+
+  it("optimistically shows a new research entry while save is in flight", async () => {
+    let resolveCreate!: (value: typeof researchRow) => void;
+    createResearchEntryMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveCreate = resolve;
+      })
+    );
+
+    render(<SourcesPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /add research/i }));
+    fireEvent.change(screen.getByPlaceholderText(/user interview with sarah/i), {
+      target: { value: "Optimistic interview" },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/summarize the research findings/i), {
+      target: { value: "Customers want saved research to appear immediately." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /add entry/i }));
+
+    expect((await screen.findAllByText("Optimistic interview")).length).toBeGreaterThan(0);
+    expect(fetchResearchEntriesMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      resolveCreate({
+        ...researchRow,
+        id: "research-2",
+        title: "Optimistic interview",
+        content: "Customers want saved research to appear immediately.",
+      });
+      await Promise.resolve();
+    });
+  });
+
+  it("rolls back an optimistic research add when the API save fails", async () => {
+    let rejectCreate!: (error: Error) => void;
+    createResearchEntryMock.mockReturnValueOnce(
+      new Promise((_resolve, reject) => {
+        rejectCreate = reject;
+      })
+    );
+
+    render(<SourcesPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /add research/i }));
+    fireEvent.change(screen.getByPlaceholderText(/user interview with sarah/i), {
+      target: { value: "Rollback interview" },
+    });
+    fireEvent.change(screen.getByPlaceholderText(/summarize the research findings/i), {
+      target: { value: "This optimistic row should disappear on failure." },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /add entry/i }));
+
+    expect((await screen.findAllByText("Rollback interview")).length).toBeGreaterThan(0);
+
+    await act(async () => {
+      rejectCreate(new Error("save failed"));
+      await Promise.resolve();
+    });
+
+    expect(await screen.findByText(/save failed/i)).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText("Rollback interview")).toBeNull());
+  });
+
+  it("rolls back an optimistic research delete when the API delete fails", async () => {
+    deleteResearchEntryMock.mockRejectedValueOnce(new Error("delete failed"));
+
+    render(<SourcesPage />);
+
+    fireEvent.click(await screen.findByRole("button", { name: /delete research cursor for product managers/i }));
+    fireEvent.click(screen.getByRole("button", { name: /confirm/i }));
+
+    await waitFor(() => expect(deleteResearchEntryMock).toHaveBeenCalledWith("research-1"));
+    expect(await screen.findByText(/delete failed/i)).toBeTruthy();
+    expect(screen.getAllByText("Cursor for Product Managers").length).toBeGreaterThan(0);
   });
 
   it("disables the research save button while saving", async () => {

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import type { AuthRequest } from '@/middleware/verify_supabase_token.js';
-import { researchService } from '@/services/researchService.js';
+import { ResearchSessionOwnershipError, researchService } from '@/services/researchService.js';
 import { AppError } from '@/middleware/errorHandler.js';
 import { ContextScope, ResearchEntry } from '@/types/index.js';
 
@@ -18,19 +18,28 @@ function validateAnalyticsEntry(
 }
 
 function resolveScope(req: AuthRequest): { scope: ContextScope; sessionId?: string } {
-  const rawScope = String(req.query.scope ?? 'global').toLowerCase();
+  const sessionId =
+    typeof req.query.sessionId === 'string' ? req.query.sessionId.trim() : undefined;
+  const rawScope = String(req.query.scope ?? (sessionId ? 'session' : 'global')).toLowerCase();
   if (rawScope !== 'global' && rawScope !== 'session') {
     throw new AppError(400, 'scope must be either "global" or "session"', 'VALIDATION_ERROR');
   }
   const scope = rawScope as ContextScope;
-  const sessionId =
-    typeof req.query.sessionId === 'string' ? req.query.sessionId.trim() : undefined;
 
   if (scope === 'session' && !sessionId) {
     throw new AppError(400, 'sessionId query param is required when scope=session', 'MISSING_PARAM');
   }
 
   return { scope, sessionId };
+}
+
+function toResearchAppError(error: unknown, fallback: string): AppError {
+  if (error instanceof AppError) return error;
+  if (error instanceof ResearchSessionOwnershipError) {
+    return new AppError(error.statusCode, error.message, error.code);
+  }
+  console.error('[research] internal error', error);
+  return new AppError(500, fallback, 'INTERNAL_ERROR');
 }
 
 // GET /api/research - Get all research entries for user
@@ -53,8 +62,7 @@ router.get('/', async (req: AuthRequest, res) => {
 
     res.json(result);
   } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new AppError(500, 'Failed to fetch research entries', 'INTERNAL_ERROR');
+    throw toResearchAppError(error, 'Failed to fetch research entries');
   }
 });
 
@@ -94,8 +102,7 @@ router.post('/', async (req: AuthRequest, res) => {
       message: 'Research entry created successfully',
     });
   } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new AppError(500, 'Failed to create research entry', 'INTERNAL_ERROR');
+    throw toResearchAppError(error, 'Failed to create research entry');
   }
 });
 
@@ -123,8 +130,7 @@ router.get('/search', async (req: AuthRequest, res) => {
       data: results,
     });
   } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new AppError(500, 'Failed to search research entries', 'INTERNAL_ERROR');
+    throw toResearchAppError(error, 'Failed to search research entries');
   }
 });
 
@@ -146,8 +152,7 @@ router.get('/:id', async (req: AuthRequest, res) => {
       data: entry,
     });
   } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new AppError(500, 'Failed to fetch research entry', 'INTERNAL_ERROR');
+    throw toResearchAppError(error, 'Failed to fetch research entry');
   }
 });
 
@@ -186,8 +191,7 @@ router.put('/:id', async (req: AuthRequest, res) => {
       message: 'Research entry updated successfully',
     });
   } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new AppError(500, 'Failed to update research entry', 'INTERNAL_ERROR');
+    throw toResearchAppError(error, 'Failed to update research entry');
   }
 });
 
@@ -205,8 +209,7 @@ router.delete('/:id', async (req: AuthRequest, res) => {
       message: 'Research entry deleted successfully',
     });
   } catch (error) {
-    if (error instanceof AppError) throw error;
-    throw new AppError(500, 'Failed to delete research entry', 'INTERNAL_ERROR');
+    throw toResearchAppError(error, 'Failed to delete research entry');
   }
 });
 

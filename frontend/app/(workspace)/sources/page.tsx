@@ -68,6 +68,9 @@ const EMPTY_RESEARCH_FORM: ResearchFormState = {
   dataSource: "",
 };
 
+const RESEARCH_LOAD_ERROR =
+  "Failed to load research entries. Check your connection.";
+
 const TYPE_COLORS: Record<ResearchType, { bg: string; color: string }> = {
   Interview: { bg: "#EFF6FF", color: "#3B82F6" },
   Survey: { bg: "#F5F3FF", color: "#7C3AED" },
@@ -145,6 +148,27 @@ function formatUploadFailures(uploaded: SourceUploadResponse[]): string {
       return `${source.filename}: ${reason}`;
     })
     .join("; ");
+}
+
+function buildOptimisticResearchEntry(
+  payload: Omit<ResearchEntryRecord, "id">,
+  id: string,
+  scope: SourceScope,
+  sessionId?: string
+): ResearchEntry {
+  const createdAt = new Date().toISOString();
+  return {
+    id,
+    ...payload,
+    scope,
+    sessionId: scope === "session" ? sessionId ?? null : null,
+    session_id: scope === "session" ? sessionId ?? null : null,
+    createdAt,
+    created_at: createdAt,
+    updatedAt: createdAt,
+    updated_at: createdAt,
+    summary: payload.summary ?? payload.content,
+  };
 }
 
 function TypeBadge({ type }: { type: ResearchType }) {
@@ -279,7 +303,7 @@ export default function SourcesPage() {
     } catch (err) {
       setResearchEntries([]);
       setSelectedResearchId(null);
-      setResearchError(err instanceof Error ? err.message : "Failed to load research");
+      setResearchError(RESEARCH_LOAD_ERROR);
     } finally {
       setResearchLoading(false);
     }
@@ -424,10 +448,11 @@ export default function SourcesPage() {
     setResearchSaving(true);
     setResearchError(null);
     setResearchMessage(null);
-    const payload = {
+    const payload: Omit<ResearchEntryRecord, "id"> = {
       type: researchForm.type,
       title: researchForm.title,
       content: researchForm.content,
+      summary: researchForm.content,
       user: researchForm.user,
       pain: researchForm.pain,
       context: researchForm.context,
@@ -445,20 +470,39 @@ export default function SourcesPage() {
       }),
     };
 
+    const previousEntries = researchEntries;
+    const optimisticId = editingResearchId ?? `optimistic-${Date.now()}`;
+    const optimisticEntry = buildOptimisticResearchEntry(
+      payload,
+      optimisticId,
+      scope,
+      sessionId
+    );
+    setResearchEntries((prev) =>
+      editingResearchId
+        ? prev.map((entry) =>
+            entry.id === editingResearchId ? { ...entry, ...optimisticEntry, id: entry.id } : entry
+          )
+        : [optimisticEntry, ...prev]
+    );
+    setSelectedResearchId(optimisticId);
+
     try {
-      let savedId: string;
+      let saved: ResearchEntry;
       if (editingResearchId) {
-        const updated = await updateResearchEntry(editingResearchId, payload);
-        savedId = updated.id;
+        saved = await updateResearchEntry(editingResearchId, payload);
       } else {
-        const created = await createResearchEntry(scope, payload, sessionId);
-        savedId = created.id;
+        saved = await createResearchEntry(scope, payload, sessionId);
       }
-      await loadResearch();
-      setSelectedResearchId(savedId);
+      setResearchEntries((prev) =>
+        prev.map((entry) => (entry.id === optimisticId ? saved : entry))
+      );
+      setSelectedResearchId(saved.id);
       setResearchMessage("Research entry saved");
       closeResearchModal();
     } catch (err) {
+      setResearchEntries(previousEntries);
+      setSelectedResearchId(previousEntries[0]?.id ?? null);
       setResearchError(err instanceof Error ? err.message : "Failed to save research entry");
       setResearchMessage(null);
     } finally {
@@ -470,15 +514,19 @@ export default function SourcesPage() {
     if (deletingResearchId) return;
     setDeletingResearchId(id);
     setResearchError(null);
+    const previousEntries = researchEntries;
+    const previousSelectedId = selectedResearchId;
+    const remaining = researchEntries.filter((entry) => entry.id !== id);
+    setResearchEntries(remaining);
+    if (selectedResearchId === id) {
+      setSelectedResearchId(remaining[0]?.id ?? null);
+    }
     try {
       await deleteResearchEntry(id);
-      const remaining = researchEntries.filter((entry) => entry.id !== id);
-      setResearchEntries(remaining);
-      if (selectedResearchId === id) {
-        setSelectedResearchId(remaining[0]?.id ?? null);
-      }
       setConfirmResearchDeleteId(null);
     } catch (err) {
+      setResearchEntries(previousEntries);
+      setSelectedResearchId(previousSelectedId);
       setResearchError(err instanceof Error ? err.message : "Failed to delete research entry");
     } finally {
       setDeletingResearchId(null);
@@ -899,7 +947,13 @@ export default function SourcesPage() {
                 <span style={{ color: "#9B9189", fontSize: 12 }}>{researchLoading ? "Loading" : `${researchEntries.length} total`}</span>
               </div>
               <div style={{ maxHeight: 420, overflowY: "auto" }}>
-                {researchEntries.length === 0 && !researchLoading ? (
+                {researchLoading ? (
+                  <div aria-label="Loading research entries" style={{ padding: 18, display: "grid", gap: 10 }}>
+                    {[0, 1, 2].map((item) => (
+                      <div key={item} style={{ height: 56, borderRadius: 8, background: "#F0EDE9" }} />
+                    ))}
+                  </div>
+                ) : researchEntries.length === 0 ? (
                   <div style={{ padding: 18, color: "#6B6B6B", fontSize: 14 }}>
                     No research or articles added for this scope yet.
                   </div>

@@ -58,6 +58,33 @@ describe("buildPipelineInputFromStorage source evidence", () => {
     expect(input.analytics_context).toContain("Current: 0.38");
   });
 
+  it("maps server-backed research entries into ingest for pipeline agents", async () => {
+    fetchResearchEntriesMock.mockResolvedValue([
+      {
+        id: "research-1",
+        type: "Interview",
+        title: "Sarah interview",
+        content: "Sarah cannot find prior discovery notes before roadmap planning.",
+        summary: "Sarah cannot find prior discovery notes before roadmap planning.",
+        session_id: "session-1",
+        created_at: "2026-04-24T00:00:00.000Z",
+      },
+    ]);
+    listSourceEvidenceMock.mockResolvedValue([]);
+
+    const input = await buildPipelineInputFromStorage("session-1");
+
+    expect(input.research).toHaveLength(1);
+    expect(input.ingest).toEqual([
+      {
+        id: "research-1",
+        type: "Interview",
+        content: "Sarah cannot find prior discovery notes before roadmap planning.",
+        metadata: { source: "Sarah interview" },
+      },
+    ]);
+  });
+
   it("does not duplicate source evidence already present in pending ingest", async () => {
     localStorage.setItem(
       "specflow_s_session-1__pending_input",

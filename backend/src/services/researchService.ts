@@ -7,6 +7,16 @@ import {
 } from '@/types/index.js';
 
 const RESEARCH_TABLE = 'research_entries';
+const SESSIONS_TABLE = 'sessions';
+
+export class ResearchSessionOwnershipError extends Error {
+  statusCode = 404;
+  code = 'SESSION_NOT_FOUND';
+
+  constructor() {
+    super('Session not found for user');
+  }
+}
 
 interface ResearchRow {
   id: string;
@@ -23,6 +33,7 @@ interface ResearchRow {
   tags: string[] | null;
   created_at: string;
   updated_at: string;
+  deleted_at?: string | null;
   metric_name: string | null;
   metric_value: number | null;
   metric_baseline: number | null;
@@ -63,14 +74,18 @@ export class ResearchService {
       type: row.type,
       title: row.title,
       content: row.content,
+      summary: row.content,
       user: row.user_label,
       pain: row.pain_point,
       context: row.context_text,
       tags: Array.isArray(row.tags) ? row.tags : [],
       scope: row.scope,
       sessionId: row.session_id,
+      session_id: row.session_id,
       createdAt: row.created_at,
+      created_at: row.created_at,
       updatedAt: row.updated_at,
+      updated_at: row.updated_at,
       metricName:     row.metric_name     ?? undefined,
       metricValue:    row.metric_value    ?? undefined,
       metricBaseline: row.metric_baseline ?? undefined,
@@ -78,6 +93,59 @@ export class ResearchService {
       timePeriod:     row.time_period     ?? undefined,
       dataSource:     row.data_source     ?? undefined,
     };
+  }
+
+  private async assertSessionOwned(
+    userId: string,
+    scope: ContextScope,
+    sessionId: string | undefined,
+    client?: SupabaseClient
+  ): Promise<void> {
+    if (scope === 'global') return;
+    if (!sessionId?.trim()) {
+      throw new Error('sessionId is required when scope=session');
+    }
+    const supabase = client || getSupabaseClient();
+    const { data, error } = await supabase
+      .from(SESSIONS_TABLE)
+      .select('id')
+      .eq('id', sessionId.trim())
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Failed to validate session ownership: ${error.message}`);
+    }
+    if (!data) {
+      throw new ResearchSessionOwnershipError();
+    }
+  }
+
+  private async assertEntrySessionOwned(
+    userId: string,
+    entryId: string,
+    client?: SupabaseClient
+  ): Promise<void> {
+    const supabase = client || getSupabaseClient();
+    const { data, error } = await supabase
+      .from(RESEARCH_TABLE)
+      .select('scope, session_id')
+      .eq('user_id', userId)
+      .eq('id', entryId)
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    if (error) {
+      throw new Error(`Failed to validate research entry ownership: ${error.message}`);
+    }
+    if (!data) {
+      throw new ResearchSessionOwnershipError();
+    }
+
+    const row = data as Pick<ResearchRow, 'scope' | 'session_id'>;
+    if (row.scope === 'session') {
+      await this.assertSessionOwned(userId, 'session', row.session_id ?? undefined, supabase);
+    }
   }
 
   /**
@@ -92,6 +160,7 @@ export class ResearchService {
   ): Promise<ResearchEntry> {
     const supabase = client || getSupabaseClient();
     const scopeKey = this.buildScopeKey(scope, sessionId);
+    await this.assertSessionOwned(userId, scope, sessionId, supabase);
 
     const payload = {
       user_id: userId,
@@ -139,6 +208,7 @@ export class ResearchService {
     const page = Math.max(1, options.page ?? 1);
     const pageSize = Math.min(100, Math.max(1, options.pageSize ?? 25));
     const scopeKey = this.buildScopeKey(scope, options.sessionId);
+    await this.assertSessionOwned(userId, scope, options.sessionId, supabase);
     const from = (page - 1) * pageSize;
     const to = from + pageSize - 1;
 
@@ -147,6 +217,7 @@ export class ResearchService {
       .select('*', { count: 'exact' })
       .eq('user_id', userId)
       .eq('scope_key', scopeKey)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .range(from, to);
 
@@ -178,6 +249,7 @@ export class ResearchService {
       .select('*')
       .eq('user_id', userId)
       .eq('id', entryId)
+      .is('deleted_at', null)
       .maybeSingle();
 
     if (error) {
@@ -198,6 +270,7 @@ export class ResearchService {
     client?: SupabaseClient
   ): Promise<ResearchEntry> {
     const supabase = client || getSupabaseClient();
+    await this.assertEntrySessionOwned(userId, entryId, supabase);
 
     const payload: Record<string, unknown> = {};
     if (updates.type) payload.type = updates.type;
@@ -219,6 +292,7 @@ export class ResearchService {
       .update(payload)
       .eq('user_id', userId)
       .eq('id', entryId)
+      .is('deleted_at', null)
       .select('*')
       .single();
 
@@ -234,10 +308,11 @@ export class ResearchService {
    */
   async deleteEntry(userId: string, entryId: string, client?: SupabaseClient): Promise<boolean> {
     const supabase = client || getSupabaseClient();
+    await this.assertEntrySessionOwned(userId, entryId, supabase);
 
     const { error } = await supabase
       .from(RESEARCH_TABLE)
-      .delete()
+      .update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() })
       .eq('user_id', userId)
       .eq('id', entryId);
 
@@ -260,6 +335,7 @@ export class ResearchService {
   ): Promise<ResearchEntry[]> {
     const supabase = client || getSupabaseClient();
     const scopeKey = this.buildScopeKey(scope, sessionId);
+    await this.assertSessionOwned(userId, scope, sessionId, supabase);
     const term = query.trim();
 
     if (!term) return [];
@@ -269,6 +345,7 @@ export class ResearchService {
       .select('*')
       .eq('user_id', userId)
       .eq('scope_key', scopeKey)
+      .is('deleted_at', null)
       .or(
         [
           `title.ilike.%${term}%`,

@@ -36,14 +36,18 @@ export interface ResearchEntry extends AnalyticsFields {
   type: ResearchType;
   title: string;
   content: string;
+  summary?: string;
   user?: string;
   pain?: string;
   context?: string;
   tags?: string[];
   scope?: ContextScope;
   sessionId?: string | null;
+  session_id?: string | null;
   createdAt?: string;
+  created_at?: string;
   updatedAt?: string;
+  updated_at?: string;
 }
 
 export interface AnalyticsEntry extends Omit<ResearchEntry, keyof AnalyticsFields | 'type'> {
