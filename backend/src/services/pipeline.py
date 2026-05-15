@@ -376,7 +376,7 @@ class Pipeline:
             memory_slice = {k: self._unwrap_persisted_content(v) for k, v in memory_slice.items()}
             agent_session = {"id": session_id, "user_id": user_id, "state": {}} if session_id else None
 
-            _RAG_ELIGIBLE = {"problems", "features", "decompose", "tasks"}
+            _RAG_ELIGIBLE = {"problems", "features", "decompose", "ui_spec", "tasks"}
             if single_agent_name in _RAG_ELIGIBLE:
                 try:
                     state = await self._enrich_context_with_rag(
@@ -454,7 +454,7 @@ class Pipeline:
                 completed_steps.add(single_agent_name)
 
                 if session_id and session_manager and persistence_on:
-                    _quality_keys = [f"{key}_quality" for key in ("problems", "features", "decompose", "tasks")]
+                    _quality_keys = [f"{key}_quality" for key in ("problems", "features", "decompose", "ui_specs", "tasks")]
                     snapshot = {
                         "last_completed_step": single_agent_name,
                         "outputs": {
@@ -613,7 +613,7 @@ class Pipeline:
 
                 # Session snapshot
                 if session_id and session_manager and persistence_on:
-                    _quality_keys = [f"{key}_quality" for key in ("problems", "features", "decompose", "tasks")]
+                    _quality_keys = [f"{key}_quality" for key in ("problems", "features", "decompose", "ui_specs", "tasks")]
                     snapshot = {
                         "last_completed_step": agent_name,
                         "outputs": {
@@ -861,7 +861,7 @@ class Pipeline:
         session_id: str = None,
     ) -> Optional[dict]:
         """Async version of _run_quality_gate — uses evaluate_async to avoid blocking the event loop."""
-        if out_key not in ("problems", "features", "decompose", "tasks"):
+        if out_key not in ("problems", "features", "decompose", "ui_specs", "tasks"):
             return None
 
         _qg_agent = _get_quality_gate_agent()

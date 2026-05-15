@@ -34,6 +34,13 @@ steps:
       Return a structured decomposition showing surface, API, and persistence layers.
     output_key: decompositions
 
+  - name: ui_spec
+    agent: ui_spec
+    task: |
+      Generate structured UI, data model, and workflow change specifications for each feature.
+      Return a JSON object with a ui_specs array and an optional quality_warning field.
+    output_key: ui_specs
+
   - name: tasks
     agent: tasks
     task: |

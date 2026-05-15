@@ -13,6 +13,7 @@ import {
   generateHandoff,
   getHandoff,
   exportHandoff,
+  copyHandoffTaskList,
   normalizeHandoffTasks,
 } from "@/lib/api/session";
 import type { SessionDetail, AgentHandoff } from "@/lib/api/session";
@@ -497,10 +498,9 @@ function HandoffSummaryPanel({
           >
             Export
           </div>
-          {([
-            { label: "Export CLAUDE.md",    format: "claude_md"    },
-            { label: "Export .cursorrules", format: "cursor_rules" },
-            { label: "Copy task prompts",   format: "task_list"    },
+          {(([
+            { label: "Export CLAUDE.md",    format: "claude_md"    as const },
+            { label: "Export .cursorrules", format: "cursor_rules" as const },
           ] as const).map(({ label, format }) => (
             <button
               key={format}
@@ -523,7 +523,28 @@ function HandoffSummaryPanel({
             >
               {label}
             </button>
-          ))}
+          )))}
+          <button
+            key="copy-tasks"
+            onClick={() => copyHandoffTaskList(sessionId).catch((e) => alert(`Copy failed: ${e.message}`))}
+            style={{
+              width: "100%",
+              textAlign: "left",
+              padding: "8px 12px",
+              fontSize: 12.5,
+              color: "#0D0D0D",
+              background: "#F8F4EF",
+              border: "1px solid #E4DDD4",
+              borderRadius: 6,
+              cursor: "pointer",
+              fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+              transition: "background 120ms ease",
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = "#EFE9E2"; }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = "#F8F4EF"; }}
+          >
+            Copy task prompts
+          </button>
         </div>
       </div>
     </>

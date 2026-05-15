@@ -5,6 +5,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
+import { useUserRole } from "@/lib/use-user-role";
 import {
   createSession,
   runSession,
@@ -391,9 +392,32 @@ function EventLogRow({ event }: { event: SessionEvent }) {
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
+const SESSION_EMPTY_COPY: Record<
+  "pm" | "founder" | "engineer" | "default",
+  { tagline: string; steps: string[] }
+> = {
+  pm: {
+    tagline: "Create a session to start a PRD. Define the problem, surface features, generate the spec.",
+    steps: ["Create a session", "Add product context", "Upload source documents", "Run the pipeline"],
+  },
+  founder: {
+    tagline: "Create a session to find out what to build next from your customer signals.",
+    steps: ["Create a session", "Upload interview transcripts", "Surface problems", "Generate a spec"],
+  },
+  engineer: {
+    tagline: "Create a session to produce a coding-agent-ready task list and handoff.",
+    steps: ["Create a session", "Add context or sources", "Generate tasks", "Export coding-agent handoff"],
+  },
+  default: {
+    tagline: "Create a session to start turning research into product decisions.",
+    steps: ["Create a session", "Add context", "Add research/sources", "Generate problems"],
+  },
+};
+
 export default function SessionsPage() {
   const router = useRouter();
   const { selectSession } = useActiveSession();
+  const { role } = useUserRole();
   const [sessions, setSessions] = useState<StoredSession[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<SessionDetail | null>(null);
@@ -1060,10 +1084,10 @@ export default function SessionsPage() {
                     </div>
                     <div style={{ fontSize: 13.5, fontWeight: 500, color: "#0D0D0D", marginBottom: 5 }}>No sessions yet</div>
                     <div style={{ fontSize: 12, color: "#9B9189", lineHeight: 1.5, marginBottom: 14 }}>
-                      Create a session to start turning research into product decisions.
+                      {SESSION_EMPTY_COPY[role ?? "default"].tagline}
                     </div>
                     <div style={{ textAlign: "left", display: "grid", gap: 6 }}>
-                      {["Create a session", "Add context", "Add research/sources", "Generate problems"].map((step, index) => (
+                      {SESSION_EMPTY_COPY[role ?? "default"].steps.map((step, index) => (
                         <div key={step} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11.5, color: "#6B6B6B" }}>
                           <span style={{ width: 18, height: 18, borderRadius: "50%", background: "#F8F4EF", border: "1px solid #E4DDD4", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#E8561B", flexShrink: 0 }}>
                             {index + 1}

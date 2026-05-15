@@ -14,6 +14,7 @@ export type PipelineTraceStepKey =
   | "problems"
   | "features"
   | "decompose"
+  | "ui_spec"
   | "tasks"
   | "prd";
 
@@ -21,6 +22,7 @@ type OutputKey =
   | "problems"
   | "features"
   | "decompositions"
+  | "ui_specs"
   | "tasks"
   | "prd";
 
@@ -39,6 +41,7 @@ const OUTPUT_KEY_BY_STEP: Record<PipelineTraceStepKey, OutputKey> = {
   problems: "problems",
   features: "features",
   decompose: "decompositions",
+  ui_spec: "ui_specs",
   tasks: "tasks",
   prd: "prd",
 };
@@ -47,6 +50,7 @@ const DEPENDENCIES_BY_STEP: Record<PipelineTraceStepKey, string[]> = {
   problems: ["Product Context"],
   features: ["Problems"],
   decompose: ["Problems", "Features"],
+  ui_spec: ["Problems", "Features", "Decompositions"],
   tasks: ["Problems", "Features", "Decompositions"],
   prd: ["Product Context", "Problems", "Features", "Decompositions", "Tasks"],
 };
@@ -55,6 +59,7 @@ const AGENT_BY_STEP: Record<PipelineTraceStepKey, string> = {
   problems: "ProblemsAgent",
   features: "FeaturesAgent",
   decompose: "DecomposeAgent",
+  ui_spec: "UISpecAgent",
   tasks: "TasksAgent",
   prd: "PRDAgent",
 };

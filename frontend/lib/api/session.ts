@@ -402,4 +402,14 @@ export async function exportHandoff(
   URL.revokeObjectURL(url);
 }
 
+export async function copyHandoffTaskList(sessionId: string): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/${sessionId}/handoff/export?format=task_list`,
+    SESSION_FETCH_DEFAULTS
+  );
+  if (!res.ok) throw new Error("Export failed");
+  const text = await res.text();
+  await navigator.clipboard.writeText(text);
+}
+
 // Next.js proxy routes exist for /api/pipelines/* in this plan.

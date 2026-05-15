@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { Sidebar } from "@/components/ui/sidebar";
 import type { SessionDetail } from "@/lib/api/session";
 import { PIPELINE_STEPS, computeStepStatuses, getNextStep } from "@/lib/pipeline-session";
+import { useUserRole, type UserRole } from "@/lib/use-user-role";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -160,7 +161,51 @@ function Shimmer({ width, height, radius = 4 }: { width: number | string; height
 
 // ─── Widgets ──────────────────────────────────────────────────────────────────
 
-function QuickStartWidget() {
+// ─── Role-aware quick-start config ───────────────────────────────────────────
+
+const QUICK_START_CONFIG: Record<
+  UserRole | "default",
+  {
+    heading: string;
+    steps: { label: string; detail: string; href: string }[];
+  }
+> = {
+  pm: {
+    heading: "Build your first PRD",
+    steps: [
+      { label: "Add product context", detail: "Set goals, target users, and constraints for your feature.", href: "/context" },
+      { label: "Upload source documents", detail: "Attach interviews, research notes, or usage data.", href: "/sources" },
+      { label: "Run the pipeline", detail: "Generate problems, features, and a spec in one click.", href: "/problems" },
+    ],
+  },
+  founder: {
+    heading: "Find what to build next",
+    steps: [
+      { label: "Upload customer signals", detail: "Paste interview transcripts, Slack threads, or survey exports.", href: "/sources" },
+      { label: "Surface problems", detail: "SpecFlow extracts themes and unmet needs automatically.", href: "/problems" },
+      { label: "Generate a spec", detail: "Turn validated problems into features and a PRD.", href: "/prd" },
+    ],
+  },
+  engineer: {
+    heading: "Define the spec before you code",
+    steps: [
+      { label: "Create a session", detail: "Scope the feature you're about to build.", href: "/sessions" },
+      { label: "Run the pipeline", detail: "Generate tasks decomposed from features and acceptance criteria.", href: "/tasks" },
+      { label: "Export to coding agent", detail: "Get a handoff doc your AI coding tool can act on directly.", href: "/tasks" },
+    ],
+  },
+  default: {
+    heading: "Get started with SpecFlow",
+    steps: [
+      { label: "Create a session", detail: "Start a new workspace for your product feature.", href: "/sessions" },
+      { label: "Upload a source document", detail: "Provide context like user interviews or raw notes.", href: "/sources" },
+      { label: "Run the pipeline", detail: "Generate problems, features, and a PRD.", href: "/problems" },
+    ],
+  },
+};
+
+function QuickStartWidget({ role }: { role: UserRole | null }) {
+  const config = QUICK_START_CONFIG[role ?? "default"];
   return (
     <div style={{
       background: "#FFFFFF",
@@ -180,36 +225,28 @@ function QuickStartWidget() {
         margin: 0,
         lineHeight: 1.1,
       }}>
-        Get started with SpecFlow
+        {config.heading}
       </h2>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 24 }}>
-        <Link href="/sessions" style={{ textDecoration: "none" }}>
-          <div style={{ padding: 24, border: "1px solid #E4DDD4", borderRadius: 12, height: "100%", transition: "border-color 0.2s" }}
-               onMouseEnter={(e) => e.currentTarget.style.borderColor = "#0D0D0D"}
-               onMouseLeave={(e) => e.currentTarget.style.borderColor = "#E4DDD4"}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#E8561B", marginBottom: 12, fontFamily: "var(--font-dm-sans), sans-serif", textTransform: "uppercase", letterSpacing: "0.05em" }}>Step 1</div>
-            <div style={{ fontSize: 18, fontWeight: 500, color: "#0D0D0D", marginBottom: 8, fontFamily: "var(--font-dm-sans), sans-serif" }}>Create a session</div>
-            <div style={{ fontSize: 14, color: "#6B6B6B", fontFamily: "var(--font-dm-sans), sans-serif" }}>Start a new workspace for your product feature.</div>
-          </div>
-        </Link>
-        <Link href="/sources" style={{ textDecoration: "none" }}>
-          <div style={{ padding: 24, border: "1px solid #E4DDD4", borderRadius: 12, height: "100%", transition: "border-color 0.2s" }}
-               onMouseEnter={(e) => e.currentTarget.style.borderColor = "#0D0D0D"}
-               onMouseLeave={(e) => e.currentTarget.style.borderColor = "#E4DDD4"}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#E8561B", marginBottom: 12, fontFamily: "var(--font-dm-sans), sans-serif", textTransform: "uppercase", letterSpacing: "0.05em" }}>Step 2</div>
-            <div style={{ fontSize: 18, fontWeight: 500, color: "#0D0D0D", marginBottom: 8, fontFamily: "var(--font-dm-sans), sans-serif" }}>Upload a source document</div>
-            <div style={{ fontSize: 14, color: "#6B6B6B", fontFamily: "var(--font-dm-sans), sans-serif" }}>Provide context like user interviews or raw notes.</div>
-          </div>
-        </Link>
-        <Link href="/problems" style={{ textDecoration: "none" }}>
-          <div style={{ padding: 24, border: "1px solid #E4DDD4", borderRadius: 12, height: "100%", transition: "border-color 0.2s" }}
-               onMouseEnter={(e) => e.currentTarget.style.borderColor = "#0D0D0D"}
-               onMouseLeave={(e) => e.currentTarget.style.borderColor = "#E4DDD4"}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#E8561B", marginBottom: 12, fontFamily: "var(--font-dm-sans), sans-serif", textTransform: "uppercase", letterSpacing: "0.05em" }}>Step 3</div>
-            <div style={{ fontSize: 18, fontWeight: 500, color: "#0D0D0D", marginBottom: 8, fontFamily: "var(--font-dm-sans), sans-serif" }}>Run the pipeline</div>
-            <div style={{ fontSize: 14, color: "#6B6B6B", fontFamily: "var(--font-dm-sans), sans-serif" }}>Generate problems, features, and a PRD.</div>
-          </div>
-        </Link>
+        {config.steps.map((step, i) => (
+          <Link key={step.href + i} href={step.href} style={{ textDecoration: "none" }}>
+            <div
+              style={{ padding: 24, border: "1px solid #E4DDD4", borderRadius: 12, height: "100%", transition: "border-color 0.2s" }}
+              onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#0D0D0D")}
+              onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#E4DDD4")}
+            >
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#E8561B", marginBottom: 12, fontFamily: "var(--font-dm-sans), sans-serif", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                Step {i + 1}
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 500, color: "#0D0D0D", marginBottom: 8, fontFamily: "var(--font-dm-sans), sans-serif" }}>
+                {step.label}
+              </div>
+              <div style={{ fontSize: 14, color: "#6B6B6B", fontFamily: "var(--font-dm-sans), sans-serif" }}>
+                {step.detail}
+              </div>
+            </div>
+          </Link>
+        ))}
       </div>
     </div>
   );
@@ -490,6 +527,7 @@ function LastPipelineRunWidget({ recentSession, detail, loading }: { recentSessi
 export default function DashboardPage() {
   const { sessions, loading: sessionsLoading, error } = useSessions();
   const { plan, planLoading } = usePlan();
+  const { role } = useUserRole();
 
   // Recent session
   const recentSession = sessions.length > 0 
@@ -658,7 +696,7 @@ export default function DashboardPage() {
 
           <div style={{ padding: "0 48px" }}>
             {showQuickStart ? (
-              <QuickStartWidget />
+              <QuickStartWidget role={role} />
             ) : (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 24 }}>
                 <SessionsWidget total={sessions.length} recentSession={recentSession} loading={loading} />

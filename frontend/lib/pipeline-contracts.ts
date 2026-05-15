@@ -27,6 +27,8 @@ export interface PipelineOutputs {
   decompositions_quality?: QualityGateResult;
   tasks?: unknown;
   tasks_quality?: QualityGateResult;
+  ui_specs?: UISpecOutput;
+  ui_specs_quality?: QualityGateResult;
   prd?: unknown;
 }
 
@@ -986,4 +988,141 @@ export function adaptTasks(
       researchEvidence: extractResearchEvidence(item.research_evidence),
     };
   });
+}
+
+// ─── UI Spec types ────────────────────────────────────────────────────────────
+
+export interface ScreenChange {
+  screen: string;
+  current_state: string;
+  proposed_change: string;
+  reason: string;
+  source_ids: string[];
+}
+
+export interface DataField {
+  name: string;
+  type: string;
+  required: boolean;
+  reason: string;
+}
+
+export interface DataModelChange {
+  entity: string;
+  change_type: "add" | "modify" | "remove";
+  fields: DataField[];
+  source_ids: string[];
+}
+
+export interface WorkflowChange {
+  actor: string;
+  before: string;
+  after: string;
+  reason: string;
+  source_ids: string[];
+}
+
+export interface UISpecItem {
+  id: string;
+  feature_id: string;
+  title: string;
+  screen_changes: ScreenChange[];
+  data_model_changes: DataModelChange[];
+  workflow_changes: WorkflowChange[];
+  open_questions: string[];
+  risk_notes: string[];
+}
+
+export interface UISpecOutput {
+  ui_specs: UISpecItem[];
+  quality_warning?: string | null;
+}
+
+function _toStringArray(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map(String);
+}
+
+function _toScreenChanges(raw: unknown): ScreenChange[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(isPlainObject).map((r) => ({
+    screen: String(r.screen ?? ""),
+    current_state: String(r.current_state ?? ""),
+    proposed_change: String(r.proposed_change ?? ""),
+    reason: String(r.reason ?? ""),
+    source_ids: _toStringArray(r.source_ids),
+  }));
+}
+
+function _toDataFields(raw: unknown): DataField[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(isPlainObject).map((f) => ({
+    name: String(f.name ?? ""),
+    type: String(f.type ?? ""),
+    required: Boolean(f.required),
+    reason: String(f.reason ?? ""),
+  }));
+}
+
+function _toDataModelChanges(raw: unknown): DataModelChange[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(isPlainObject).map((r) => ({
+    entity: String(r.entity ?? ""),
+    change_type: (["add", "modify", "remove"].includes(String(r.change_type))
+      ? r.change_type
+      : "modify") as DataModelChange["change_type"],
+    fields: _toDataFields(r.fields),
+    source_ids: _toStringArray(r.source_ids),
+  }));
+}
+
+function _toWorkflowChanges(raw: unknown): WorkflowChange[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(isPlainObject).map((w) => ({
+    actor: String(w.actor ?? ""),
+    before: String(w.before ?? ""),
+    after: String(w.after ?? ""),
+    reason: String(w.reason ?? ""),
+    source_ids: _toStringArray(w.source_ids),
+  }));
+}
+
+function _toUISpecItem(record: JsonRecord): UISpecItem {
+  return {
+    id: typeof record.id === "string" ? record.id : "",
+    feature_id: typeof record.feature_id === "string" ? record.feature_id : "",
+    title: typeof record.title === "string" ? record.title : "Untitled Spec",
+    screen_changes: _toScreenChanges(record.screen_changes),
+    data_model_changes: _toDataModelChanges(record.data_model_changes),
+    workflow_changes: _toWorkflowChanges(record.workflow_changes),
+    open_questions: _toStringArray(record.open_questions),
+    risk_notes: _toStringArray(record.risk_notes),
+  };
+}
+
+export function adaptUISpecs(
+  data: Record<string, unknown>,
+  sessionState?: SessionStateLike
+): UISpecOutput {
+  const raw = coalesceOutput(data, sessionState, "ui_specs");
+  const empty: UISpecOutput = { ui_specs: [] };
+
+  if (!raw) return empty;
+
+  // Dict shape: { ui_specs: [...], quality_warning?: string }
+  if (isPlainObject(raw)) {
+    const warning =
+      typeof raw.quality_warning === "string" ? raw.quality_warning : undefined;
+    const list = Array.isArray(raw.ui_specs)
+      ? raw.ui_specs.filter(isPlainObject).map(_toUISpecItem)
+      : [];
+    return { ui_specs: list, quality_warning: warning };
+  }
+
+  // Bare list fallback (model returned list directly)
+  if (Array.isArray(raw)) {
+    return { ui_specs: raw.filter(isPlainObject).map(_toUISpecItem) };
+  }
+
+  return empty;
 }

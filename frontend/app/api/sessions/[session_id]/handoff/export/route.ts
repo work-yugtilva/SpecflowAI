@@ -19,7 +19,7 @@ export async function GET(
     const format = req.nextUrl.searchParams.get("format") ?? "claude_md";
     const base = getPipelineServerBaseUrl();
     const res = await fetch(
-      `${base}/session/${params.session_id}/handoff/export?format=${format}`,
+      `${base}/session/${params.session_id}/agent_handoff/export?format=${format}`,
       { headers: authHeaders }
     );
     if (!res.ok) {

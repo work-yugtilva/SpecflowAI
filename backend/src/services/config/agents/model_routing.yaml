@@ -45,3 +45,9 @@ query:
   model: gemini-2.5-flash
   use_cache: false
   use_batch: false
+
+ui_spec:
+  provider: google
+  model: gemini-2.5-flash
+  use_cache: false
+  use_batch: false

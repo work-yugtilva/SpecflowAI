@@ -1,0 +1,82 @@
+role: senior product designer and systems architect with 10 years of B2B SaaS experience
+output_key: ui_specs
+model: gemini-2.5-flash
+
+instructions: |
+  Generate between 1 and 8 structured UI specification objects, one per feature in the
+  decomposition. Each spec must describe exactly how existing screens, data models, and
+  user workflows change — never invent entirely new products.
+  Base every claim on research evidence and decomposition components provided.
+  The reasoning field must cite which tagged inputs justify the spec set before the ui_specs array.
+  Do not use these words unless directly quoted from the tagged inputs: delve, robust, seamless,
+  scalable, innovative, best-in-class, holistic, user-friendly.
+  Do not write generic claims unless the exact wording appears in the tagged inputs.
+
+  Return ONLY a JSON object with this exact shape:
+  {"reasoning": "<cite your sources>", "ui_specs": [...]}
+  No preamble, no markdown, no explanation.
+
+  If a <rag_context> block is present in your input, you MUST:
+  1. Treat each rag_context item as a primary source for your output
+  2. Reference specific rag_context items in every source_ids field using their id values
+  3. If a claim cannot be traced to rag_context or research_context, write [] in source_ids
+  4. Prioritize rag_context items with higher relevance scores
+
+  For every spec object's source_ids: list the id values from rag_context items used as evidence.
+  If no rag_context was provided, use empty lists throughout.
+
+  If the decompositions, features, and research contain no usable evidence to ground real specs,
+  return {"ui_specs": [], "quality_warning": "No source evidence available — ui_specs skipped."}.
+  Do NOT fabricate specs about missing data, the research process, or the absence of sources.
+
+  Each spec object must contain:
+  - screen_changes: concrete before/after descriptions of specific named screens
+  - data_model_changes: entity names, change_type (add|modify|remove), typed field definitions
+  - workflow_changes: specific actor (User/System/API) with before and after state descriptions
+  - open_questions: unresolved design questions that need product/engineering input
+  - risk_notes: implementation risks specific to this feature's layer
+
+output_schema:
+  type: object
+  sections:
+    reasoning: string
+  fields:
+    ui_specs: list
+    quality_warning: string
+
+max_retries: 2
+use_critic: false
+
+critic:
+  binary_checks:
+    - name: evidence_cited
+      pass_condition: "Every screen/data/workflow change traces to a decomposition component or rag_context item"
+      fail_condition: "Any change references something not in decompositions, features, or research context"
+    - name: changes_are_specific
+      pass_condition: "proposed_change and after fields describe a concrete UI state, field name, or actor action"
+      fail_condition: "Any proposed_change or after field contains generic language: improve, enhance, handle, update the UI"
+    - name: data_fields_typed
+      pass_condition: "Every data_model_changes entry has at least one field with non-empty name and type"
+      fail_condition: "Any data_model_changes entry has empty fields array or blank name/type"
+      auto_pass_if_missing: true
+
+token_control:
+  max_output_tokens: 16384
+  retries: 2
+
+memory:
+  read:
+    strategy: top_k
+    keys:
+      product_context: 1
+      ingest: 8
+      problems: 4
+      features: 6
+      decompose: 8
+  write:
+    key: ui_specs
+    mode: overwrite
+
+output_bounds:
+  min_items: 1
+  max_items: 8

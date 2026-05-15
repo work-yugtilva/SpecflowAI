@@ -4,193 +4,170 @@ import React, { useState } from "react";
 import Image from "next/image";
 import { createClient } from "@/lib/supabase/client";
 import { posthog } from "@/lib/posthog";
-import { LS_CONTEXT } from "@/lib/pipeline-input";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface FormData {
-  firstName: string;
-  lastName: string;
-  jobTitle: string;
-  workExperience: string;
-  companyName: string;
-  companyType: string;
-}
+export type UserRole = "pm" | "founder" | "engineer";
 
-interface FormErrors {
-  firstName?: string;
-  jobTitle?: string;
-  companyType?: string;
-  workExperience?: string;
-}
-
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const COMPANY_TYPES = ["Startup", "Enterprise", "Agency", "Freelancer", "Other"];
-
-const INITIAL_FORM: FormData = {
-  firstName: "",
-  lastName: "",
-  jobTitle: "",
-  workExperience: "",
-  companyName: "",
-  companyType: "",
-};
-
-function seedProductContext(data: FormData) {
-  try {
-    const existing = JSON.parse(localStorage.getItem(LS_CONTEXT) || "{}") as Record<string, unknown>;
-    localStorage.setItem(
-      LS_CONTEXT,
-      JSON.stringify({
-        ...existing,
-        ...(data.companyName.trim() ? { companyName: data.companyName.trim() } : {}),
-        companyType: data.companyType,
-      })
-    );
-  } catch {
-    // Product context can still be entered manually on the next screen.
-  }
-}
-
-// ─── FormField ────────────────────────────────────────────────────────────────
-
-function FormField({
-  label,
-  required,
-  error,
-  children,
-}: {
+interface RoleOption {
+  id: UserRole;
   label: string;
-  required?: boolean;
-  error?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label
-        className="text-[13px] font-medium"
-        style={{ color: "#6B6B6B" }}
-      >
-        {label}
-        {required && (
-          <span className="ml-0.5" style={{ color: "#E8561B" }}>*</span>
-        )}
-      </label>
-      {children}
-      {error && (
-        <p className="text-[11.5px]" style={{ color: "#EF4444" }}>
-          {error}
-        </p>
-      )}
-    </div>
-  );
+  tagline: string;
+  description: string;
+  redirect: string;
 }
+
+// ─── Role definitions ─────────────────────────────────────────────────────────
+
+const ROLES: RoleOption[] = [
+  {
+    id: "pm",
+    label: "Product Manager",
+    tagline: "PRDs & specs",
+    description:
+      "Turn research and stakeholder input into structured PRDs and specs.",
+    redirect: "/context?onboarding=1",
+  },
+  {
+    id: "founder",
+    label: "Founder",
+    tagline: "Signal → what to build",
+    description:
+      "Find what to build next from raw customer interviews and usage signals.",
+    redirect: "/sources",
+  },
+  {
+    id: "engineer",
+    label: "Engineer",
+    tagline: "Spec-first development",
+    description:
+      "Get a coding-agent-ready task list before you open your editor.",
+    redirect: "/sessions",
+  },
+];
+
+const ONBOARDING_COMPLETE_COOKIE = "specflow_onboarding_complete";
 
 // ─── Onboarding Page ──────────────────────────────────────────────────────────
 
 export default function OnboardingPage() {
-  const [form, setForm] = useState<FormData>(INITIAL_FORM);
-  const [errors, setErrors] = useState<FormErrors>({});
-  const [attempted, setAttempted] = useState(false);
+  const [selected, setSelected] = useState<UserRole | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Validity check for enabling the CTA
-  const isValid = Boolean(
-    form.firstName.trim() &&
-      form.jobTitle.trim() &&
-      form.companyType &&
-      (form.workExperience === "" ||
-        (Number(form.workExperience) >= 0 && Number(form.workExperience) <= 50))
-  );
-
-  function update(field: keyof FormData, value: string) {
-    setForm((prev) => ({ ...prev, [field]: value }));
-    if (attempted) validate({ ...form, [field]: value });
-  }
-
-  function validate(data: FormData): boolean {
-    const errs: FormErrors = {};
-    if (!data.firstName.trim()) errs.firstName = "First name is required.";
-    if (!data.jobTitle.trim()) errs.jobTitle = "Job title is required.";
-    if (!data.companyType) errs.companyType = "Please select a company type.";
-    if (
-      data.workExperience !== "" &&
-      (Number(data.workExperience) < 0 || Number(data.workExperience) > 50)
-    ) {
-      errs.workExperience = "Must be between 0 and 50.";
-    }
-    setErrors(errs);
-    return Object.keys(errs).length === 0;
-  }
-
   async function handleSubmit() {
-    setAttempted(true);
-    if (!validate(form)) return;
+    if (!selected || submitting) return;
     setSubmitting(true);
+
+    const role = ROLES.find((r) => r.id === selected)!;
+
     try {
-      seedProductContext(form);
       const supabase = createClient();
-      const { data: { user } } = await supabase.auth.getUser();
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
       if (user) {
-        const { error: profileError } = await supabase.from("user_profiles").upsert({
-          user_id: user.id,
-          first_name: form.firstName,
-          last_name: form.lastName,
-          job_title: form.jobTitle,
-          company_name: form.companyName,
-          company_type: form.companyType,
-          work_experience: form.workExperience !== "" ? Number(form.workExperience) : null,
-          onboarding_completed_at: new Date().toISOString(),
-        }, { onConflict: "user_id" });
-        if (profileError) console.error("Failed to save onboarding profile:", profileError);
+        await supabase.from("user_profiles").upsert(
+          {
+            user_id: user.id,
+            role: selected,
+            onboarding_completed_at: new Date().toISOString(),
+          },
+          { onConflict: "user_id" }
+        );
       }
-      posthog.capture("onboarding_completed");
-    } catch (e) {
-      console.error("Onboarding profile save error:", e);
-      setSubmitting(false);
+      posthog.capture("onboarding_role_selected", { role: selected });
+    } catch {
+      // Fail open — don't block the user if the DB write fails.
     }
-    window.location.href = "/context?onboarding=1";
-  }
 
-  // Shared input style (no icon prefix offset)
-  const inputStyle: React.CSSProperties = {
-    width: "100%",
-    padding: "0.65rem 0.875rem",
-    background: "#FFFFFF",
-    border: "1.5px solid #E4DDD4",
-    borderRadius: 10,
-    fontSize: "0.9375rem",
-    color: "#0D0D0D",
-    outline: "none",
-    fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
-    transition: "border-color 0.15s ease, box-shadow 0.15s ease",
-  };
+    // Set the workspace gate cookie (non-httpOnly — checked by Server Component layout).
+    document.cookie = `${ONBOARDING_COMPLETE_COOKIE}=1; path=/; max-age=31536000; SameSite=Lax`;
 
-  function focusStyle(e: React.FocusEvent<HTMLInputElement>) {
-    e.currentTarget.style.borderColor = "#E8561B";
-    e.currentTarget.style.boxShadow = "0 0 0 3px rgba(232,86,27,0.12)";
-  }
-  function blurStyle(e: React.FocusEvent<HTMLInputElement>) {
-    e.currentTarget.style.borderColor = "#E4DDD4";
-    e.currentTarget.style.boxShadow = "none";
+    window.location.href = role.redirect;
   }
 
   return (
     <div
-      className="min-h-screen flex flex-col items-center justify-center px-4 py-12"
       style={{
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "3rem 1.5rem",
         background: "#F8F4EF",
         fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
       }}
     >
+      <style>{`
+        @keyframes fadeUp {
+          from { opacity: 0; transform: translateY(16px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .role-card {
+          cursor: pointer;
+          border: 1.5px solid #E4DDD4;
+          border-radius: 14px;
+          padding: 28px 28px 24px;
+          background: #FFFFFF;
+          transition: border-color 180ms ease, background 180ms ease, transform 180ms ease, box-shadow 180ms ease;
+          text-align: left;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          opacity: 0;
+          animation: fadeUp 0.45s ease forwards;
+        }
+        .role-card:hover {
+          border-color: #0D0D0D;
+          box-shadow: 0 4px 20px rgba(0,0,0,0.07);
+          transform: translateY(-2px);
+        }
+        .role-card.selected {
+          border-color: #0D0D0D;
+          background: #0D0D0D;
+        }
+        .role-card.selected .card-label {
+          color: #FFFFFF;
+        }
+        .role-card.selected .card-tagline {
+          color: rgba(255,255,255,0.5);
+          border-color: rgba(255,255,255,0.2);
+        }
+        .role-card.selected .card-description {
+          color: rgba(255,255,255,0.75);
+        }
+        .role-card.selected .card-check {
+          background: #E8561B;
+          border-color: #E8561B;
+        }
+        .role-card.selected .card-check svg {
+          display: block;
+        }
+      `}</style>
+
       {/* Wordmark */}
       <a
         href="/"
-        className="mb-8 flex items-center gap-2 select-none"
-        style={{ textDecoration: "none" }}
+        style={{
+          marginBottom: "3rem",
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          textDecoration: "none",
+        }}
       >
-        <div className="relative overflow-hidden rounded-md flex-shrink-0" style={{ width: 28, height: 28 }}>
+        <div
+          style={{
+            position: "relative",
+            width: 28,
+            height: 28,
+            borderRadius: 6,
+            overflow: "hidden",
+            flexShrink: 0,
+          }}
+        >
           <Image src="/logo.jpeg" alt="SpecFlow" fill className="object-cover" priority />
         </div>
         <span
@@ -206,184 +183,173 @@ export default function OnboardingPage() {
         </span>
       </a>
 
-      {/* Card */}
       <div
-        className="fade-up w-full"
         style={{
-          maxWidth: 500,
-          background: "#FFFFFF",
-          border: "1px solid #E4DDD4",
-          borderRadius: 20,
-          boxShadow: "0 4px 24px rgba(0,0,0,0.06), 0 1px 4px rgba(0,0,0,0.04)",
-          padding: "2rem 2rem",
+          width: "100%",
+          maxWidth: 720,
+          opacity: 0,
+          animation: "fadeUp 0.35s ease forwards",
         }}
       >
-        {/* Progress badge */}
-        <div className="flex items-center gap-2 mb-5">
-          <div
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium"
+        {/* Heading */}
+        <div style={{ marginBottom: "2.5rem", textAlign: "center" }}>
+          <h1
             style={{
-              background: "rgba(232,86,27,0.08)",
-              border: "1px solid rgba(232,86,27,0.2)",
-              color: "#E8561B",
+              fontFamily: "var(--font-instrument), 'Instrument Serif', serif",
+              fontSize: "clamp(2rem, 5vw, 3rem)",
+              fontWeight: 400,
+              letterSpacing: "-0.025em",
+              color: "#0D0D0D",
+              lineHeight: 1.1,
+              margin: "0 0 0.75rem",
             }}
           >
-            <span
-              className="w-1.5 h-1.5 rounded-full"
-              style={{ background: "#E8561B" }}
-            />
-            Account setup
-          </div>
+            How do you work?
+          </h1>
+          <p
+            style={{
+              fontSize: 15,
+              color: "#6B6B6B",
+              margin: 0,
+              lineHeight: 1.6,
+              fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+            }}
+          >
+            SpecFlow adapts its workflow to your role. Pick the one that fits.
+          </p>
         </div>
 
-        {/* Heading */}
-        <h1
-          className="font-display"
+        {/* Role cards */}
+        <div
           style={{
-            fontSize: "1.625rem",
-            fontWeight: 400,
-            letterSpacing: "-0.025em",
-            color: "#0D0D0D",
-            lineHeight: 1.2,
-            marginBottom: "0.375rem",
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
+            gap: 16,
+            marginBottom: "2rem",
           }}
         >
-          Tell us about you.
-        </h1>
-        <p
-          className="text-[13.5px] mb-7"
-          style={{ color: "#6B6B6B", lineHeight: 1.6 }}
-        >
-          This helps tailor your workspace and AI outputs.
-        </p>
-
-        {/* Form */}
-        <div className="flex flex-col gap-4">
-          {/* Row 1: First Name + Last Name */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormField label="First Name" required error={errors.firstName}>
-              <input
-                type="text"
-                autoFocus
-                placeholder="Yug"
-                value={form.firstName}
-                onChange={(e) => update("firstName", e.target.value)}
-                style={inputStyle}
-                onFocus={focusStyle}
-                onBlur={blurStyle}
-              />
-            </FormField>
-            <FormField label="Last Name">
-              <input
-                type="text"
-                placeholder="Sharma"
-                value={form.lastName}
-                onChange={(e) => update("lastName", e.target.value)}
-                style={inputStyle}
-                onFocus={focusStyle}
-                onBlur={blurStyle}
-              />
-            </FormField>
-          </div>
-
-          {/* Row 2: Job Title */}
-          <FormField label="Job Title" required error={errors.jobTitle}>
-            <input
-              type="text"
-              placeholder="Product Manager"
-              value={form.jobTitle}
-              onChange={(e) => update("jobTitle", e.target.value)}
-              style={inputStyle}
-              onFocus={focusStyle}
-              onBlur={blurStyle}
-            />
-          </FormField>
-
-          {/* Row 3: Work Experience + Company Name */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <FormField label="Experience (years)" error={errors.workExperience}>
-              <input
-                type="number"
-                placeholder="3"
-                min={0}
-                max={50}
-                value={form.workExperience}
-                onChange={(e) => update("workExperience", e.target.value)}
-                style={inputStyle}
-                onFocus={focusStyle}
-                onBlur={blurStyle}
-              />
-            </FormField>
-            <FormField label="Company Name">
-              <input
-                type="text"
-                placeholder="Acme Inc."
-                value={form.companyName}
-                onChange={(e) => update("companyName", e.target.value)}
-                style={inputStyle}
-                onFocus={focusStyle}
-                onBlur={blurStyle}
-              />
-            </FormField>
-          </div>
-
-          {/* Row 4: Company Type */}
-          <FormField label="Company Type" required error={errors.companyType}>
-            <div className="flex flex-wrap gap-2 mt-0.5">
-              {COMPANY_TYPES.map((type) => {
-                const active = form.companyType === type;
-                return (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => update("companyType", type)}
-                    style={{
-                      padding: "0.45rem 0.9rem",
-                      borderRadius: 8,
-                      fontSize: "13px",
-                      fontWeight: active ? 500 : 400,
-                      fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
-                      background: active ? "rgba(232,86,27,0.10)" : "#FFFFFF",
-                      border: active
-                        ? "1.5px solid #E8561B"
-                        : "1.5px solid #E4DDD4",
-                      color: active ? "#0D0D0D" : "#6B6B6B",
-                      cursor: "pointer",
-                      transition:
-                        "background 150ms ease, border-color 150ms ease, color 150ms ease",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (!active) {
-                        e.currentTarget.style.background = "rgba(0,0,0,0.03)";
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!active) {
-                        e.currentTarget.style.background = "#FFFFFF";
-                      }
-                    }}
+          {ROLES.map((role, i) => (
+            <button
+              key={role.id}
+              type="button"
+              onClick={() => setSelected(role.id)}
+              className={`role-card${selected === role.id ? " selected" : ""}`}
+              style={{ animationDelay: `${0.1 + i * 0.07}s` }}
+              aria-pressed={selected === role.id}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  justifyContent: "space-between",
+                  gap: 8,
+                }}
+              >
+                <span
+                  className="card-tagline"
+                  style={{
+                    display: "inline-block",
+                    fontSize: 11,
+                    fontWeight: 600,
+                    letterSpacing: "0.05em",
+                    textTransform: "uppercase" as const,
+                    color: "#9E9E9E",
+                    border: "1px solid #E4DDD4",
+                    borderRadius: 99,
+                    padding: "3px 10px",
+                    fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                    transition: "color 180ms ease, border-color 180ms ease",
+                  }}
+                >
+                  {role.tagline}
+                </span>
+                {/* Check indicator */}
+                <div
+                  className="card-check"
+                  style={{
+                    width: 20,
+                    height: 20,
+                    borderRadius: "50%",
+                    border: "1.5px solid #E4DDD4",
+                    flexShrink: 0,
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    transition: "background 180ms ease, border-color 180ms ease",
+                  }}
+                >
+                  <svg
+                    width="11"
+                    height="11"
+                    viewBox="0 0 12 12"
+                    fill="none"
+                    style={{ display: "none" }}
                   >
-                    {type}
-                  </button>
-                );
-              })}
-            </div>
-          </FormField>
+                    <polyline
+                      points="2 6 5 9 10 3"
+                      stroke="#FFFFFF"
+                      strokeWidth="1.8"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </div>
+              </div>
 
-          {/* CTA */}
+              <div
+                className="card-label"
+                style={{
+                  fontFamily:
+                    "var(--font-instrument), 'Instrument Serif', serif",
+                  fontSize: "1.625rem",
+                  fontWeight: 400,
+                  color: "#0D0D0D",
+                  lineHeight: 1.1,
+                  letterSpacing: "-0.02em",
+                  transition: "color 180ms ease",
+                }}
+              >
+                {role.label}
+              </div>
+
+              <div
+                className="card-description"
+                style={{
+                  fontSize: 14,
+                  color: "#6B6B6B",
+                  lineHeight: 1.6,
+                  fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                  transition: "color 180ms ease",
+                }}
+              >
+                {role.description}
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {/* CTA */}
+        <div style={{ display: "flex", justifyContent: "center" }}>
           <button
+            type="button"
             onClick={handleSubmit}
-            disabled={!isValid || submitting}
-            className="btn-dark w-full mt-2"
+            disabled={!selected || submitting}
             style={{
-              opacity: isValid && !submitting ? 1 : 0.38,
-              cursor: isValid && !submitting ? "pointer" : "not-allowed",
-              transition: "opacity 200ms ease",
-              fontSize: "0.9375rem",
-              padding: "0.75rem 1.5rem",
+              minWidth: 200,
+              padding: "13px 32px",
+              background: selected && !submitting ? "#0D0D0D" : "#E4DDD4",
+              color: selected && !submitting ? "#FFFFFF" : "#9E9E9E",
+              border: "none",
+              borderRadius: 10,
+              fontSize: 15,
+              fontWeight: 500,
+              cursor: selected && !submitting ? "pointer" : "not-allowed",
+              fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+              transition: "background 200ms ease, color 200ms ease",
+              letterSpacing: "-0.01em",
             }}
           >
-            {submitting ? "Setting up..." : "Continue →"}
+            {submitting ? "Setting up…" : "Continue →"}
           </button>
         </div>
       </div>

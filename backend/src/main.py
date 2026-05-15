@@ -1742,10 +1742,15 @@ async def get_agent_handoff(request: Request, session_id: str, auth: SupabaseUse
 
 
 @app.get("/session/{session_id}/agent_handoff/export")
-async def export_agent_handoff_markdown(request: Request, session_id: str, auth: SupabaseUser = Depends(require_auth)):
-    """
-    Export the session's agent handoff as a downloadable CLAUDE.md-style markdown file.
-    """
+async def export_agent_handoff_markdown(
+    request: Request,
+    session_id: str,
+    format: str = "claude_md",
+    auth: SupabaseUser = Depends(require_auth),
+):
+    """Export the session's agent handoff in the requested format."""
+    if format not in {"claude_md", "cursor_rules", "task_list"}:
+        raise HTTPException(status_code=400, detail=f"Unsupported format: {format!r}")
     try:
         memory_repo = MemoryRepository(client=auth.client)
         entry = await memory_repo.get_by_session_and_key(session_id, "agent_handoff")
@@ -1756,42 +1761,138 @@ async def export_agent_handoff_markdown(request: Request, session_id: str, auth:
         if not isinstance(handoff, dict):
             raise HTTPException(status_code=404, detail="Handoff data is malformed")
 
-        lines = ["# Agent Implementation Handoff\n"]
-
-        project_brief = handoff.get("project_brief", "")
-        if project_brief:
-            lines.append("## Project Brief\n")
-            lines.append(project_brief)
-            lines.append("")
-
-        architecture_notes = handoff.get("architecture_notes", "")
-        if architecture_notes:
-            lines.append("## Architecture Notes\n")
-            lines.append(architecture_notes)
-            lines.append("")
-
-        execution_order = handoff.get("execution_order", [])
-        if execution_order:
-            lines.append("## Execution Order\n")
-            for i, step in enumerate(execution_order, 1):
-                label = step if isinstance(step, str) else step.get("title", str(step))
-                lines.append(f"{i}. {label}")
-            lines.append("")
-
         raw_tasks = handoff.get("tasks", [])
         if isinstance(raw_tasks, dict):
             raw_tasks = raw_tasks.get("items", [])
         tasks = raw_tasks if isinstance(raw_tasks, list) else []
-        if tasks:
-            lines.append("## Implementation Tasks\n")
-            for task in tasks:
+
+        short_id = session_id[:8]
+        project_brief = handoff.get("project_brief", "")
+        architecture_notes = handoff.get("architecture_notes", "")
+        execution_order = handoff.get("execution_order", [])
+        needs_count = handoff.get("needs_clarification_count", 0)
+        estimated = handoff.get("estimated_sessions", "")
+
+        if format == "claude_md":
+            lines = ["# Agent Implementation Handoff\n"]
+
+            if project_brief:
+                lines.append("## Project Brief\n")
+                lines.append(project_brief)
+                lines.append("")
+
+            if architecture_notes:
+                lines.append("## Architecture Notes\n")
+                lines.append(architecture_notes)
+                lines.append("")
+
+            if execution_order:
+                lines.append("## Execution Order\n")
+                for i, step in enumerate(execution_order, 1):
+                    label = step if isinstance(step, str) else step.get("title", str(step))
+                    lines.append(f"{i}. {label}")
+                lines.append("")
+
+            if tasks:
+                lines.append("## Implementation Tasks\n")
+                for task in tasks:
+                    title = task.get("title", "Untitled")
+                    layer = task.get("layer", "")
+                    header = f"### {title}"
+                    if layer:
+                        header += f" [{layer}]"
+                    lines.append(header)
+                    lines.append("")
+
+                    impl_prompt = task.get("implementation_prompt", "")
+                    if impl_prompt:
+                        lines.append(impl_prompt)
+                        lines.append("")
+
+                    acceptance_criteria = task.get("acceptance_criteria", "")
+                    if acceptance_criteria:
+                        lines.append("**Acceptance Criteria:**")
+                        lines.append(acceptance_criteria)
+                        lines.append("")
+
+                    deps = task.get("dependencies", [])
+                    dep_str = ", ".join(deps) if deps else "None"
+                    lines.append(f"**Dependencies:** {dep_str}")
+                    lines.append("")
+
+                    if task.get("needs_clarification"):
+                        reason = task.get("clarification_reason", "")
+                        lines.append(f"⚠ NEEDS_CLARIFICATION: {reason}")
+                        lines.append("")
+
+                    lines.append("---")
+                    lines.append("")
+
+            lines.append("## Summary\n")
+            lines.append(f"- Tasks: {len(tasks)}")
+            lines.append(f"- Needs clarification: {needs_count}")
+            if estimated:
+                lines.append(f"- Estimated sessions: {estimated}")
+
+            content = "\n".join(lines)
+            filename = f"CLAUDE-{short_id}.md"
+            mime = "text/markdown"
+
+        elif format == "cursor_rules":
+            lines = []
+            brief_first_line = project_brief.split("\n")[0] if project_brief else "SpecFlow Project"
+            lines.append(f"# .cursorrules — {brief_first_line}\n")
+
+            if project_brief:
+                lines.append("## Project Context\n")
+                lines.append(project_brief)
+                lines.append("")
+
+            if architecture_notes:
+                lines.append("## Architecture\n")
+                lines.append(architecture_notes)
+                lines.append("")
+
+            if execution_order:
+                lines.append("## Execution Order\n")
+                for i, step in enumerate(execution_order, 1):
+                    label = step if isinstance(step, str) else step.get("title", str(step))
+                    lines.append(f"{i}. {label}")
+                lines.append("")
+
+            if tasks:
+                lines.append("## Tasks\n")
+                for task in tasks:
+                    title = task.get("title", "Untitled")
+                    layer = task.get("layer", "")
+                    header = f"### {title}"
+                    if layer:
+                        header += f" [{layer}]"
+                    lines.append(header)
+                    impl_prompt = task.get("implementation_prompt", "")
+                    if impl_prompt:
+                        lines.append("")
+                        for ln in impl_prompt.splitlines():
+                            lines.append(f"> {ln}" if ln else ">")
+                    antipatterns = task.get("antipatterns", "")
+                    if antipatterns:
+                        lines.append(f"\nAntipattern: {antipatterns}")
+                    if task.get("needs_clarification"):
+                        reason = task.get("clarification_reason", "")
+                        lines.append(f"\n⚠ NEEDS CLARIFICATION: {reason}")
+                    lines.append("\n---\n")
+
+            content = "\n".join(lines)
+            filename = f".cursorrules-{short_id}"
+            mime = "text/plain"
+
+        else:  # task_list
+            lines = []
+            for i, task in enumerate(tasks, 1):
                 title = task.get("title", "Untitled")
                 layer = task.get("layer", "")
-                header = f"### {title}"
-                if layer:
-                    header += f" [{layer}]"
-                lines.append(header)
-                lines.append("")
+                layer_str = f" [{layer}]" if layer else ""
+                lines.append(f"=== Task {i}: {title}{layer_str} ===\n")
 
                 impl_prompt = task.get("implementation_prompt", "")
                 if impl_prompt:
@@ -1800,37 +1901,29 @@ async def export_agent_handoff_markdown(request: Request, session_id: str, auth:
 
                 acceptance_criteria = task.get("acceptance_criteria", "")
                 if acceptance_criteria:
-                    lines.append("**Acceptance Criteria:**")
+                    lines.append("Acceptance Criteria:")
                     lines.append(acceptance_criteria)
                     lines.append("")
 
                 deps = task.get("dependencies", [])
                 dep_str = ", ".join(deps) if deps else "None"
-                lines.append(f"**Dependencies:** {dep_str}")
-                lines.append("")
+                lines.append(f"Dependencies: {dep_str}")
 
                 if task.get("needs_clarification"):
                     reason = task.get("clarification_reason", "")
-                    lines.append(f"⚠ NEEDS_CLARIFICATION: {reason}")
-                    lines.append("")
+                    lines.append(f"⚠ NEEDS CLARIFICATION: {reason}")
 
+                lines.append("")
                 lines.append("---")
                 lines.append("")
 
-        needs_count = handoff.get("needs_clarification_count", 0)
-        estimated = handoff.get("estimated_sessions", "")
-        lines.append("## Summary\n")
-        lines.append(f"- Tasks: {len(tasks)}")
-        lines.append(f"- Needs clarification: {needs_count}")
-        if estimated:
-            lines.append(f"- Estimated sessions: {estimated}")
+            content = "\n".join(lines)
+            filename = f"task-prompts-{short_id}.txt"
+            mime = "text/plain"
 
-        md = "\n".join(lines)
-        short_id = session_id[:8]
-        filename = f"handoff-{short_id}.md"
         return Response(
-            content=md,
-            media_type="text/markdown",
+            content=content,
+            media_type=mime,
             headers={"Content-Disposition": f'attachment; filename="{filename}"'},
         )
     except HTTPException:

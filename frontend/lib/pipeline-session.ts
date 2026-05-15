@@ -6,6 +6,7 @@ export const PIPELINE_STEPS = [
   { id: "problems", label: "Problems", description: "Surface pain points" },
   { id: "features", label: "Features", description: "Define capabilities" },
   { id: "decompose", label: "Decompose", description: "Break into components" },
+  { id: "ui_spec", label: "UI Specs", description: "Screen/data/workflow changes" },
   { id: "tasks", label: "Tasks", description: "Generate action items" },
 ] as const;
 

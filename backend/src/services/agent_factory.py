@@ -16,6 +16,7 @@ from services.agents.tasks_agent import TasksAgent
 from services.agents.prd_agent import PRDAgent
 from .agents.agent_handoff_agent import AgentHandoffAgent
 from services.agents.query_agent import QueryAgent
+from services.agents.ui_spec_agent import UISpecAgent
 
 logger = logging.getLogger("specflow.agent_factory")
 
@@ -33,6 +34,7 @@ AGENT_MAP: dict[str, type[BaseAgent]] = {
     "prd":      PRDAgent,
     "agent_handoff": AgentHandoffAgent,
     "query":         QueryAgent,
+    "ui_spec":       UISpecAgent,
 }
 
 
