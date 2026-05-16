@@ -3,6 +3,12 @@ frontend/node_modules/
 .DS_Store
 .env
 .env.local
+
+# Explicit subdirectory env files (also covered by top-level patterns above)
+frontend/.env
+frontend/.env.local
+backend/.env
+backend/src/.env
 dist/
 build/
 *.log

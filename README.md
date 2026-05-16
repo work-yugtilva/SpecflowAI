@@ -24,9 +24,16 @@ cp .env.example .env
 ```
 
 Edit `.env` with your credentials:
-- `ANTHROPIC_API_KEY` — from console.anthropic.com
-- `SUPABASE_URL` and `SUPABASE_KEY` — from your Supabase project
-- `GOOGLE_APPLICATION_CREDENTIALS` — path to ADK service account JSON
+- `ANTHROPIC_API_KEY` — from [console.anthropic.com](https://console.anthropic.com)
+- `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` — from your Supabase project settings → API
+- `TOKEN_ENCRYPTION_KEY` — generate with: `python -c "import os,base64; print(base64.b64encode(os.urandom(32)).decode())"`
+- All other vars documented inline in `.env.example`
+
+**Next.js env loading:** Next.js reads env files from `frontend/`. Create a symlink so it picks up the root `.env` automatically:
+```bash
+ln -sf ../.env frontend/.env
+```
+This gitignored symlink means you only ever edit root `.env` — no `frontend/.env.local` needed for local development.
 
 ### 2. Install Dependencies
 
@@ -102,7 +109,7 @@ When you connect the GitHub repo to Vercel:
 
 1. **Root Directory** can stay the **repository root** (default). Vercel will run `npm install` and `npm run build` from the root; the build script delegates to the `specflow-frontend` workspace.
 2. Alternatively, you can still set **Root Directory** to **`frontend`** if you prefer a per-app project layout; either layout should work.
-3. Configure production env vars in Vercel (**Settings** → **Environment Variables**) to match [`frontend/.env.example`](frontend/.env.example) / your local `frontend/.env.local` (e.g. `NEXT_PUBLIC_*` and API URLs).
+3. Configure production env vars in Vercel (**Settings** → **Environment Variables**) to match [`.env.example`](.env.example). The `frontend/.env.example` file is a Vercel-specific reference for frontend-only vars (PostHog, Sentry public DSN, Slack OAuth, and app URL).
 
 **Required for sessions and pipeline:** set **`NEXT_PUBLIC_PIPELINE_URL`** (or server-only **`PIPELINE_SERVER_URL`**) to your public FastAPI origin with **no trailing slash**, e.g. `https://api.specflowai.com`. Next.js API routes proxy to this URL from Vercel’s servers; if it is missing, they default to `http://localhost:8001` and the UI shows “Backend service is offline.” Redeploy after changing the variable.
 
