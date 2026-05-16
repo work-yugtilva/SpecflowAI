@@ -42,7 +42,6 @@ import {
 } from "@/lib/session-scoped-storage";
 import { importGlobalContextToSession } from "@/lib/api/context";
 import type { MergedContextPayload } from "@/lib/api/context";
-import { fetchResearchEntries } from "@/lib/api/research";
 import { listSourceEvidence, listSources } from "@/lib/api/sources";
 import { createClient } from "@/lib/supabase/client";
 import { StepInspector } from "@/components/StepInspector";
@@ -433,7 +432,6 @@ export default function SessionsPage() {
   } | null>(null);
   const [contextPreviewLoading, setContextPreviewLoading] = useState(false);
   const [localSessionContext, setLocalSessionContext] = useState<Record<string, unknown>>({});
-  const [localResearchCount, setLocalResearchCount] = useState(0);
   const [localContextSaved, setLocalContextSaved] = useState(false);
   const [sourceCounts, setSourceCounts] = useState<SourceReadinessCounts>(EMPTY_SOURCE_COUNTS);
 
@@ -444,17 +442,8 @@ export default function SessionsPage() {
       const nextContext = getContextObject(sessionId);
       setLocalSessionContext(nextContext);
       setLocalContextSaved(Object.keys(nextContext).length > 0);
-      try {
-        const entries = await fetchResearchEntries(
-          sessionId ? "session" : "global",
-          sessionId ?? undefined
-        );
-        setLocalResearchCount(entries.length);
-      } catch {
-        setLocalResearchCount(0);
-      }
     },
-    [setLocalSessionContext, setLocalResearchCount, setLocalContextSaved]
+    [setLocalSessionContext, setLocalContextSaved]
   );
 
   const refreshSourceCounts = useCallback(async (sessionId: string | null) => {
@@ -788,28 +777,19 @@ export default function SessionsPage() {
       setIsRunning(true);
 
       try {
-        const inputData = await buildInputData(
-          selectedId,
-          !step || step === "problems"
-        );
-
-        // Full run: save input for pipeline pages and navigate immediately
+        // Full run: navigate immediately — Problems page builds its own input
         if (!step) {
           selectSession(selectedId);
-          writeScopedRaw(
-            selectedId,
-            "pending_input",
-            JSON.stringify({
-              context: inputData.context,
-              ingest: inputData.ingest,
-            })
-          );
           setAutorunFlag(selectedId);
           window.location.href = "/problems";
           return;
         }
 
         // Single step run via session API
+        const inputData = await buildInputData(
+          selectedId,
+          step === "problems"
+        );
         await runSession(selectedId, inputData, step);
         await loadDetail(selectedId);
       } catch (e) {
@@ -880,18 +860,16 @@ export default function SessionsPage() {
   const nextStep = getNextStep(stepStatuses);
   const isSessionDone = detail?.session.status === "completed";
   const isSessionFailed = detail?.session.status === "failed";
-  const researchCount = localResearchCount;
   const contextSaved = localContextSaved;
   const sessionHomeSummary = useMemo(
     () =>
       getSessionHomeSummary({
         detail,
         context: mergedForContextPanel,
-        researchCount,
         sourceCounts,
         hasHandoff: Boolean(sessionHandoff),
       }),
-    [detail, mergedForContextPanel, researchCount, sourceCounts, sessionHandoff]
+    [detail, mergedForContextPanel, sourceCounts, sessionHandoff]
   );
   const primaryHomeAction = useMemo(
     () => getNextRecommendedAction(sessionHomeSummary),
@@ -925,6 +903,14 @@ export default function SessionsPage() {
 
   return (
     <>
+      <style>{`
+        @media (max-width: 768px) {
+          .sessions-top-bar { flex-wrap: wrap; height: auto !important; min-height: 52px; padding-top: 8px; padding-bottom: 8px; row-gap: 8px; }
+          .sessions-body-panels { flex-direction: column; }
+          .sessions-list-panel { width: 100% !important; max-height: 40vh; flex-shrink: 0; border-right: none !important; border-bottom: 1px solid #E4DDD4; }
+          .sessions-detail-panel { padding-left: 16px !important; padding-right: 16px !important; }
+        }
+      `}</style>
       <div style={{ display: "flex", height: "100vh", background: "#F8F4EF", fontFamily: "'DM Sans', sans-serif" }}>
         <Sidebar />
 
@@ -933,6 +919,7 @@ export default function SessionsPage() {
 
           {/* Top bar */}
           <div
+            className="sessions-top-bar"
             style={{
               height: 52,
               borderBottom: "1px solid #E4DDD4",
@@ -944,9 +931,11 @@ export default function SessionsPage() {
               flexShrink: 0,
               position: "relative",
               zIndex: 5,
+              minWidth: 0,
+              gap: 8,
             }}
           >
-            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
               <span style={{ fontSize: 13, color: "#6B6B6B", fontWeight: 400 }}>Signals</span>
               <span style={{ color: "#C8C0B8", fontSize: 13 }}>›</span>
               <span style={{ fontSize: 13, fontWeight: 500, color: "#0D0D0D" }}>Sessions</span>
@@ -1041,17 +1030,14 @@ export default function SessionsPage() {
           )}
 
           {/* Body: two-panel layout */}
-          <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+          <div className="sessions-body-panels flex min-h-0 flex-1 overflow-hidden">
 
             {/* ── Left panel: Session list ──────────────────────────────────── */}
             <div
+              className="sessions-list-panel flex-shrink-0 flex flex-col bg-white"
               style={{
                 width: 300,
                 borderRight: "1px solid #E4DDD4",
-                display: "flex",
-                flexDirection: "column",
-                background: "#FFFFFF",
-                flexShrink: 0,
               }}
             >
               <div style={{ padding: "14px 16px 10px", borderBottom: "1px solid #F0EAE1" }}>
@@ -1148,7 +1134,7 @@ export default function SessionsPage() {
             </div>
 
             {/* ── Right panel: Session detail ──────────────────────────────── */}
-            <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px", minWidth: 0 }}>
+            <div className="sessions-detail-panel min-h-0 min-w-0 flex-1 overflow-y-auto" style={{ padding: "24px 28px" }}>
               {!selectedId ? (
                 /* Empty state */
                 <div
@@ -1272,11 +1258,6 @@ export default function SessionsPage() {
                           label: "Context",
                           value: sessionHomeSummary.contextReady ? "Complete" : "Incomplete",
                           tone: sessionHomeSummary.contextReady ? "good" : "warn",
-                        },
-                        {
-                          label: "Research & Articles",
-                          value: `${sessionHomeSummary.researchCount}`,
-                          tone: sessionHomeSummary.researchCount > 0 ? "good" : "muted",
                         },
                         ...(sessionHomeSummary.sourceCounts.available
                           ? [
@@ -1600,49 +1581,9 @@ export default function SessionsPage() {
                     >
                       Context{contextSaved ? " ✓" : " —"}
                     </span>
-                    <span
-                      style={{
-                        fontSize: 12,
-                        fontWeight: 500,
-                        padding: "3px 10px",
-                        borderRadius: 20,
-                        border: `1px solid ${researchCount > 0 ? "#BBF7D0" : "#E4DDD4"}`,
-                        background: researchCount > 0 ? "#F0FDF4" : "#F8F4EF",
-                        color: researchCount > 0 ? "#15803D" : "#9B9189",
-                      }}
-                    >
-                      Research & Articles ({researchCount}){researchCount > 0 ? " ✓" : ""}
-                    </span>
 
                   </div>
 
-                  {/* Research & articles card */}
-                  <div
-                    style={{
-                      background: "#FFFFFF",
-                      border: "1px solid #E4DDD4",
-                      borderRadius: 14,
-                      padding: "18px 22px",
-                      marginBottom: 18,
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: "#9B9189", letterSpacing: "0.06em", textTransform: "uppercase" }}>
-                        Research & Articles
-                      </div>
-                      {researchCount > 0 && (
-                        <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "#F0FDF4", border: "1px solid #BBF7D0", color: "#15803D" }}>
-                          {researchCount} {researchCount === 1 ? "entry" : "entries"}
-                        </span>
-                      )}
-                    </div>
-                    <p style={{ fontSize: 13, color: "#5C5248", lineHeight: 1.55, margin: "0 0 14px" }}>
-                      Add interviews, usage data, market insights, and uploaded evidence to power your pipeline.
-                    </p>
-                    <Link href="/sources" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: "#E8561B", textDecoration: "none" }}>
-                      Manage Sources →
-                    </Link>
-                  </div>
 
                   {/* Pipeline step tracker */}
                   <div

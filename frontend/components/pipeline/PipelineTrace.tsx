@@ -137,9 +137,23 @@ function readEvidenceSourceTitles(value: unknown): RagContextItem[] {
   const titles = new Set<string>();
   for (const row of outputRows(value)) {
     const evidence = row.research_evidence;
-    if (typeof evidence !== "string") continue;
-    for (const match of evidence.matchAll(/\[Source:\s*([^\]]+)\]/g)) {
-      const title = match[1]?.trim();
+    if (typeof evidence === "string") {
+      for (const match of evidence.matchAll(/\[Source:\s*([^\]]+)\]/g)) {
+        const title = match[1]?.trim();
+        if (title) titles.add(title);
+      }
+      continue;
+    }
+
+    const evidenceItems = Array.isArray(evidence) ? evidence : [evidence];
+    for (const item of evidenceItems) {
+      if (!isRecord(item)) continue;
+      const title =
+        typeof item.title === "string" && item.title.trim().length > 0
+          ? item.title.trim()
+          : typeof item.source === "string" && item.source.trim().length > 0
+            ? item.source.trim()
+            : null;
       if (title) titles.add(title);
     }
   }
@@ -161,16 +175,33 @@ export function PipelineTrace({ stepKey }: { stepKey: PipelineTraceStepKey }) {
   const outputs = useSessionStore((state) => state.activeSessionDetail?.state?.state?.outputs);
   const outputRecord = isRecord(outputs) ? outputs : {};
   const outputKey = OUTPUT_KEY_BY_STEP[stepKey];
+  const stepOutput = outputRecord[outputKey];
   const quality = readQuality(outputRecord[`${outputKey}_quality`]);
-  const citedSourceIds = readSourceIds(outputRecord[outputKey]);
-  const citedSourceTitles = readEvidenceSourceTitles(outputRecord[outputKey]);
+  const citedSourceIds = readSourceIds(stepOutput);
+  const citedSourceTitles = readEvidenceSourceTitles(stepOutput);
   const ragContext = readRagContext(outputRecord.rag_context);
-  const evidenceSources = citedSourceTitles.length > 0 ? citedSourceTitles : ragContext;
-  const evidenceCount = citedSourceIds.length > 0 ? citedSourceIds.length : ragContext.length;
+  const evidenceSources =
+    citedSourceIds.length > 0
+      ? citedSourceTitles.length > 0
+        ? citedSourceTitles
+        : ragContext
+      : citedSourceTitles.length > 0
+        ? citedSourceTitles
+        : ragContext;
+  const evidenceCount =
+    citedSourceIds.length > 0
+      ? citedSourceIds.length
+      : citedSourceTitles.length > 0
+        ? citedSourceTitles.length
+        : ragContext.length;
   const evidenceLabel =
     citedSourceIds.length > 0
       ? `Grounded on ${evidenceCount} cited evidence item${evidenceCount === 1 ? "" : "s"}.`
-      : `Grounded on ${evidenceCount} source${evidenceCount === 1 ? "" : "s"} from your uploads.`;
+      : citedSourceTitles.length > 0
+        ? `Grounded on ${evidenceCount} evidence source${evidenceCount === 1 ? "" : "s"}.`
+        : evidenceCount > 0
+          ? `Grounded on ${evidenceCount} source${evidenceCount === 1 ? "" : "s"} from your uploads.`
+          : null;
   const dependencies = DEPENDENCIES_BY_STEP[stepKey];
   const prdRetried = outputRecord._prd_retry === true;
   const failedQualityChecks = countFailedQualityChecks(quality);
@@ -187,13 +218,17 @@ export function PipelineTrace({ stepKey }: { stepKey: PipelineTraceStepKey }) {
         </button>
       </CollapsibleTrigger>
       <CollapsibleContent>
-        <div className="mt-2 rounded-lg border border-border bg-card/70 p-3 text-[12px] text-card-foreground shadow-sm">
-          <div className="grid gap-3 md:grid-cols-2">
+        <div className="mt-2 min-w-0 max-w-full overflow-x-auto rounded-lg border border-border bg-card/70 p-3 text-[12px] text-card-foreground shadow-sm">
+          <div className="grid min-w-0 gap-3 sm:grid-cols-2">
             <div className="flex flex-col gap-2">
               <div className="font-semibold text-foreground">Evidence used</div>
-              <div className="text-muted-foreground">
-                {evidenceLabel}
-              </div>
+              {evidenceLabel ? (
+                <div className="text-muted-foreground">{evidenceLabel}</div>
+              ) : (
+                <div className="rounded-md border border-amber-300/80 bg-amber-50 p-2 text-amber-900">
+                  No source evidence was attached to this output. Treat this result as unverified.
+                </div>
+              )}
               {evidenceSources.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {evidenceSources.map((source, index) => (

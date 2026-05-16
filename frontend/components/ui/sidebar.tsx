@@ -307,9 +307,23 @@ export function Sidebar() {
   const [activeSection, setActiveSection] = useState("dashboard");
   const [expandedSections, setExpandedSections] = useState<string[]>(["signals"]);
   const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const [isNarrowViewport, setIsNarrowViewport] = useState(false);
 
   const sessionsPathActive = pathnameItem === "sessions";
   const activeSessionId = sessionCtx?.activeSessionId ?? null;
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.matchMedia) return;
+    const mq = window.matchMedia("(max-width: 767px)");
+    const apply = () => setIsNarrowViewport(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
+
+  useEffect(() => {
+    if (isNarrowViewport) setPanelCollapsed(true);
+  }, [isNarrowViewport]);
 
   // Keep rail + expanded groups in sync when navigating via <Link>
   useEffect(() => {
@@ -367,7 +381,8 @@ export function Sidebar() {
       : currentSection?.title ?? "Dashboard";
 
   /** Fixed width prevents flex/stacking from treating the sidebar as full-width (which steals clicks on main). */
-  const sidebarOuterWidthPx = panelCollapsed ? 60 : 300;
+  const sidebarOuterWidthPx = isNarrowViewport ? 60 : panelCollapsed ? 60 : 300;
+  const mobilePanelOpen = isNarrowViewport && !panelCollapsed;
 
   return (
     <div
@@ -379,6 +394,14 @@ export function Sidebar() {
         fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
       }}
     >
+      {mobilePanelOpen && (
+        <button
+          type="button"
+          aria-label="Close navigation"
+          className="fixed inset-0 z-[190] border-0 bg-black/15 md:hidden"
+          onClick={() => setPanelCollapsed(true)}
+        />
+      )}
       {/* ─── Left Rail */}
       <div
         className="flex flex-col items-center gap-1 flex-shrink-0 py-3"
@@ -439,19 +462,40 @@ export function Sidebar() {
         </div>
       </div>
 
-      {/* ─── Right Panel */}
+      {/* ─── Right Panel (narrow viewports: full-height drawer overlay) */}
       <div
         style={{
-          width: panelCollapsed ? 0 : 240,
+          width: mobilePanelOpen
+            ? "min(320px, 100vw)"
+            : panelCollapsed
+              ? 0
+              : 240,
+          minWidth: mobilePanelOpen
+            ? "min(320px, 100vw)"
+            : panelCollapsed
+              ? 0
+              : 240,
           opacity: panelCollapsed ? 0 : 1,
-          overflow: "hidden",
+          overflow: mobilePanelOpen ? "auto" : "hidden",
           pointerEvents: panelCollapsed ? "none" : "auto",
-          transition: "width 220ms ease, opacity 180ms ease",
+          transition: isNarrowViewport ? undefined : "width 220ms ease, opacity 180ms ease",
           flexShrink: 0,
           background: "#FFFFFF",
           borderRight: "1px solid #E4DDD4",
           display: "flex",
           flexDirection: "column",
+          ...(mobilePanelOpen
+            ? {
+                position: "fixed",
+                left: 0,
+                top: 0,
+                bottom: 0,
+                zIndex: 200,
+                opacity: 1,
+                pointerEvents: "auto",
+                boxShadow: "4px 0 24px rgba(0,0,0,0.12)",
+              }
+            : {}),
         }}
       >
         {/* Panel header */}

@@ -4,7 +4,10 @@ import os
 import time
 import random
 import asyncio
+import logging
 from typing import Any
+
+logger = logging.getLogger("specflow.ai_client")
 from anthropic import Anthropic, AsyncAnthropic, APIStatusError, RateLimitError
 
 from services.config.load_env import load_root_env
@@ -215,4 +218,14 @@ async def run_ai_structured_async(
     }
     if temperature is not None:
         kwargs["temperature"] = temperature
-    return await client.messages.create(**kwargs)
+    try:
+        return await client.messages.create(**kwargs)
+    except Exception as e:
+        logger.error(
+            "[run_ai_structured_async] model=%s max_tokens=%s error=%s body=%s",
+            model,
+            max_tokens,
+            type(e).__name__,
+            getattr(e, "body", None) or getattr(e, "message", str(e)),
+        )
+        raise

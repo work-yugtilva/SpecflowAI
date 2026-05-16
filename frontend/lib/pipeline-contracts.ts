@@ -30,6 +30,7 @@ export interface PipelineOutputs {
   ui_specs?: UISpecOutput;
   ui_specs_quality?: QualityGateResult;
   prd?: unknown;
+  prd_quality?: QualityGateResult;
 }
 
 export interface ResearchEvidence {

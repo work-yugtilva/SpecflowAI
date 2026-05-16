@@ -544,7 +544,17 @@ export function ConversationPanel({
 }: ConversationPanelProps) {
   const [activeContextKeys, setActiveContextKeys] = useState<string[]>(initialContextKeys);
   const [floatOpen, setFloatOpen] = useState(false);
+  const [sidebarNarrow, setSidebarNarrow] = useState(false);
   const drawerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 767px)");
+    const apply = () => setSidebarNarrow(mq.matches);
+    apply();
+    mq.addEventListener("change", apply);
+    return () => mq.removeEventListener("change", apply);
+  }, []);
 
   const toggleKey = useCallback((key: string) => {
     setActiveContextKeys((prev) =>
@@ -566,6 +576,33 @@ export function ConversationPanel({
 
   // ── Sidebar mode ──
   if (mode === "sidebar") {
+    if (sidebarNarrow) {
+      if (!isOpen) return null;
+      return (
+        <>
+          <button
+            type="button"
+            aria-label="Close chat"
+            className="fixed inset-0 z-[85] border-0 bg-black/20 md:hidden"
+            onClick={() => onClose?.()}
+          />
+          <div
+            className="fixed inset-y-0 right-0 z-[90] flex w-full max-w-[min(360px,100vw)] flex-col border-l border-[#E4DDD4] bg-white shadow-[-4px_0_24px_rgba(0,0,0,0.08)] md:hidden"
+            style={{ fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif" }}
+          >
+            <PanelContent
+              sessionId={sessionId}
+              activeContextKeys={activeContextKeys}
+              allContextKeys={initialContextKeys}
+              onToggleKey={toggleKey}
+              onClose={onClose}
+              showClose={true}
+            />
+          </div>
+        </>
+      );
+    }
+
     return (
       <div
         style={{

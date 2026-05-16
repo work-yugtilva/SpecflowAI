@@ -234,6 +234,10 @@ export default function FeaturesPage() {
         @media (max-width: 768px) {
           .features-two-col { flex-direction: column; }
           .features-list-panel { width: 100% !important; min-height: 240px; max-height: 40vh; border-right: none !important; border-bottom: 1px solid #E4DDD4; }
+          .features-page-header { flex-wrap: wrap; height: auto !important; min-height: 52px; padding-top: 8px; padding-bottom: 8px; row-gap: 8px; }
+          .features-page-header > div:first-child { flex-wrap: wrap; min-width: 0; max-width: 100%; }
+          .features-detail-wrap { padding-left: 16px !important; padding-right: 16px !important; }
+          .features-score-row .score-divider { display: none; }
         }
       `}</style>
       <Sidebar />
@@ -249,14 +253,15 @@ export default function FeaturesPage() {
         />
         {/* Top bar */}
         <header
-          className="flex items-center justify-between px-6 flex-shrink-0"
+          className="features-page-header flex flex-shrink-0 items-center justify-between px-4 md:px-6"
           style={{
             height: 52,
             background: "#FFFFFF",
             borderBottom: "1px solid #E4DDD4",
+            minWidth: 0,
           }}
         >
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 max-w-full flex-1 items-center gap-2">
             <div
               className="flex items-center gap-1.5 text-[13px]"
               style={{ color: "#6B6B6B" }}
@@ -285,7 +290,7 @@ export default function FeaturesPage() {
             onClick={handleGenerate}
             disabled={generating || !activeSessionId || regenLimitReached}
             title={regenLimitReached ? "Limit reached. Use the editor." : undefined}
-            className="btn-dark"
+            className="btn-dark shrink-0"
             style={{
               fontSize: 13,
               padding: "0.45rem 1rem",
@@ -567,7 +572,7 @@ export default function FeaturesPage() {
               style={{ background: "#F8F4EF" }}
             >
               {selectedFeature ? (
-                <div style={{ padding: "24px 28px", maxWidth: 680 }}>
+                <div className="features-detail-wrap" style={{ padding: "24px 28px", maxWidth: 680 }}>
                   {/* Header */}
                   <div
                     className="flex items-start justify-between gap-4"
@@ -613,7 +618,7 @@ export default function FeaturesPage() {
 
                   {/* Score + badges row */}
                   <div
-                    className="flex items-center gap-3 flex-wrap"
+                    className="features-score-row flex flex-wrap items-center gap-3"
                     style={{ marginBottom: 20 }}
                   >
                     <div className="flex items-baseline gap-1.5">
@@ -640,7 +645,7 @@ export default function FeaturesPage() {
                         {selectedFeature.score}
                       </span>
                     </div>
-                    <div style={{ width: 1, height: 24, background: "#E4DDD4" }} />
+                    <div className="score-divider" style={{ width: 1, height: 24, background: "#E4DDD4" }} />
                     <Badge
                       label={selectedFeature.impact}
                       styles={IMPACT_STYLES[selectedFeature.impact]}

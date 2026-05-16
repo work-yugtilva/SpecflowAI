@@ -91,6 +91,7 @@ export function PipelineStepper({
         }
       `}</style>
       <div
+        className="min-w-0"
         style={{
           display: "flex",
           flexDirection: "column",
@@ -112,10 +113,10 @@ export function PipelineStepper({
 
         {/* Steps row */}
         <div
+          className="min-w-0 gap-2 sm:gap-[10px]"
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 10,
             flexWrap: "wrap",
             padding: "10px 14px",
           }}
@@ -150,7 +151,8 @@ export function PipelineStepper({
             </span>
           )}
           <div
-            style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}
+            className="min-w-0 max-w-full overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "nowrap" }}
           >
             {PIPELINE_STEPS.map((step, i) => {
               const isCurrent = step.id === currentStepId;

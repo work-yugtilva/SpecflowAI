@@ -209,10 +209,10 @@ function GoalsRenderer({ items }: { items: unknown[] }) {
         return (
           <div key={i} style={{ background: "#F8F4EF", borderRadius: 8, padding: "12px 14px" }}>
             <div style={{ fontWeight: 600, color: "#0D0D0D", fontSize: 13, marginBottom: 6 }}>{goalItem.goal}</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 12px", fontSize: 12, color: "#6B6B6B" }}>
+            <div className="grid grid-cols-1 gap-x-3 gap-y-1 sm:grid-cols-2" style={{ fontSize: 12, color: "#6B6B6B" }}>
               {goalItem.metric && <span><strong>Metric:</strong> {goalItem.metric}</span>}
               {goalItem.target && <span><strong>Target:</strong> {goalItem.target}</span>}
-              {goalItem.timeline && <span><strong>Timeline:</strong> {goalItem.timeline}</span>}
+              {goalItem.timeline && <span className="sm:col-span-2"><strong>Timeline:</strong> {goalItem.timeline}</span>}
             </div>
           </div>
         );
@@ -326,10 +326,20 @@ function FeatureItem({
 }) {
   const [hovering, setHovering] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [narrowUi, setNarrowUi] = useState(false);
   const [type, setType] = useState<FeedbackType>(DEFAULT_FEEDBACK_TYPE);
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [feedbackError, setFeedbackError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 767px)");
+    const sync = () => setNarrowUi(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
 
   const existingFeedback = feedback?.find((f) => f.prd_item_title === item.title);
   const sourceIds = Array.isArray(item.source_ids) ? item.source_ids : [];
@@ -372,12 +382,11 @@ function FeatureItem({
       onMouseLeave={() => setHovering(false)}
       style={{ borderLeft: "2px solid #E4DDD4", paddingLeft: 12, position: "relative" }}
     >
-      <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "space-between" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <div style={{ fontWeight: 600, color: "#0D0D0D", fontSize: 13 }}>{item.title}</div>
-          
+      <div className="flex flex-wrap items-center gap-2" style={{ justifyContent: "space-between" }}>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <div className="min-w-0 break-words" style={{ fontWeight: 600, color: "#0D0D0D", fontSize: 13 }}>{item.title}</div>
         </div>
-        
+
         {existingFeedback ? (
           <span style={{
             fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 20,
@@ -394,7 +403,8 @@ function FeatureItem({
               fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 20,
               background: "rgba(232,86,27,0.08)", color: "#E8561B",
               border: "1px solid rgba(232,86,27,0.18)", cursor: "pointer",
-              opacity: hovering ? 1 : 0, pointerEvents: hovering ? "auto" : "none",
+              opacity: narrowUi || hovering ? 1 : 0,
+              pointerEvents: narrowUi || hovering ? "auto" : "none",
               transition: "opacity 0.15s",
             }}
           >
@@ -569,8 +579,7 @@ function MetricsRenderer({ items }: { items: unknown[] }) {
       {items.map((item, i) => {
         const metricItem = isRecord(item) ? (item as MetricItem) : {};
         return (
-          <div key={i} style={{
-            display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 8,
+          <div key={i} className="grid grid-cols-1 gap-3 sm:grid-cols-[2fr_1fr_1fr]" style={{
             background: "#F8F4EF", borderRadius: 8, padding: "10px 12px", fontSize: 12,
           }}>
             <div>
@@ -708,19 +717,20 @@ function SectionCard({
   };
 
   return (
-    <div
-      onMouseEnter={() => setHovering(true)}
-      onMouseLeave={() => setHovering(false)}
-      style={{
-        position: "relative",
-        background: "#FFFFFF",
-        border: `1px solid ${aiEditing ? "rgba(232,86,27,0.3)" : "#E4DDD4"}`,
-        borderRadius: 12,
-        padding: "20px 24px",
-        marginBottom: 12,
-        transition: "border-color 0.2s",
-      }}
-    >
+      <div
+        onMouseEnter={() => setHovering(true)}
+        onMouseLeave={() => setHovering(false)}
+        style={{
+          position: "relative",
+          background: "#FFFFFF",
+          border: `1px solid ${aiEditing ? "rgba(232,86,27,0.3)" : "#E4DDD4"}`,
+          borderRadius: 12,
+          padding: "20px 24px",
+          marginBottom: 12,
+          transition: "border-color 0.2s",
+          maxWidth: "100%",
+        }}
+      >
       {/* Shimmer overlay while AI is rewriting */}
       {aiEditing && (
         <div style={{
@@ -730,9 +740,9 @@ function SectionCard({
           animation: "prd-shimmer 1.4s ease-in-out infinite",
         }} />
       )}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+      <div className="flex flex-wrap items-start justify-between gap-2" style={{ marginBottom: 10 }}>
         {/* Title + AI edited badge */}
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
           <h3
             style={{
               fontFamily: "var(--font-instrument), Georgia, serif",
@@ -770,7 +780,7 @@ function SectionCard({
           ) : null}
         </div>
         {/* Right-side controls */}
-        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <div className="flex min-w-0 flex-shrink-0 flex-wrap items-center gap-2" style={{ justifyContent: "flex-end" }}>
           {/* AI edit pill / input */}
           {showAiInput ? (
             <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
@@ -786,7 +796,7 @@ function SectionCard({
                 placeholder="Edit this section..."
                 autoFocus
                 style={{
-                  fontSize: 12, padding: "4px 11px", borderRadius: 20, width: 210,
+                  fontSize: 12, padding: "4px 11px", borderRadius: 20, width: "min(210px, 100%)", maxWidth: "100%",
                   border: "1px solid rgba(232,86,27,0.35)", outline: "none",
                   background: "#FDFAF7", color: "#0D0D0D",
                   fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
@@ -1507,6 +1517,17 @@ function PrdPage() {
       <Sidebar />
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <style>{`
+          @media (max-width: 768px) {
+            .prd-page-header { height: auto !important; }
+            .prd-header-toolbar { gap: 8px; }
+            .prd-header-toolbar > button { width: auto !important; min-width: 5rem; flex: 1 1 42%; max-width: 100%; }
+            .prd-header-toolbar > div { flex: 1 1 42%; min-width: min(8rem, 100%); }
+            .prd-main-stack { flex-direction: column !important; }
+            .prd-feedback-drawer { width: 100% !important; max-height: 42vh; flex-shrink: 0 !important; border-left: none !important; border-top: 1px solid #E4DDD4; }
+            .prd-content-scroll { padding-left: 16px !important; padding-right: 16px !important; }
+          }
+        `}</style>
         <PipelineStepper
           currentStepId="tasks"
           stepStatuses={stepStatuses}
@@ -1517,15 +1538,15 @@ function PrdPage() {
 
         {/* Header */}
         <header
-          className="flex items-center justify-between px-6 flex-shrink-0"
+          className="prd-page-header flex min-h-[52px] shrink-0 flex-col gap-3 bg-white px-4 py-3 md:flex-row md:items-center md:justify-between md:px-6 md:py-0"
           style={{
-            height: 52,
             background: "#FFFFFF",
             borderBottom: "1px solid #E4DDD4",
+            minWidth: 0,
           }}
         >
-          <div className="flex items-center gap-2">
-            <div className="flex items-center gap-1.5 text-[13px]" style={{ color: "#6B6B6B" }}>
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[13px]" style={{ color: "#6B6B6B" }}>
               <span>Signals</span>
               <span style={{ color: "#C0B8B0" }}>/</span>
               <span className="font-medium" style={{ color: "#0D0D0D" }}>PRD</span>
@@ -1560,38 +1581,41 @@ function PrdPage() {
               </span>
             )}
             {activeSessionId && regenCount > 0 && (
-              <span style={{ fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(0,0,0,0.06)", color: regenLimitReached ? "#B91C1C" : "#6B6B6B", letterSpacing: "0.03em", width: "6.5rem", display: "inline-flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box" }}>
+              <span style={{ fontSize: 10.5, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: "rgba(0,0,0,0.06)", color: regenLimitReached ? "#B91C1C" : "#6B6B6B", letterSpacing: "0.03em", display: "inline-flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box", whiteSpace: "nowrap" }}>
                 {regenLeft}/3 Regen Left
               </span>
             )}
           </div>
 
-          {/* View mode toggle */}
-          <div style={{ display: "flex", border: "1px solid #E4DDD4", borderRadius: 8, overflow: "hidden" }}>
-            {(["full", "engineering", "executive"] as const).map((mode) => (
-              <button
-                key={mode}
-                onClick={() => setViewMode(mode)}
-                style={{
-                  fontSize: 12,
-                  fontWeight: 500,
-                  padding: "5px 12px",
-                  border: "none",
-                  cursor: "pointer",
-                  background: viewMode === mode ? "#0D0D0D" : "#FFFFFF",
-                  color: viewMode === mode ? "#FFFFFF" : "#6B6B6B",
-                  fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
-                }}
-              >
-                {mode === "full" ? "Full" : mode === "engineering" ? "Engineering" : "Exec"}
-              </button>
-            ))}
+          <div className="flex w-full min-w-0 justify-center md:w-auto md:flex-none">
+            <div className="flex max-w-full overflow-x-auto rounded-lg border border-[#E4DDD4]" style={{ borderRadius: 8 }}>
+              {(["full", "engineering", "executive"] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  onClick={() => setViewMode(mode)}
+                  className="min-w-0 flex-1 px-3 py-1.5 md:flex-none md:px-3"
+                  style={{
+                    fontSize: 12,
+                    fontWeight: 500,
+                    border: "none",
+                    cursor: "pointer",
+                    background: viewMode === mode ? "#0D0D0D" : "#FFFFFF",
+                    color: viewMode === mode ? "#FFFFFF" : "#6B6B6B",
+                    fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
+                  }}
+                >
+                  {mode === "full" ? "Full" : mode === "engineering" ? "Engineering" : "Exec"}
+                </button>
+              ))}
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="prd-header-toolbar flex min-w-0 w-full flex-wrap items-center gap-2 md:w-auto md:justify-end md:gap-3">
             {prd && (
               <>
                   <button
+                    type="button"
                     onClick={() => void handleCopyLink()}
                     disabled={copyingLink}
                     style={{
@@ -1646,6 +1670,7 @@ function PrdPage() {
                   ] : []}
                 />
                   <button
+                    type="button"
                     onClick={handleExportMarkdown}
                     disabled={exportingMarkdown}
                     title="Export as Markdown"
@@ -1675,6 +1700,7 @@ function PrdPage() {
                     {exportingMarkdown ? "Exporting..." : "Export MD"}
                   </button>
                 <button
+                  type="button"
                   onClick={() => setChatOpen(!chatOpen)}
                   style={{
                     display: "inline-flex",
@@ -1701,6 +1727,7 @@ function PrdPage() {
                   Ask AI
                 </button>
                 <button
+                  type="button"
                   onClick={() => setShowFeedbackPanel(!showFeedbackPanel)}
                   style={{
                     display: "inline-flex",
@@ -1738,6 +1765,7 @@ function PrdPage() {
                   )}
                 </button>
                 <button
+                  type="button"
                   onClick={() => setShowConfirmRegenerate(true)}
                   disabled={generating || regenLimitReached}
                   title={regenLimitReached ? "Limit reached. Use the editor." : undefined}
@@ -1765,10 +1793,11 @@ function PrdPage() {
             )}
             {!prd && (
               <button
+                type="button"
                 onClick={() => void handleGenerate()}
                 disabled={generating || !activeSessionId || regenLimitReached}
                 title={regenLimitReached ? "Limit reached. Use the editor." : undefined}
-                className="btn-dark"
+                className="btn-dark w-full shrink-0 md:w-auto"
                 style={{
                   fontSize: 13,
                   padding: "0.45rem 1rem",
@@ -1875,9 +1904,9 @@ function PrdPage() {
             )}
           </div>
         ) : (
-          <div className="flex flex-1 overflow-hidden">
+          <div className="prd-main-stack flex min-h-0 flex-1 overflow-hidden">
             <div
-              className="flex-1 overflow-y-auto"
+              className="prd-content-scroll flex-1 overflow-y-auto"
               style={{ padding: "24px 28px" }}
             >
               <style>{`
@@ -1993,13 +2022,11 @@ function PrdPage() {
 
             {showFeedbackPanel && (
               <div
+                className="prd-feedback-drawer flex-shrink-0 flex flex-col"
                 style={{
                   width: 280,
-                  flexShrink: 0,
                   borderLeft: "1px solid #E4DDD4",
                   background: "#FFFFFF",
-                  display: "flex",
-                  flexDirection: "column",
                   fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
                 }}
               >

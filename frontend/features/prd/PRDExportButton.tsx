@@ -8,6 +8,7 @@ import { safeFilename } from '@/lib/artifact-export';
 interface PRDExportButtonProps {
   prd: unknown;
   productName?: string;
+  className?: string;
 }
 
 type Status = 'idle' | 'generating' | 'done' | 'error';
@@ -19,7 +20,7 @@ const LABELS: Record<Status, string> = {
   error: 'Export failed',
 };
 
-export function PRDExportButton({ prd, productName }: PRDExportButtonProps) {
+export function PRDExportButton({ prd, productName, className }: PRDExportButtonProps) {
   const [status, setStatus] = useState<Status>('idle');
 
   async function handleClick() {
@@ -69,8 +70,10 @@ export function PRDExportButton({ prd, productName }: PRDExportButtonProps) {
 
   return (
     <button
+      type="button"
       onClick={handleClick}
       disabled={isGenerating}
+      className={className}
       style={{
         display: 'inline-flex',
         alignItems: 'center',

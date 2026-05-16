@@ -100,7 +100,39 @@ describe("PipelineTrace", () => {
     expect(screen.getByText("Signup Funnel")).toBeInTheDocument();
   });
 
-  it("renders zero grounded sources when rag_context is missing", () => {
+  it("falls back to research_evidence when source_ids are absent", () => {
+    setOutputs({
+      features: [
+        {
+          title: "Automatic retry queue",
+          research_evidence: [
+            {
+              title: "Support transcript cluster",
+              content: "Users report repeated silent failures.",
+              source: "Interview",
+            },
+            {
+              title: "Retry dashboard export",
+              content: "Failures spike after webhook timeouts.",
+              source: "Analytics",
+            },
+          ],
+        },
+      ],
+      features_quality: { score: 88, passed: true },
+      rag_context: [{ id: "r1", title: "Fallback source", source: "Interview" }],
+    });
+
+    render(<PipelineTrace stepKey="features" />);
+    fireEvent.click(screen.getByRole("button", { name: /How was this generated/i }));
+
+    expect(screen.getByText("Grounded on 2 evidence sources.")).toBeInTheDocument();
+    expect(screen.getByText("Support transcript cluster")).toBeInTheDocument();
+    expect(screen.getByText("Retry dashboard export")).toBeInTheDocument();
+    expect(screen.queryByText("Fallback source")).not.toBeInTheDocument();
+  });
+
+  it("renders an explicit warning when no evidence is attached", () => {
     setOutputs({
       tasks_quality: { score: 88, passed: true },
     });
@@ -108,7 +140,12 @@ describe("PipelineTrace", () => {
     render(<PipelineTrace stepKey="tasks" />);
     fireEvent.click(screen.getByRole("button", { name: /How was this generated/i }));
 
-    expect(screen.getByText("Grounded on 0 sources from your uploads.")).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "No source evidence was attached to this output. Treat this result as unverified."
+      )
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Grounded on 0/i)).not.toBeInTheDocument();
   });
 
   it("derives grounded source count from persisted step source_ids", () => {
@@ -138,6 +175,37 @@ describe("PipelineTrace", () => {
     expect(screen.getByText("stripe_product_usage_analysis.pdf")).toBeInTheDocument();
     expect(screen.getByText("1 quality issue")).toBeInTheDocument();
     expect(screen.getByText("One item needs tighter metrics.")).toBeInTheDocument();
+  });
+
+  it("renders PRD quality from prd_quality", () => {
+    setOutputs({
+      prd_quality: { score: 96, passed: true },
+    });
+
+    render(<PipelineTrace stepKey="prd" />);
+    fireEvent.click(screen.getByRole("button", { name: /How was this generated/i }));
+
+    expect(screen.getByText("96/100")).toBeInTheDocument();
+    expect(screen.getByText("Passed")).toBeInTheDocument();
+  });
+
+  it("renders critical issues when the quality gate flags them", () => {
+    setOutputs({
+      tasks_quality: {
+        score: 61,
+        passed: false,
+        critical_issues: [
+          "Missing API dependency sequencing.",
+          "Security acceptance criteria are absent.",
+        ],
+      },
+    });
+
+    render(<PipelineTrace stepKey="tasks" />);
+    fireEvent.click(screen.getByRole("button", { name: /How was this generated/i }));
+
+    expect(screen.getByText("Missing API dependency sequencing.")).toBeInTheDocument();
+    expect(screen.getByText("Security acceptance criteria are absent.")).toBeInTheDocument();
   });
 
   it("shows failed quality gate state", () => {

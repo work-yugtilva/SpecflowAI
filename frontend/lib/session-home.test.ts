@@ -58,7 +58,6 @@ describe("session-home helpers", () => {
     const missingContext = getSessionHomeSummary({
       detail: makeDetail(),
       context: {},
-      researchCount: 0,
       sourceCounts: { available: true, sourceCount: 0, evidenceCount: 0 },
       hasHandoff: false,
     });
@@ -67,7 +66,6 @@ describe("session-home helpers", () => {
     const missingEvidence = getSessionHomeSummary({
       detail: makeDetail(),
       context: completeContext,
-      researchCount: 0,
       sourceCounts: { available: true, sourceCount: 0, evidenceCount: 0 },
       hasHandoff: false,
     });
@@ -76,7 +74,6 @@ describe("session-home helpers", () => {
     const readyForFeatures = getSessionHomeSummary({
       detail: makeDetail({ problems: [{ id: "p1" }] }),
       context: completeContext,
-      researchCount: 2,
       sourceCounts: { available: true, sourceCount: 1, evidenceCount: 3 },
       hasHandoff: false,
     });
@@ -91,7 +88,6 @@ describe("session-home helpers", () => {
         prd: { title: "PRD" },
       }),
       context: completeContext,
-      researchCount: 2,
       sourceCounts: { available: false },
       hasHandoff: true,
     });

@@ -162,6 +162,16 @@ function HandoffSummaryPanel({
   onExpandTask,
   onClose,
 }: HandoffSummaryPanelProps) {
+  const [handoffNarrow, setHandoffNarrow] = useState(false);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const mq = window.matchMedia("(max-width: 767px)");
+    const sync = () => setHandoffNarrow(mq.matches);
+    sync();
+    mq.addEventListener("change", sync);
+    return () => mq.removeEventListener("change", sync);
+  }, []);
+
   return (
     <>
       {/* Backdrop */}
@@ -170,7 +180,7 @@ function HandoffSummaryPanel({
         style={{
           position: "fixed",
           inset: 0,
-          top: 52,
+          top: handoffNarrow ? 0 : 52,
           background: "rgba(0,0,0,0.15)",
           zIndex: 39,
         }}
@@ -179,13 +189,15 @@ function HandoffSummaryPanel({
       <div
         style={{
           position: "fixed",
-          right: 0,
-          top: 52,
-          width: 420,
-          height: "calc(100vh - 52px)",
+          right: handoffNarrow ? 0 : 0,
+          left: handoffNarrow ? 0 : undefined,
+          top: handoffNarrow ? 0 : 52,
+          width: handoffNarrow ? "100%" : 420,
+          maxWidth: handoffNarrow ? "100%" : 420,
+          height: handoffNarrow ? "100vh" : "calc(100vh - 52px)",
           background: "#FFFFFF",
-          borderLeft: "1px solid #E4DDD4",
-          boxShadow: "-4px 0 24px rgba(0,0,0,0.08)",
+          borderLeft: handoffNarrow ? "none" : "1px solid #E4DDD4",
+          boxShadow: handoffNarrow ? "none" : "-4px 0 24px rgba(0,0,0,0.08)",
           zIndex: 40,
           display: "flex",
           flexDirection: "column",
@@ -809,6 +821,14 @@ export default function TasksPage() {
         fontFamily: "var(--font-dm-sans), 'DM Sans', sans-serif",
       }}
     >
+      <style>{`
+        @media (max-width: 768px) {
+          .tasks-two-col { flex-direction: column; }
+          .tasks-list-panel { width: 100% !important; min-height: 200px; max-height: 42vh; border-right: none !important; border-bottom: 1px solid #E4DDD4; }
+          .tasks-page-header { flex-wrap: wrap; height: auto !important; min-height: 52px; padding-top: 8px; padding-bottom: 8px; row-gap: 8px; }
+          .tasks-page-header-actions { flex-wrap: wrap; justify-content: flex-start; width: 100%; }
+        }
+      `}</style>
       <Sidebar />
 
       {/* Main */}
@@ -822,6 +842,7 @@ export default function TasksPage() {
         />
         {/* Top bar */}
         <header
+          className="tasks-page-header"
           style={{
             height: 52,
             background: "#FFFFFF",
@@ -832,10 +853,11 @@ export default function TasksPage() {
             padding: "0 20px",
             flexShrink: 0,
             gap: 12,
+            minWidth: 0,
           }}
         >
           {/* Breadcrumb */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div className="min-w-0 flex-1" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
             <span style={{ fontSize: 13, color: "#9E9E9E", fontWeight: 400 }}>
               Signals
             </span>
@@ -909,7 +931,7 @@ export default function TasksPage() {
           </div>
 
           {/* Actions */}
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <div className="tasks-page-header-actions flex min-w-0 shrink-0 items-center gap-2">
             {/* Handoff status chips */}
             {handoffStatus === "success" && (
               <span style={{ fontSize: 11.5, fontWeight: 600, padding: "2px 10px", borderRadius: 20, background: "rgba(34,197,94,0.12)", color: "#15803D" }}>
@@ -1279,17 +1301,13 @@ export default function TasksPage() {
           </div>
         ) : (
           // Two-column layout
-          <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
+          <div className="tasks-two-col flex min-h-0 flex-1 overflow-hidden">
             {/* LEFT PANEL — Task groups */}
             <div
+              className="tasks-list-panel flex-shrink-0 flex flex-col overflow-hidden bg-white"
               style={{
                 width: 300,
-                flexShrink: 0,
-                display: "flex",
-                flexDirection: "column",
                 borderRight: "1px solid #E4DDD4",
-                background: "#FFFFFF",
-                overflow: "hidden",
               }}
             >
               {/* Panel header */}
@@ -1507,8 +1525,8 @@ export default function TasksPage() {
             {/* RIGHT PANEL — Task detail */}
             {selectedTask ? (
               <div
+                className="min-h-0 min-w-0 flex-1"
                 style={{
-                  flex: 1,
                   overflowY: "auto",
                   padding: "24px 28px",
                   background: "#F8F4EF",

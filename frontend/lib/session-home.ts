@@ -44,7 +44,6 @@ export interface SessionHomeSummary {
   updatedAt: string | null;
   missingContextFields: string[];
   contextReady: boolean;
-  researchCount: number;
   sourceCounts: SourceReadinessCounts;
   completedSteps: number;
   totalSteps: number;
@@ -131,13 +130,11 @@ function artifactName(summary: Pick<SessionHomeSummary, "recentOutputs" | "hasHa
 export function getSessionHomeSummary({
   detail,
   context,
-  researchCount,
   sourceCounts,
   hasHandoff,
 }: {
   detail: SessionDetail | null;
   context: Record<string, unknown>;
-  researchCount: number;
   sourceCounts: SourceReadinessCounts;
   hasHandoff: boolean;
 }): SessionHomeSummary {
@@ -177,11 +174,6 @@ export function getSessionHomeSummary({
       value: contextReady ? "Ready" : `Missing ${missingContextFields.length}`,
       ready: contextReady,
     },
-    {
-      label: "Research entries",
-      value: String(researchCount),
-      ready: researchCount > 0,
-    },
   ];
 
   if (sourceCounts.available) {
@@ -208,7 +200,6 @@ export function getSessionHomeSummary({
     updatedAt: detail?.session.updated_at ?? null,
     missingContextFields,
     contextReady,
-    researchCount,
     sourceCounts,
     completedSteps,
     totalSteps: PIPELINE_STEPS.length,
@@ -227,9 +218,8 @@ export function getNextRecommendedAction(summary: SessionHomeSummary): SessionHo
     return { label: "Complete Context", type: "link", href: "/context" };
   }
 
-  const hasResearch = summary.researchCount > 0;
   const hasSourceEvidence = summary.sourceCounts.available && (summary.sourceCounts.evidenceCount ?? 0) > 0;
-  if (!hasResearch && !hasSourceEvidence) {
+  if (!hasSourceEvidence) {
     return { label: "Add Sources", type: "link", href: "/sources" };
   }
 

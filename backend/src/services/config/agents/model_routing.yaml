@@ -1,18 +1,18 @@
 product_context:
   provider: anthropic
-  model: claude-haiku-4-5-20251001
+  model: claude-3-5-haiku-20241022
   use_cache: true
   use_batch: false
 
 quality_gate:
   provider: anthropic
-  model: claude-haiku-4-5-20251001
+  model: claude-3-5-haiku-20241022
   use_cache: false
   use_batch: false
 
 problems:
   provider: anthropic
-  model: claude-haiku-4-5-20251001
+  model: claude-3-5-haiku-20241022
   use_cache: false
   use_batch: false
 
@@ -30,13 +30,13 @@ decompose:
 
 tasks:
   provider: anthropic
-  model: claude-haiku-4-5-20251001
+  model: claude-3-5-haiku-20241022
   use_cache: false
   use_batch: false
 
 prd:
   provider: anthropic
-  model: claude-sonnet-4-5
+  model: claude-sonnet-4-6
   use_cache: false
   use_batch: false
 

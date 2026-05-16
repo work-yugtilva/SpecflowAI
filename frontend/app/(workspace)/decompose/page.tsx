@@ -226,6 +226,12 @@ export default function DecomposePage() {
         @keyframes spin {
           to { transform: rotate(360deg); }
         }
+        @media (max-width: 768px) {
+          .decompose-three-col { flex-direction: column; overflow-y: auto !important; }
+          .decompose-three-col > div { flex: none !important; width: 100% !important; border-right: none !important; border-bottom: 1px solid #E4DDD4; max-height: none !important; }
+          .decompose-page-header { flex-wrap: wrap; height: auto !important; min-height: 52px; padding-top: 8px; padding-bottom: 8px; row-gap: 8px; }
+          .decompose-page-header-left { flex-wrap: wrap; min-width: 0; }
+        }
       `}</style>
 
       <Sidebar />
@@ -241,6 +247,7 @@ export default function DecomposePage() {
         />
         {/* Top bar */}
         <header
+          className="decompose-page-header"
           style={{
             height: 52,
             background: "#FFFFFF",
@@ -251,10 +258,11 @@ export default function DecomposePage() {
             padding: "0 20px",
             flexShrink: 0,
             gap: 12,
+            minWidth: 0,
           }}
         >
           {/* Left: breadcrumb + feature chip */}
-          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+          <div className="decompose-page-header-left flex min-w-0 flex-1 items-center gap-2" style={{ minWidth: 0 }}>
             <span
               style={{
                 fontSize: 13,
@@ -302,7 +310,7 @@ export default function DecomposePage() {
                   whiteSpace: "nowrap",
                   overflow: "hidden",
                   textOverflow: "ellipsis",
-                  maxWidth: 300,
+                  maxWidth: "min(300px, 100%)",
                 }}
               >
                 ↳ {dm.featureTitle}
@@ -312,7 +320,7 @@ export default function DecomposePage() {
 
           {/* Right: action buttons */}
           <div
-            style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}
+            className="flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2"
           >
             {dm && (
               <button
@@ -499,6 +507,7 @@ export default function DecomposePage() {
           <>
           {/* Three-column layout */}
           <div
+            className="decompose-three-col"
             style={{
               flex: 1,
               display: "flex",

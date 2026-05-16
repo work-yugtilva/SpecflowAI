@@ -222,6 +222,10 @@ export default function ProblemsPage() {
         @media (max-width: 768px) {
           .problems-two-col { flex-direction: column; }
           .problems-list-panel { width: 100% !important; min-height: 240px; max-height: 40vh; border-right: none !important; border-bottom: 1px solid #E4DDD4; }
+          .problems-page-header { flex-wrap: wrap; height: auto !important; min-height: 52px; padding-top: 8px; padding-bottom: 8px; row-gap: 8px; }
+          .problems-page-header > div:first-child { flex-wrap: wrap; min-width: 0; max-width: 100%; }
+          .problems-metrics-grid { grid-template-columns: 1fr !important; }
+          .problems-detail-wrap { padding-left: 16px !important; padding-right: 16px !important; }
         }
       `}</style>
       <Sidebar />
@@ -237,14 +241,15 @@ export default function ProblemsPage() {
         />
         {/* Top bar */}
         <header
-          className="flex items-center justify-between px-6 flex-shrink-0"
+          className="problems-page-header flex flex-shrink-0 items-center justify-between px-4 md:px-6"
           style={{
             height: 52,
             background: "#FFFFFF",
             borderBottom: "1px solid #E4DDD4",
+            minWidth: 0,
           }}
         >
-          <div className="flex items-center gap-2">
+          <div className="flex min-w-0 max-w-full flex-1 items-center gap-2">
             <div
               className="flex items-center gap-1.5 text-[13px]"
               style={{ color: "#6B6B6B" }}
@@ -273,7 +278,7 @@ export default function ProblemsPage() {
             onClick={handleGenerate}
             disabled={generating || !activeSessionId || regenLimitReached}
             title={regenLimitReached ? "Limit reached. Use the editor." : undefined}
-            className="btn-dark"
+            className="btn-dark shrink-0"
             style={{
               fontSize: 13,
               padding: "0.45rem 1rem",
@@ -561,7 +566,7 @@ export default function ProblemsPage() {
               style={{ background: "#F8F4EF" }}
             >
               {selectedProblem ? (
-                <div style={{ padding: "24px 28px", maxWidth: 680 }}>
+                <div className="problems-detail-wrap" style={{ padding: "24px 28px", maxWidth: 680 }}>
                   {/* Detail header */}
                   <div
                     className="flex items-start justify-between gap-4"
@@ -719,6 +724,7 @@ export default function ProblemsPage() {
                   >
                     <SectionLabel>Metrics</SectionLabel>
                     <div
+                      className="problems-metrics-grid"
                       style={{
                         display: "grid",
                         gridTemplateColumns: "repeat(3, 1fr)",
